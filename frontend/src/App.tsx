@@ -3,7 +3,9 @@ import type { ReactNode } from 'react'
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
 import { Dashboard } from './pages/Dashboard'
 import { Intake } from './pages/Intake'
-import { Execution, Results, Strategy } from './pages/Planning'
+import { Execution } from './pages/Execution'
+import { Results } from './pages/Results'
+import { Strategy } from './pages/Strategy'
 import { example } from './data/shop'
 import type { Analysis, Plan } from './data/shop'
 import { Citrus } from './components/ui'
@@ -101,7 +103,7 @@ export function App() {
         <div className="shell header-inner">
           <Link to="/" className="wordmark"><Citrus /> 가게짝꿍</Link>
           {!publicPage && <nav className="main-nav" aria-label="가게짝꿍 메뉴">
-            {navigation.map(({ to, label }) => <NavLink key={to} to={to}>{label}</NavLink>)}
+            {navigation.map(({ to, label }) => <NavLink key={to} to={to} className={pathname === '/results' && to === '/execution' ? 'active' : undefined}>{label}</NavLink>)}
           </nav>}
           <div className="header-actions">
             {pathname === '/' ? <><Link to="/login">로그인</Link><Link className="button small secondary" to="/signup">회원가입</Link></>
@@ -119,7 +121,7 @@ export function App() {
           <Route path="/analysis" element={analysis ? <Dashboard data={analysis} onChange={setAnalysis} /> : <Placeholder to="/sales" action="매출 입력하기">분석할 매출을 입력해 주세요.</Placeholder>} />
           <Route path="/strategy" element={analysis ? <Strategy data={analysis} onPlan={openPlan} /> : <Placeholder to="/sales" action="매출 입력하기">매출을 분석하면 대응 전략을 볼 수 있어요.</Placeholder>} />
           <Route path="/execution" element={plan && analysis ? <Execution plan={plan} onChange={setPlan} /> : <Placeholder to="/strategy" action="대응 전략 보기">실행할 전략을 먼저 선택해 주세요.</Placeholder>} />
-          <Route path="/results" element={plan && analysis ? <Results demo={analysis.demo && plan.strategy === 'promotion'} /> : <Navigate to="/execution" replace />} />
+          <Route path="/results" element={plan && analysis ? <Results plan={plan} onChange={setPlan} /> : <Navigate to="/execution" replace />} />
           <Route path="*" element={<Placeholder to="/" action="메인으로">요청한 화면을 찾을 수 없어요.</Placeholder>} />
         </Routes>
       </main>

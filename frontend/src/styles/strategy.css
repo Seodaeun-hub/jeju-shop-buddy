@@ -1,0 +1,44 @@
+.strategy-summary {
+  gap: .7rem 1.2rem;
+  padding-block: 1rem 1.25rem;
+}
+
+.strategy-summary > strong,
+.strategy-options > legend,
+.strategy-option label strong,
+.strategy-selected { font-family: var(--display-font); font-weight: 400; }
+.strategy-summary-detail { flex: 1 1 18rem; font-weight: 700; }
+.strategy-summary .strategy-summary-change { color: var(--orange); font-size: clamp(1.35rem, 3vw, 2.1rem); }
+
+.strategy-options > legend {
+  width: 100%;
+  padding-bottom: .7rem;
+  border-bottom: 1px solid var(--rule);
+}
+.strategy-layout .strategy-option { padding: .8rem .9rem; border-bottom-color: var(--rule); }
+.strategy-option.highlight { border-radius: 8px; border-bottom-color: transparent; }
+.strategy-layout .strategy-option label { cursor: pointer; }
+.strategy-option label strong { font-size: clamp(1.12rem, 2vw, 1.45rem); overflow-wrap: anywhere; }
+.strategy-layout .strategy-option input { accent-color: var(--orange); }
+.strategy-recommended { color: var(--orange); background: var(--sheet); border: 1px solid var(--orange); }
+.strategy-evidence { font-size: .9rem; line-height: 1.55; }
+.strategy-evidence dd { min-width: 0; overflow-wrap: anywhere; }
+.strategy-back { display: inline-block; margin-top: 1rem; font-weight: 750; }
+
+.strategy-layout .strategy-settings { border-left-color: var(--rule); }
+.strategy-layout .strategy-settings label {
+  grid-template-columns: minmax(7rem, 1fr) minmax(0, 2.5fr);
+  align-items: center;
+}
+.strategy-selected { padding: .55rem .7rem; border: 1px solid var(--green); border-radius: 6px; color: var(--green); background: var(--pale-green); font-size: 1.25rem; }
+.strategy-output { display: flex; gap: .3rem .8rem; flex-wrap: wrap; padding-block: .75rem; border-block: 1px solid var(--rule); }
+.strategy-submit { min-height: 3.2rem; }
+
+@media (max-width: 800px) {
+  .strategy-layout .strategy-settings { border-top: 1px solid var(--line); padding-top: .85rem; }
+}
+
+@media (max-width: 480px) {
+  .strategy-layout .strategy-settings label { grid-template-columns: 1fr; }
+  .strategy-summary-detail { flex-basis: 100%; }
+}

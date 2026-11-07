@@ -54,11 +54,47 @@ export const strategies = [
   { id: 'inventory', name: '발주량 점검하기', description: '재고와 사용량을 확인해 다음 발주를 검토해요.' },
 ] as const
 
+export function addDays(date: string, days: number) {
+  const result = new Date(date)
+  result.setUTCDate(result.getUTCDate() + days)
+  return result.toISOString().slice(0, 10)
+}
+
+export type InventoryItem = {
+  id: string
+  name: string
+  unit: string
+  stock: string
+  expectedUse: string
+  incoming: string
+  finalOrder: string
+}
+
+export type SalesPeriod = {
+  start: string
+  end: string
+  days: number
+  amount: number
+  count?: number
+}
+
+export type SalesResult = { before: SalesPeriod; after: SalesPeriod }
+
 export type Plan = {
+  salesResult?: SalesResult
+  remainingStock?: Record<string, { unit: string; quantity: string }>
+  inventoryItems?: InventoryItem[]
   strategy: (typeof strategies)[number]['id']
+  title: string
+  store: string
+  demo: boolean
   duration: string
+  startDate: string
+  endDate: string
+  timeLabel?: string
+  followUp: string
   budget: number
   channel: string
-  tasks: string[]
+  tasks: { label: string; date: string }[]
   done: number[]
 }
