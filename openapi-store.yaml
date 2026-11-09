@@ -623,6 +623,31 @@ paths:
               example:
                 code: ANALYSIS_NOT_FOUND
                 message: 매출 분석을 찾을 수 없어요.
+  /api/analyses/{analysisId}/recommendations:
+    post:
+      operationId: generateStrategyRecommendation
+      tags: [매출 분석]
+      summary: 화면에 표시할 AI 추천 생성 및 저장
+      security:
+        - ownerBasic: []
+      parameters:
+        - name: analysisId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: AI 추천과 저장된 추천 ID 또는 기본 추천
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalesAnalysisStrategiesResponse'
+        '400':
+          description: 잘못된 분석 ID
+        '401':
+          description: 로그인이 필요한 요청
+        '404':
+          description: 로그인한 사업주의 매출 분석을 찾을 수 없음
   /api/analyses/{analysisId}/plans:
     post:
       operationId: createExecutionPlan
@@ -632,7 +657,7 @@ paths:
         - ownerBasic: []
       description: >
         로그인한 사업주가 소유한 매장의 분석에 실행 계획을 만든다.
-        전략 코드는 해당 분석의 전략 조회에서 선택한다. 서버는 선택 시점의 제안 이유와 근거를 계획에 기록한다.
+        AI 추천을 선택하면 추천 ID와 전략 코드를 전달한다. 서버는 해당 추천의 이유와 근거를 실행 계획에 기록한다.
         실행 시작일은 서버가 한국 시간 기준 요청 당일로 정한다.
         종료일은 시작일을 포함해 지정한 주 수만큼 계산한다.
         추가 자료가 필요한 전략은 자료 준비와 검토를 위한 항목을 생성한다.
@@ -729,6 +754,12 @@ paths:
               example:
                 code: ANALYSIS_NOT_FOUND
                 message: 매출 분석을 찾을 수 없어요.
+        '409':
+          description: 추천 ID가 이 분석에 속하지 않거나 추천을 받은 뒤 분석 입력이 바뀜
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/plans/{planId}:
     get:
       operationId: getExecutionPlan
@@ -1470,6 +1501,18 @@ components:
           $ref: '#/components/schemas/SalesMonth'
         afterMonth:
           $ref: '#/components/schemas/SalesMonth'
+        recommendationSource:
+          type: string
+          enum: [AGENT, RULES]
+        recommendationId:
+          type: string
+          format: uuid
+          description: 저장된 AI 추천의 ID. 실행 계획을 생성할 때 사용한다.
+        contextEvidence:
+          type: array
+          description: AI 추천의 경기 참고 지표
+          items:
+            $ref: '#/components/schemas/StrategyEvidence'
         strategies:
           type: array
           items:
@@ -1489,6 +1532,20 @@ components:
         reason:
           type: string
           description: 확인한 근거를 바탕으로 해당 행동을 제안하거나 보류한 이유
+        nextAction:
+          type: string
+          description: AI 추천에서 먼저 확인하거나 입력할 내용
+        recommendation:
+          type: object
+          description: 선택한 AI 추천의 원본 ID와 비교 기간, 경기 참고 지표
+          required: [id, beforeMonth, afterMonth, contextEvidence]
+          properties:
+            id: { type: string, format: uuid }
+            beforeMonth: { $ref: '#/components/schemas/SalesMonth' }
+            afterMonth: { $ref: '#/components/schemas/SalesMonth' }
+            contextEvidence:
+              type: array
+              items: { $ref: '#/components/schemas/StrategyEvidence' }
         evidence:
           type: array
           description: 저장한 분석에서 확인한 비교 수치. RECOMMENDED 후보에는 근거가 한 건 이상 필요하다.
@@ -1548,6 +1605,10 @@ components:
       additionalProperties: false
       required: [strategyCode, conditions]
       properties:
+        recommendationId:
+          type: string
+          format: uuid
+          description: AI 추천을 선택할 때 받은 추천 ID
         strategyCode:
           $ref: '#/components/schemas/StrategyCode'
         conditions:

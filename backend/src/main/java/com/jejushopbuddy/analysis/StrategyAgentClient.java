@@ -1,0 +1,229 @@
+package com.jejushopbuddy.analysis;
+
+import com.jejushopbuddy.analysis.SalesAnalysisController.AnalysisResponse;
+import com.jejushopbuddy.analysis.SalesStrategies.Evidence;
+import com.jejushopbuddy.analysis.SalesStrategies.Response;
+import com.jejushopbuddy.analysis.SalesStrategies.Suggestion;
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
+
+@Service
+final class StrategyAgentClient {
+    private static final Logger LOG = LoggerFactory.getLogger(StrategyAgentClient.class);
+    private static final String VERSION = "1.0";
+    private static final Map<String, String> TITLES = Map.of(
+            "OUTREACH", "주문 안내 점검하기", "PROMOTION", "시간대 한정 혜택 검토하기", "INVENTORY", "발주량 검토하기");
+    private static final Map<String, String> INPUT_LABELS = Map.of(
+            "TIME_SERIES", "시간대별 매출 또는 결제 건수",
+            "ITEM_PRICE_AND_ORDER_COST", "메뉴별 판매가와 주문당 비용",
+            "DISCOUNT_BUDGET", "할인 예산 한도",
+            "ON_HAND_STOCK", "품목별 현재 재고",
+            "EXPECTED_USAGE", "다음 입고까지 예상 사용량",
+            "INCOMING_STOCK", "입고 예정량");
+
+    private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).build();
+    private final ObjectMapper json;
+    private final JejuMarketContext market;
+    private final URI endpoint;
+
+    StrategyAgentClient(ObjectMapper json, JejuMarketContext market,
+                        @Value("${shop-buddy.strategy-agent-url:}") String baseUrl) {
+        this.json = json;
+        this.market = market;
+        this.endpoint = baseUrl.isBlank() ? null
+                : URI.create(baseUrl.strip().replaceFirst("/+$", "") + "/internal/strategy-recommendations");
+    }
+
+    Optional<Generated> recommend(AnalysisResponse analysis) {
+        if (endpoint == null) return Optional.empty();
+        try {
+            var input = input(analysis);
+            var facts = new LinkedHashMap<String, Fact>();
+            input.evidence().forEach(fact -> facts.put(fact.id(), fact));
+            String fingerprint = fingerprint(json.writeValueAsString(input));
+            var request = HttpRequest.newBuilder(endpoint).timeout(Duration.ofSeconds(13))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(
+                            json.writeValueAsString(new AgentRequest(VERSION, analysis.id(), fingerprint, input))))
+                    .build();
+            var response = http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() != 200) {
+                LOG.debug("Strategy Agent returned HTTP {}", response.statusCode());
+                return Optional.empty();
+            }
+            var result = json.readValue(response.body(), AgentResponse.class);
+            return Optional.of(new Generated(fingerprint, mapResponse(analysis, fingerprint, input.strategies(), facts, result)));
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            return Optional.empty();
+        } catch (IOException | JacksonException | IllegalArgumentException error) {
+            LOG.debug("Strategy Agent unavailable or invalid ({})", error.getClass().getSimpleName());
+            return Optional.empty();
+        }
+    }
+
+    String fingerprintFor(AnalysisResponse analysis) {
+        return fingerprint(json.writeValueAsString(input(analysis)));
+    }
+
+    private Input input(AnalysisResponse analysis) {
+        var store = market.forStore(analysis.storeId(), analysis.beforeMonth(), analysis.afterMonth());
+        var context = store.context();
+        return new Input(new Store(store.area(), store.industryCode()),
+                new Period(analysis.beforeMonth(), analysis.afterMonth()),
+                analysis.concern() == null ? "" : analysis.concern(),
+                new Availability("AVAILABLE", availability(analysis.timeSeries()),
+                        availability(context.card()), availability(context.bsi())),
+                List.copyOf(facts(analysis, context).values()), candidates(analysis.timeSeries() != null));
+    }
+
+    private static Map<String, Fact> facts(AnalysisResponse analysis, JejuMarketContext.Context context) {
+        var facts = new LinkedHashMap<String, Fact>();
+        facts.put("e1", new Fact("e1", "MONTHLY_SALES", "STORE", "STORE_RECORDED", null, "KRW",
+                BigDecimal.valueOf(SalesStrategies.amountFor(analysis, analysis.beforeMonth())),
+                BigDecimal.valueOf(SalesStrategies.amountFor(analysis, analysis.afterMonth()))));
+        if (analysis.timeSeries() != null) {
+            var series = analysis.timeSeries();
+            String unit = series.metric().equals("COUNT") ? "COUNT" : "KRW";
+            for (int i = 0; i < series.rows().size(); i++) {
+                var slot = series.rows().get(i);
+                String id = i == 0 ? "e2" : "e2-" + (i + 1);
+                facts.put(id, new Fact(id, "TIME_SERIES", "STORE", "STORE_RECORDED", slot.label(), unit,
+                        BigDecimal.valueOf(slot.before()), BigDecimal.valueOf(slot.after())));
+            }
+        }
+        if (context.card() != null) {
+            facts.put("e3", new Fact("e3", "MARKET_CARD_SALES", "AREA_AND_INDUSTRY", "JEJU_DATAHUB",
+                    null, "KRW", context.card().before(), context.card().after()));
+        }
+        if (context.bsi() != null) {
+            facts.put("e4", new Fact("e4", "JEJU_BSI", "JEJU", "SEMAS_BSI", null, "INDEX",
+                    context.bsi().before(), context.bsi().after()));
+        }
+        return facts;
+    }
+
+    private static List<Candidate> candidates(boolean hasTimeSeries) {
+        var promotion = new ArrayList<String>();
+        if (!hasTimeSeries) promotion.add("TIME_SERIES");
+        promotion.addAll(List.of("ITEM_PRICE_AND_ORDER_COST", "DISCOUNT_BUDGET"));
+        return List.of(new Candidate("OUTREACH", "AVAILABLE", List.of()),
+                new Candidate("PROMOTION", "NEEDS_INPUT", promotion),
+                new Candidate("INVENTORY", "NEEDS_INPUT", List.of("ON_HAND_STOCK", "EXPECTED_USAGE", "INCOMING_STOCK")));
+    }
+
+    private static Response mapResponse(AnalysisResponse analysis, String fingerprint, List<Candidate> candidates,
+                                        Map<String, Fact> facts, AgentResponse response) {
+        require(response != null && VERSION.equals(response.schemaVersion()) && analysis.id().equals(response.analysisId())
+                && fingerprint.equals(response.inputFingerprint()) && "OK".equals(response.status())
+                && response.requiredInputs() != null && response.requiredInputs().isEmpty()
+                && response.recommendations() != null && response.recommendations().size() == candidates.size());
+        var contextIds = facts.values().stream().filter(fact -> fact.type().equals("JEJU_BSI")).map(Fact::id).toList();
+        require(contextIds.equals(response.contextEvidenceIds()));
+        var seen = new HashSet<String>();
+        var suggestions = new ArrayList<Suggestion>();
+        for (var card : response.recommendations()) {
+            require(card != null && seen.add(card.strategyCode()));
+            var candidate = candidates.stream().filter(item -> item.code().equals(card.strategyCode()))
+                    .findFirst().orElseThrow(() -> new IllegalArgumentException("Unknown strategy"));
+            require(candidate.status().equals(card.status()) || (suggestions.isEmpty()
+                    && "AVAILABLE".equals(candidate.status()) && "RECOMMENDED".equals(card.status())));
+            require(candidate.missingInputs().equals(card.missingInputs()) && hasText(card.reason())
+                    && hasText(card.nextAction()) && hasText(card.followUp()) && card.evidenceIds() != null
+                    && !card.evidenceIds().isEmpty() && new HashSet<>(card.evidenceIds()).size() == card.evidenceIds().size());
+            var evidence = card.evidenceIds().stream().map(id -> {
+                var fact = facts.get(id);
+                require(fact != null && allowedEvidence(candidate.code(), fact.type()));
+                return fact.toEvidence();
+            }).toList();
+            suggestions.add(new Suggestion(candidate.code(), TITLES.get(candidate.code()), card.status(), card.reason(),
+                    evidence, candidate.missingInputs().stream().map(INPUT_LABELS::get).toList(),
+                    card.followUp(), null, null, card.nextAction(), null));
+        }
+        return new Response(analysis.id(), analysis.beforeMonth(), analysis.afterMonth(), List.copyOf(suggestions),
+                "AGENT", contextIds.stream().map(id -> facts.get(id).toEvidence()).toList());
+    }
+
+    private static boolean allowedEvidence(String code, String type) {
+        return switch (code) {
+            case "OUTREACH" -> Set.of("MONTHLY_SALES", "TIME_SERIES", "MARKET_CARD_SALES").contains(type);
+            case "PROMOTION" -> Set.of("MONTHLY_SALES", "TIME_SERIES").contains(type);
+            default -> "MONTHLY_SALES".equals(type);
+        };
+    }
+
+    private static void require(boolean valid) {
+        if (!valid) throw new IllegalArgumentException("Invalid strategy recommendation");
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private static String availability(Object value) {
+        return value == null ? "MISSING" : "AVAILABLE";
+    }
+
+    private static String fingerprint(String value) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException error) {
+            throw new IllegalStateException(error);
+        }
+    }
+
+    private record Store(String area, String industryCode) {}
+    private record Period(String beforeMonth, String afterMonth) {}
+    private record Availability(String monthlySales, String timeSeries, String marketCardSales, String jejuBsi) {}
+    private record Candidate(String code, String status, List<String> missingInputs) {}
+    private record Change(String unit, BigDecimal value) {}
+    private record Fact(String id, String type, String scope, String source, String label, String unit,
+                        BigDecimal before, BigDecimal after) {
+        @com.fasterxml.jackson.annotation.JsonProperty
+        Change change() {
+            var difference = after.subtract(before);
+            if (unit.equals("INDEX")) return new Change("INDEX_POINT", difference);
+            return new Change("PERCENT", before.signum() == 0 ? null
+                    : difference.movePointRight(2).divide(before, 2, RoundingMode.HALF_UP));
+        }
+
+        Evidence toEvidence() {
+            return new Evidence(type, unit.equals("KRW") ? "AMOUNT" : unit, label, before, after);
+        }
+    }
+    private record Input(Store store, Period period, String concern, Availability availability,
+                         List<Fact> evidence, List<Candidate> strategies) {}
+    private record AgentRequest(String schemaVersion, UUID analysisId, String inputFingerprint,
+                                @com.fasterxml.jackson.annotation.JsonUnwrapped Input input) {}
+    private record AgentResponse(String schemaVersion, UUID analysisId, String inputFingerprint, String status,
+                                 List<String> contextEvidenceIds, List<String> requiredInputs, List<AgentCard> recommendations) {}
+    private record AgentCard(String strategyCode, String status, String reason, List<String> evidenceIds,
+                             List<String> missingInputs, String nextAction, String followUp) {}
+
+    record Generated(String inputFingerprint, Response response) {}
+}
