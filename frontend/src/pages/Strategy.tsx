@@ -5,6 +5,7 @@ import { createPlan, fetchStrategies, strategyIds, toPlan } from '../api/shop'
 import type { SavedStrategy, StrategyEvidence, StrategyResponse } from '../api/shop'
 import { Citrus, PageTitle } from '../components/ui'
 import { addDays, changeRate, formatNumber, formatRate, monthLabel, strategies, won } from '../data/shop'
+import { bsiSource, marketSource } from '../data/marketSources'
 import type { Analysis, Plan, TimeSeries } from '../data/shop'
 import '../styles/strategy.css'
 
@@ -12,6 +13,7 @@ type StrategyId = Plan['strategy']
 type StrategyCard = {
   name: string
   observation: string
+  evidence?: { text: string; source: StrategyEvidence['source'] }[]
   reason: string
   followUp: string
   status?: SavedStrategy['status']
@@ -21,6 +23,12 @@ type StrategyCard = {
 function formatEvidence(item: StrategyEvidence, beforeMonth: string, afterMonth: string) {
   if (item.source === 'MONTHLY_SALES') {
     return `월별 매출 · ${monthLabel(beforeMonth)} ${won(item.before)} → ${monthLabel(afterMonth)} ${won(item.after)}`
+  }
+  if (item.source === 'MARKET_CARD_SALES') {
+    return `같은 읍·면·동·업종 카드 이용액 · ${monthLabel(beforeMonth)} ${won(item.before)} → ${monthLabel(afterMonth)} ${won(item.after)}`
+  }
+  if (item.source === 'JEJU_BSI') {
+    return `제주 전체 소상공인 체감 BSI · ${monthLabel(beforeMonth)} ${item.before.toFixed(1)} → ${monthLabel(afterMonth)} ${item.after.toFixed(1)}`
   }
   const unit = item.metric === 'COUNT' ? '결제 건수' : '매출액'
   const format = item.metric === 'COUNT' ? (value: number) => `${formatNumber(value)}건` : won
@@ -136,7 +144,11 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
       id: strategyIds[strategy.code],
       card: {
         name: strategy.title,
-        observation: strategy.evidence.map((item) => formatEvidence(item, saved.response.beforeMonth, saved.response.afterMonth)).join(' · '),
+        observation: formatEvidence(strategy.evidence[0], saved.response.beforeMonth, saved.response.afterMonth),
+        evidence: strategy.evidence.map((item) => ({
+          source: item.source,
+          text: formatEvidence(item, saved.response.beforeMonth, saved.response.afterMonth),
+        })),
         reason: strategy.reason, followUp: strategy.followUp, status: strategy.status, missingInputs: strategy.missingInputs,
       },
     }))
@@ -232,7 +244,13 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
               {card.status === 'NEEDS_INPUT' && <span className="badge">추가 확인 필요</span>}
             </label>
             <dl className="reason strategy-evidence">
-              <dt>확인한 변화</dt><dd>{card.observation}</dd>
+              <dt>확인한 변화</dt>
+              <dd>{card.evidence && card.evidence.length > 1 ? <ul className="strategy-evidence-list">
+                {card.evidence.map(({ text, source }) => <li key={source}>{text}
+                  {source === 'MARKET_CARD_SALES' && <> · <a href={marketSource}>제주데이터허브</a></>}
+                  {source === 'JEJU_BSI' && <> · <a href={bsiSource}>소상공인시장진흥공단</a></>}
+                </li>)}
+              </ul> : card.observation}</dd>
               <dt>{recommendation === id ? '추천 이유' : '제안 이유'}</dt><dd>{card.reason}</dd>
               {!!card.missingInputs?.length && <><dt>필요한 자료</dt><dd>{card.missingInputs.join(' · ')}</dd></>}
               {selectedCard && <><dt>실행 후 확인</dt><dd>{card.followUp}</dd></>}

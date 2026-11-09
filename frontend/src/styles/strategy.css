@@ -42,3 +42,5 @@
   .strategy-layout .strategy-settings label { grid-template-columns: 1fr; }
   .strategy-summary-detail { flex-basis: 100%; }
 }
+
+.strategy-evidence-list { display: grid; gap: .35rem; padding-left: 1.15rem; margin: 0; }

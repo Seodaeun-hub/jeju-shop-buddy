@@ -91,3 +91,10 @@
   .time-comparison li { grid-template-columns: 4.4rem minmax(0, 1fr) 3.3rem; gap: .35rem; padding-inline: .35rem; }
   .time-pair > div { grid-template-columns: minmax(0, 1fr) 5.4em; gap: .25rem; }
 }
+
+.bsi-chart { list-style: none; padding: 0; display: grid; gap: .45rem; }
+.bsi-chart li { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) 2.7rem; gap: .4rem; align-items: center; font-size: .85rem; }
+.bsi-chart li > strong { text-align: right; font-variant-numeric: tabular-nums; }
+.bsi-track { position: relative; display: block; height: .65rem; background: var(--sand); }
+.bsi-track > span { display: block; height: 100%; background: var(--green); }
+.bsi-track::after { content: ""; position: absolute; top: -2px; bottom: -2px; left: 50%; border-left: 1px solid var(--green); }

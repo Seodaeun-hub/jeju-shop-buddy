@@ -4,7 +4,9 @@ import { Citrus, PageTitle } from '../components/ui'
 import { industryOptions, listAreas, registerStore, saveAnalysis } from '../api/shop'
 import type { Area, StoreInput } from '../api/shop'
 import { AddressField } from '../components/AddressField'
-import { example, monthLabel, timeSlots } from '../data/shop'
+import { example, formatNumber, monthLabel, timeSlots, won } from '../data/shop'
+import { importPos } from '../data/pos'
+import type { PosImport } from '../data/pos'
 import type { MonthlySales, TimeSeries } from '../data/shop'
 
 const concerns = [
@@ -38,15 +40,55 @@ function InputTabs({ mode, onChange, manualLabel }: {
   </div>
 }
 
-function UploadPreview() {
-  const [filename, setFilename] = useState('')
+type ImportedFile = PosImport & { filename: string }
+
+function PosUpload({ value, onChange, compareMonths, disabled }: {
+  value?: ImportedFile
+  onChange: (value: ImportedFile | undefined) => void
+  compareMonths?: [string, string]
+  disabled?: boolean
+}) {
+  const [reading, setReading] = useState(false)
+  const [error, setError] = useState('')
+  const request = useRef(0)
+  useEffect(() => () => { request.current++ }, [])
+
+  async function selectFile(file: File) {
+    const id = ++request.current
+    onChange(undefined)
+    setError('')
+    setReading(true)
+    try {
+      const data = await importPos(file, compareMonths)
+      if (id === request.current) onChange({ ...data, filename: file.name })
+    } catch (error) {
+      if (id === request.current) setError(error instanceof Error ? error.message : 'POS 파일을 읽을 수 없어요.')
+    } finally {
+      if (id === request.current) setReading(false)
+    }
+  }
+
   return <div className="upload-preview">
     <span className="upload-arrow" aria-hidden="true">↑</span>
-    <strong>매출 파일 선택</strong>
-    <p>Excel (.xlsx) · CSV (.csv)</p>
-    <label className="file-picker">파일 선택<input type="file" accept=".xlsx,.csv" onChange={(event) => setFilename(event.target.files?.[0]?.name ?? '')} /></label>
-    <small role="status">{filename ? `${filename} · 파일 가져오기는 준비 중이에요. 직접 입력으로 저장해 주세요.` : '파일 선택 화면 미리보기'}</small>
+    <strong>토스포스 결제 내역 선택</strong>
+    <p>Excel (.xlsx) · 결제 내역 CSV (.csv) · 최대 10MB</p>
+    <label className="file-picker">파일 선택<input type="file" accept=".xlsx,.csv" disabled={disabled || reading} onChange={(event) => {
+      const file = event.target.files?.[0]
+      event.target.value = ''
+      if (file) void selectFile(file)
+    }} /></label>
+    <small role="status">{reading ? '결제 내역을 집계하는 중이에요.' : value ? `${value.filename} · 집계 완료` : '서로 다른 두 달 이상의 결제 내역을 올려 주세요.'}</small>
+    {error && <p role="alert" className="error">{error}</p>}
   </div>
+}
+
+function PosTimeSummary({ series, months }: { series: TimeSeries; months: [string, string] }) {
+  return <table className="input-table" aria-label="시간대별 결제 건수 미리보기">
+    <thead><tr><th scope="col">결제 시간대</th><th scope="col">{monthLabel(months[0])}</th><th scope="col">{monthLabel(months[1])}</th></tr></thead>
+    <tbody>{series.rows.map(({ label, before, after }) => <tr key={label}>
+      <th scope="row">{label}</th><td>{formatNumber(before)}건</td><td>{formatNumber(after)}건</td>
+    </tr>)}</tbody>
+  </table>
 }
 
 type TimeTotals = { before: string; after: string }
@@ -63,6 +105,7 @@ export function TimeDialog({ monthly, initial, onClose, onSave }: {
   onSave: (value: TimeSeries) => void | Promise<void>
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
+  const [pos, setPos] = useState<ImportedFile>()
   const [mode, setMode] = useState<InputMode>('manual')
   const [metric, setMetric] = useState<TimeSeries['metric']>(initial?.metric ?? 'amount')
   const nextRowId = useRef(initial?.rows.length ?? timeSlots.length)
@@ -112,10 +155,14 @@ export function TimeDialog({ monthly, initial, onClose, onSave }: {
       setError('합계는 정수로 입력해 주세요.')
       return
     }
+    await saveTimeSeries({ metric, rows })
+  }
+
+  async function saveTimeSeries(value: TimeSeries) {
     setSaving(true)
     setError('')
     try {
-      await onSave({ metric, rows })
+      await onSave(value)
     } catch (error) {
       setError(error instanceof Error ? error.message : '시간대별 자료를 저장할 수 없어요.')
     } finally {
@@ -126,8 +173,17 @@ export function TimeDialog({ monthly, initial, onClose, onSave }: {
   return <dialog ref={dialog} className="time-dialog" aria-labelledby="time-title" onCancel={(event) => { event.preventDefault(); if (!saving) onClose() }}>
     <div className="section-top"><h2 id="time-title">시간대별 자료 추가</h2><button type="button" className="text-button close" aria-label="닫기" disabled={saving} onClick={onClose}>×</button></div>
     <p className="muted">비교 기간 · {monthLabel(before.month)}과 {monthLabel(after.month)}</p>
-    <InputTabs mode={mode} onChange={setMode} manualLabel="시간대별 직접 입력" />
-    {mode === 'upload' ? <UploadPreview /> : <form onSubmit={submit} className="form-stack">
+    <InputTabs mode={mode} onChange={(next) => { if (!saving) { setError(''); setMode(next) } }} manualLabel="시간대별 직접 입력" />
+    {mode === 'upload' ? <>
+      <PosUpload value={pos} onChange={setPos} compareMonths={[before.month, after.month]} disabled={saving} />
+      {pos && <>
+        <PosTimeSummary series={pos.timeSeries} months={pos.months} />
+        <button type="button" className="button primary" disabled={saving} onClick={() => void saveTimeSeries(pos.timeSeries)}>
+          {saving ? '저장 중…' : '저장하고 차트 보기'}
+        </button>
+      </>}
+      {error && <p role="alert" className="error">{error}</p>}
+    </> : <form onSubmit={submit} className="form-stack">
       <label>입력 항목<select value={metric} onChange={(event) => setMetric(event.target.value === 'count' ? 'count' : 'amount')}>
         <option value="amount">매출액 (원)</option><option value="count">결제 건수 (건)</option>
       </select></label>
@@ -178,7 +234,8 @@ export function Intake({ auth, onAnalyze }: { auth: string; onAnalyze: (id: stri
   const [error, setError] = useState('')
   const [timeOpen, setTimeOpen] = useState(false)
   const [extra, setExtra] = useState<{ value: TimeSeries; period: string }>()
-  const monthly = monthlyValues(rows)
+  const [pos, setPos] = useState<ImportedFile>()
+  const monthly = mode === 'upload' ? pos?.monthly : monthlyValues(rows)
   const period = monthly?.slice(-2).map(({ month }) => month).join('/')
 
   useEffect(() => {
@@ -191,7 +248,7 @@ export function Intake({ auth, onAnalyze }: { auth: string; onAnalyze: (id: stri
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (submitting.current || mode === 'upload') return
+    if (submitting.current) return
     if (!store.trim() || !address.trim() || !resolvedAreaCode || !industry
         || (industry === 'OTHER' && !customIndustry.trim()) || !monthly) {
       setError('가게 정보, 제주 읍·면·동, 서로 다른 두 달 이상의 매출을 확인해 주세요.')
@@ -213,7 +270,8 @@ export function Intake({ auth, onAnalyze }: { auth: string; onAnalyze: (id: stri
         storeId = (await registerStore(auth, input)).id
         registeredStores.current.set(storeKey, storeId)
       }
-      const saved = await saveAnalysis(auth, storeId, monthly, concern.trim(), extra?.period === period ? extra?.value : undefined)
+      const timeSeries = mode === 'upload' ? pos?.timeSeries : extra?.period === period ? extra?.value : undefined
+      const saved = await saveAnalysis(auth, storeId, monthly, concern.trim(), timeSeries)
       onAnalyze(saved.id)
     } catch (error) {
       setError(error instanceof Error ? error.message : '매출을 저장할 수 없어요.')
@@ -274,8 +332,20 @@ export function Intake({ auth, onAnalyze }: { auth: string; onAnalyze: (id: stri
         </section>
         <section className="form-stack">
           <div className="section-top ruled"><h2>02 매출 입력</h2></div>
-          <InputTabs mode={mode} onChange={setMode} manualLabel="월별 매출 직접 입력" />
-          {mode === 'upload' ? <UploadPreview /> : <>
+          <InputTabs mode={mode} onChange={(next) => { if (!saving) { setError(''); setMode(next) } }} manualLabel="월별 매출 직접 입력" />
+          {mode === 'upload' ? <>
+            <PosUpload value={pos} onChange={setPos} disabled={saving} />
+            {pos && <>
+              <table className="input-table" aria-label="월별 매출 미리보기">
+                <thead><tr><th scope="col">연도와 월</th><th scope="col">결제 완료 매출</th></tr></thead>
+                <tbody>{pos.monthly.map(({ month, amount }) => <tr key={month}>
+                  <th scope="row">{monthLabel(month)}</th><td>{won(amount)}</td>
+                </tr>)}</tbody>
+              </table>
+              <p className="muted">가장 최근 두 달의 시간대를 비교해요. 취소된 결제는 집계에서 제외했어요.</p>
+              <PosTimeSummary series={pos.timeSeries} months={pos.months} />
+            </>}
+          </> : <>
             <table className="input-table"><thead><tr><th scope="col">연도와 월</th><th scope="col">매출액 (원)</th>{rows.length > 2 && <th scope="col">삭제</th>}</tr></thead>
               <tbody>{rows.map((row, index) => <tr key={row.id}>
                 <td><input type="month" required aria-label={`${index + 1}번째 연도와 월`} value={row.month} onChange={(event) => updateRow(row.id, 'month', event.target.value)} /></td>
@@ -293,9 +363,9 @@ export function Intake({ auth, onAnalyze }: { auth: string; onAnalyze: (id: stri
       </div>
       <div className="form-footer">
         <span role="alert" className="error">{error}</span>
-        <button className="button primary" disabled={saving || !areas?.length || mode === 'upload'}>{saving ? '저장 중…' : '분석 시작'} <span aria-hidden="true">→</span></button>
+        <button className="button primary" disabled={saving || !areas?.length || (mode === 'upload' && !pos)}>{saving ? '저장 중…' : '분석 시작'} <span aria-hidden="true">→</span></button>
       </div>
     </form>
-    {timeOpen && monthly && period && <TimeDialog monthly={monthly} initial={extra?.period === period ? extra.value : undefined} onClose={() => setTimeOpen(false)} onSave={(value) => { setExtra({ value, period }); setTimeOpen(false) }} />}
+    {timeOpen && mode === 'manual' && monthly && period && <TimeDialog monthly={monthly} initial={extra?.period === period ? extra.value : undefined} onClose={() => setTimeOpen(false)} onSave={(value) => { setExtra({ value, period }); setTimeOpen(false) }} />}
   </>
 }

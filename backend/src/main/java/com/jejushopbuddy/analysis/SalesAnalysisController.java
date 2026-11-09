@@ -35,6 +35,7 @@ class SalesAnalysisController {
 
     private final SalesAnalysisWriter writer;
     private final SalesAnalysisReader reader;
+    private final SalesStrategies salesStrategies;
     private final ExecutionPlanWriter planWriter;
     private final ExecutionPlanReader planReader;
     private final ExecutionResultWriter resultWriter;
@@ -42,9 +43,10 @@ class SalesAnalysisController {
 
     SalesAnalysisController(SalesAnalysisWriter writer, SalesAnalysisReader reader,
                             ExecutionPlanWriter planWriter, ExecutionPlanReader planReader,
-                            ExecutionResultWriter resultWriter, ExecutionResultReader resultReader) {
+                            ExecutionResultWriter resultWriter, ExecutionResultReader resultReader, SalesStrategies salesStrategies) {
         this.writer = writer;
         this.reader = reader;
+        this.salesStrategies = salesStrategies;
         this.planWriter = planWriter;
         this.planReader = planReader;
         this.resultWriter = resultWriter;
@@ -70,7 +72,7 @@ class SalesAnalysisController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(new ApiError("ANALYSIS_NOT_FOUND", "매출 분석을 찾을 수 없어요.", null));
         }
-        return ResponseEntity.ok(SalesStrategies.from(analysis.get()));
+        return ResponseEntity.ok(salesStrategies.from(analysis.get()));
     }
 
     @GetMapping(path = "/api/plans/{planId}", produces = MediaType.APPLICATION_JSON_VALUE)

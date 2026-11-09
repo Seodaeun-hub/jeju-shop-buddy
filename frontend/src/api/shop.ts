@@ -82,9 +82,19 @@ export async function saveTimeSeries(auth: string, id: string, value: TimeSeries
 }
 
 export type StrategyCode = 'OUTREACH' | 'PROMOTION' | 'INVENTORY'
+export type MarketContext = {
+  card?: { before: number; after: number }
+  bsi?: { before: number; after: number }
+}
+
+export function fetchMarketContext(area: string, industry: string, beforeMonth: string, afterMonth: string, signal: AbortSignal) {
+  const query = new URLSearchParams({ area, industry, beforeMonth, afterMonth })
+  return request<MarketContext>(`/api/market-context?${query}`, undefined, 'GET', undefined, signal)
+}
+
 export type StrategyEvidence = {
-  source: 'MONTHLY_SALES' | 'TIME_SERIES'
-  metric: 'AMOUNT' | 'COUNT'
+  source: 'MONTHLY_SALES' | 'TIME_SERIES' | 'MARKET_CARD_SALES' | 'JEJU_BSI'
+  metric: 'AMOUNT' | 'COUNT' | 'INDEX'
   label?: string
   before: number
   after: number

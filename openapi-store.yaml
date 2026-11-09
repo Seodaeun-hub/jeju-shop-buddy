@@ -4,6 +4,52 @@ info:
   version: 0.24.0
   description: 매장 등록, 매출 분석, 대응 전략 추천, 실행 계획과 체크리스트 관리, 실행 결과 비교·조회·수정·삭제 설계 초안.
 paths:
+  /api/market-context:
+    get:
+      operationId: getJejuMarketContext
+      tags: [매출 분석]
+      summary: 두 달의 제주 상권 카드 이용액과 체감 BSI 조회
+      description: 읍·면·동과 업종이 같은 카드 이용액을 비교한다. BSI는 제주 전체 소상공인 체감 지표다. 지표별로 두 달 모두 자료가 있을 때 반환한다.
+      parameters:
+        - in: query
+          name: area
+          required: true
+          schema: { type: string }
+        - in: query
+          name: industry
+          required: true
+          schema: { type: string }
+        - in: query
+          name: beforeMonth
+          required: true
+          schema: { type: string }
+        - in: query
+          name: afterMonth
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 조회 가능한 비교 지표
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  card:
+                    type: object
+                    required: [before, after]
+                    properties:
+                      before: { type: integer, format: int64 }
+                      after: { type: integer, format: int64 }
+                  bsi:
+                    type: object
+                    required: [before, after]
+                    properties:
+                      before: { type: number }
+                      after: { type: number }
+              example:
+                card: { before: 2049456994, after: 2199885864 }
+                bsi: { before: 63.1, after: 64.4 }
   /api/areas:
     get:
       operationId: listJejuAreas
@@ -1368,24 +1414,22 @@ components:
       properties:
         source:
           type: string
-          enum: [MONTHLY_SALES, TIME_SERIES]
+          enum: [MONTHLY_SALES, TIME_SERIES, MARKET_CARD_SALES, JEJU_BSI]
         metric:
           type: string
-          enum: [AMOUNT, COUNT]
-          description: AMOUNT는 원 단위 매출액, COUNT는 결제 건수. 월별 매출 근거는 AMOUNT를 사용한다.
+          enum: [AMOUNT, COUNT, INDEX]
+          description: AMOUNT는 원 단위 금액, COUNT는 결제 건수, INDEX는 제주 전체 소상공인 체감 BSI다.
         label:
           type: string
           description: TIME_SERIES 근거에서 사용하는 시간대 이름
         before:
-          type: integer
-          format: int64
+          type: number
           minimum: 0
-          description: beforeMonth의 값
+          description: beforeMonth의 값. 금액과 건수는 정수이며 BSI는 소수일 수 있다.
         after:
-          type: integer
-          format: int64
+          type: number
           minimum: 0
-          description: afterMonth의 값
+          description: afterMonth의 값. 금액과 건수는 정수이며 BSI는 소수일 수 있다.
     StrategyCode:
       type: string
       enum: [OUTREACH, PROMOTION, INVENTORY]

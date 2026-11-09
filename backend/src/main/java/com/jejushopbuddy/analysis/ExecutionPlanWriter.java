@@ -22,11 +22,13 @@ class ExecutionPlanWriter {
 
     private final JdbcClient jdbc;
     private final SalesAnalysisReader reader;
+    private final SalesStrategies salesStrategies;
     private final ObjectMapper json;
 
-    ExecutionPlanWriter(JdbcClient jdbc, SalesAnalysisReader reader, ObjectMapper json) {
+    ExecutionPlanWriter(JdbcClient jdbc, SalesAnalysisReader reader, ObjectMapper json, SalesStrategies salesStrategies) {
         this.jdbc = jdbc;
         this.reader = reader;
+        this.salesStrategies = salesStrategies;
         this.json = json;
     }
 
@@ -36,7 +38,7 @@ class ExecutionPlanWriter {
         if (analysis.isEmpty()) {
             return Optional.empty();
         }
-        var strategy = SalesStrategies.from(analysis.get()).strategies().stream()
+        var strategy = salesStrategies.from(analysis.get()).strategies().stream()
                 .filter(candidate -> candidate.code().equals(strategyCode)).findFirst().orElseThrow();
         UUID id = UUID.randomUUID();
         LocalDate start = LocalDate.now(SEOUL);
