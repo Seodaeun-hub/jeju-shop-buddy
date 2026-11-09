@@ -10,4 +10,6 @@ CREATE TABLE IF NOT EXISTS store_reviews (
 
 CREATE INDEX IF NOT EXISTS ix_store_reviews_store_date ON store_reviews (store_id, reviewed_on DESC, id);
 
+ALTER TABLE store_reviews ADD COLUMN IF NOT EXISTS model_topics VARCHAR(80);
+
 COMMIT;

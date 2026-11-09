@@ -5,7 +5,7 @@ import type { ReviewInsight } from '../api/shop'
 import { addDays } from '../data/shop'
 import type { Plan } from '../data/shop'
 import { findAfternoonOrderComplaints, incomingExampleReview } from '../data/reviews'
-import type { Review } from '../data/reviews'
+import type { Review, ReviewTopic } from '../data/reviews'
 
 export function ReviewInsights({ store, reviews, onReviews, onPlan }: {
   store: string
@@ -81,7 +81,7 @@ export function SavedReviewInsights({ auth, analysisId, store, onPlan }: {
   const [insight, setInsight] = useState<ReviewInsight>()
   const [date, setDate] = useState(() => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format())
   const [text, setText] = useState('')
-  const [confirmed, setConfirmed] = useState(false)
+  const [confirmed, setConfirmed] = useState<ReviewTopic>()
   const [pending, setPending] = useState<'review' | 'plan'>()
   const [error, setError] = useState('')
   const [loadError, setLoadError] = useState('')
@@ -115,12 +115,12 @@ export function SavedReviewInsights({ auth, analysisId, store, onPlan }: {
     }
   }
 
-  async function makePlan() {
-    if (pending || !confirmed || !insight?.repeated) return
+  async function makePlan(topic: ReviewTopic) {
+    if (pending || confirmed !== topic) return
     setPending('plan')
     setError('')
     try {
-      const plan = await createReviewPlan(auth, analysisId)
+      const plan = await createReviewPlan(auth, analysisId, topic)
       onPlan(toPlan(plan, store))
     } catch (error) {
       setError(error instanceof Error ? error.message : '개선 계획을 저장할 수 없어요.')
@@ -140,23 +140,24 @@ export function SavedReviewInsights({ auth, analysisId, store, onPlan }: {
     </form>
     {error && <p className="error" role="alert">{error}</p>}
     {insight ? <>
-      <p className="review-count" role="status">
-        등록된 리뷰 {insight.total}건 중 <strong>{insight.evidence.length}건</strong>에서 오후 주문 안내가 헷갈렸다는 의견이 나왔어요.
-      </p>
-      {insight.evidence.length > 0 && <details>
-        <summary>해당 의견 {insight.evidence.length}건 보기</summary>
-        <ul className="review-evidence">{insight.evidence.map((review) => <li key={review.id}>
-          <time dateTime={review.date}>{review.date}</time><span>{review.text}</span>
-        </li>)}</ul>
-      </details>}
-      {insight.repeated && <div className="review-action">
-        <h3>오후 식사 주문이 가능하다면 안내를 추가해보세요</h3>
-        <p>매장 입구와 지도에 실제 주문 가능 시간과 메뉴를 적어요.</p>
-        <label><input type="checkbox" checked={confirmed} disabled={!!pending} onChange={(event) => setConfirmed(event.target.checked)} /> 오후 2~5시에도 식사 주문을 받아요.</label>
-        <button type="button" className="button secondary small" disabled={!confirmed || !!pending} onClick={() => void makePlan()}>
-          {pending === 'plan' ? '개선 계획 저장 중…' : '안내 개선 계획 만들기'}
+      <p role="status">등록된 리뷰 {insight.total}건</p>
+      {insight.topics.length === 0 && <p className="muted">같은 불편이 두 건 이상 나오면 개선 조치를 보여드려요.</p>}
+      {insight.topics.map((issue) => <section key={issue.topic} className="review-action" aria-label={issue.label}>
+        <h3>{issue.label} · {issue.evidence.length}건</h3>
+        <details>
+          <summary>근거 리뷰 {issue.evidence.length}건 보기</summary>
+          <ul className="review-evidence">{issue.evidence.map((review) => <li key={review.id}>
+            <time dateTime={review.date}>{review.date}</time><span>{review.text}</span>
+          </li>)}</ul>
+        </details>
+        <p><strong>{issue.title}</strong> · {issue.action}</p>
+        <label><input type="checkbox" checked={confirmed === issue.topic} disabled={!!pending}
+          onChange={(event) => setConfirmed(event.target.checked ? issue.topic : undefined)} /> {issue.confirmation}</label>
+        <button type="button" className="button secondary small" disabled={confirmed !== issue.topic || !!pending}
+          onClick={() => void makePlan(issue.topic)}>
+          {pending === 'plan' && confirmed === issue.topic ? '개선 계획 저장 중…' : '개선 계획 만들기'}
         </button>
-      </div>}
+      </section>)}
     </> : loadError ? <div>
       <p className="error" role="alert">{loadError}</p>
       <button type="button" className="button secondary small" onClick={() => {

@@ -196,7 +196,7 @@ export function Execution({ plan, onChange, onToggleChecklist, resultsTo }: {
         /> : needsPromotionInputs ? <section className="execution-material">
           <div className="ruled"><h2>혜택을 정하기 전에 확인할 자료</h2></div>
           <ul>{plan.missingInputs?.map((input) => <li key={input}>{input}</li>)}</ul>
-        </section> : <PromoDraft plan={plan} />}
+        </section> : (!plan.reviewTopic || plan.reviewTopic === 'AFTERNOON_ORDER') && <PromoDraft plan={plan} />}
         <section>
           <h2>실행 후 확인할 지표</h2>
           <p className="execution-metric">{plan.followUp}</p>

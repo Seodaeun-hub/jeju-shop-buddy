@@ -1,5 +1,5 @@
 import { exampleReviews } from './reviews'
-import type { Review } from './reviews'
+import type { Review, ReviewTopic } from './reviews'
 
 export type MonthlySales = { month: string; amount: number }
 export type TimeSeries = {
@@ -92,6 +92,7 @@ export type Plan = {
   salesResult?: SalesResult
   reviewAction?: true
   reviewEvidence?: Review[]
+  reviewTopic?: ReviewTopic
   remainingStock?: Record<string, { unit: string; quantity: string }>
   inventoryItems?: InventoryItem[]
   strategy: (typeof strategies)[number]['id']

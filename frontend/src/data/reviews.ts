@@ -1,3 +1,5 @@
+export type ReviewTopic = 'AFTERNOON_ORDER' | 'PARKING' | 'WAIT_TIME'
+
 export type Review = { id: string; date: string; text: string }
 
 export const exampleReviews: Review[] = [

@@ -44,10 +44,11 @@ class ExecutionPlanWriter {
     }
 
     @Transactional
-    public Plan createReviewPlan(UUID analysisId, StoreReviewService.Insight insight) {
-        var strategy = new Suggestion("OUTREACH", "오후 식사 주문 안내 개선", "RECOMMENDED",
-                "등록된 리뷰 중 " + insight.evidence().size() + "건에서 오후 주문 안내가 헷갈렸다는 의견이 나왔어요.",
-                List.of(), List.of(), "같은 요일·오후 2~5시의 하루 평균 결제 건수를 비교해요.", insight.evidence());
+    public Plan createReviewPlan(UUID analysisId, StoreReviewService.TopicInsight insight) {
+        var topic = insight.topic();
+        var strategy = new Suggestion("OUTREACH", topic.title, "RECOMMENDED",
+                "등록된 리뷰 " + insight.evidence().size() + "건에서 " + topic.label + " 관련 의견이 나왔어요.",
+                List.of(), List.of(), topic.followUp, insight.evidence(), topic);
         return persist(analysisId, strategy, new Conditions(1, 0L, "STORE_NOTICE"));
     }
 
@@ -130,11 +131,10 @@ class ExecutionPlanWriter {
 
     private static List<ChecklistItem> checklistFor(Suggestion strategy, Conditions conditions,
                                                      LocalDate start, LocalDate end) {
-        if (strategy.reviewEvidence() != null) {
-            return List.of(item("오후에 주문받는 시간과 메뉴 확인하기", start),
-                    item("안내 문구 확인하기", start.plusDays(1)),
-                    item("매장 입구와 지도에 주문 안내 추가하기", start.plusDays(2)),
-                    item("오후 2~5시 결제 건수 확인하기", end));
+        if (strategy.reviewTopic() != null) {
+            var tasks = strategy.reviewTopic().checklist;
+            return List.of(item(tasks.get(0), start), item(tasks.get(1), start.plusDays(1)),
+                    item(tasks.get(2), start.plusDays(2)), item(tasks.get(3), end));
         }
         if (strategy.status().equals("NEEDS_INPUT")) {
             var items = new ArrayList<ChecklistItem>();

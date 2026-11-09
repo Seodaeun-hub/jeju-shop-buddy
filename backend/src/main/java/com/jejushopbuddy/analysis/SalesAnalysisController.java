@@ -113,16 +113,24 @@ class SalesAnalysisController {
         var id = reviewAnalysisId(analysisId);
         var analysis = reader.find(id, owner.getName());
         if (analysis.isEmpty()) return reviewAnalysisNotFound();
-        fields(body, Set.of("confirmed"), null);
-        if (!body.path("confirmed").isBoolean() || !body.path("confirmed").booleanValue()) {
-            throw invalid("REVIEW_ACTION_UNCONFIRMED", "오후 주문 가능 여부를 확인해 주세요.", "confirmed");
+        fields(body, Set.of("topic", "confirmed"), null);
+        var topicValue = body.get("topic");
+        ReviewTopic topic;
+        try {
+            topic = topicValue == null ? ReviewTopic.AFTERNOON_ORDER : ReviewTopic.valueOf(topicValue.asText());
+        } catch (IllegalArgumentException failure) {
+            throw invalid("INVALID_REVIEW_TOPIC", "리뷰 개선 주제를 확인해 주세요.", "topic");
         }
-        var insight = reviews.insight(analysis.get().storeId());
-        if (!insight.repeated()) {
+        if (!body.path("confirmed").isBoolean() || !body.path("confirmed").booleanValue()) {
+            throw invalid("REVIEW_ACTION_UNCONFIRMED", "개선 조치를 진행할 수 있는지 확인해 주세요.", "confirmed");
+        }
+        var insight = reviews.insight(analysis.get().storeId()).topics().stream()
+                .filter(candidate -> candidate.topic() == topic).findFirst();
+        if (insight.isEmpty()) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(new ApiError("REVIEW_PATTERN_NOT_FOUND", "같은 불편이 담긴 리뷰가 두 건 이상 필요해요.", null));
         }
-        return ResponseEntity.status(HttpStatus.CREATED).body(planWriter.createReviewPlan(id, insight));
+        return ResponseEntity.status(HttpStatus.CREATED).body(planWriter.createReviewPlan(id, insight.get()));
     }
 
     private static UUID reviewAnalysisId(String value) {

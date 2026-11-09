@@ -97,10 +97,10 @@ final class SalesStrategies {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record Suggestion(String code, String title, String status, String reason, List<Evidence> evidence,
-                      List<String> missingInputs, String followUp, List<StoreReviewService.Review> reviewEvidence) {
+                      List<String> missingInputs, String followUp, List<StoreReviewService.Review> reviewEvidence, ReviewTopic reviewTopic) {
         Suggestion(String code, String title, String status, String reason, List<Evidence> evidence,
                    List<String> missingInputs, String followUp) {
-            this(code, title, status, reason, evidence, missingInputs, followUp, null);
+            this(code, title, status, reason, evidence, missingInputs, followUp, null, null);
         }
     }
 
