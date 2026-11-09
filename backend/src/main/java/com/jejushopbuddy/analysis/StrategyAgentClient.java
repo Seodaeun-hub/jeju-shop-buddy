@@ -16,6 +16,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
@@ -48,42 +49,89 @@ final class StrategyAgentClient {
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).build();
     private final ObjectMapper json;
     private final JejuMarketContext market;
-    private final URI endpoint;
+    private final String baseUrl;
 
     StrategyAgentClient(ObjectMapper json, JejuMarketContext market,
                         @Value("${shop-buddy.strategy-agent-url:}") String baseUrl) {
         this.json = json;
         this.market = market;
-        this.endpoint = baseUrl.isBlank() ? null
-                : URI.create(baseUrl.strip().replaceFirst("/+$", "") + "/internal/strategy-recommendations");
+        this.baseUrl = baseUrl.strip().replaceFirst("/+$", "");
     }
 
     Optional<Generated> recommend(AnalysisResponse analysis) {
-        if (endpoint == null) return Optional.empty();
+        if (baseUrl.isEmpty()) return Optional.empty();
         try {
             var input = input(analysis);
             var facts = new LinkedHashMap<String, Fact>();
             input.evidence().forEach(fact -> facts.put(fact.id(), fact));
             String fingerprint = fingerprint(json.writeValueAsString(input));
-            var request = HttpRequest.newBuilder(endpoint).timeout(Duration.ofSeconds(13))
+            var request = new AgentRequest(VERSION, analysis.id(), fingerprint, input);
+            return post("/internal/strategy-recommendations", request, AgentResponse.class)
+                    .map(result -> new Generated(fingerprint, mapResponse(analysis, fingerprint, input.strategies(), facts, result)));
+        } catch (JacksonException | IllegalArgumentException error) {
+            LOG.debug("Strategy Agent unavailable or invalid ({})", error.getClass().getSimpleName());
+            return Optional.empty();
+        }
+    }
+
+    Optional<GuideResponse> executionGuide(AnalysisResponse analysis, Suggestion strategy, String channel) {
+        if (baseUrl.isEmpty()) return Optional.empty();
+        var store = market.forStore(analysis.storeId(), analysis.beforeMonth(), analysis.afterMonth());
+        var focus = strategy.evidence().stream()
+                .filter(item -> "TIME_SERIES".equals(item.source()) && hasText(item.label())
+                        && item.before().compareTo(item.after()) > 0)
+                .max(Comparator.comparing(item -> item.before().subtract(item.after())))
+                .map(item -> new GuideFocus(item.label(), item.metric())).orElse(null);
+        var request = new GuideRequest(VERSION, strategy.code(), store.industryCode(), channel, focus, "UNKNOWN");
+        return post("/internal/execution-guide", request, GuideResponse.class).filter(StrategyAgentClient::validGuide);
+    }
+
+    private <T> Optional<T> post(String path, Object payload, Class<T> type) {
+        try {
+            var request = HttpRequest.newBuilder(URI.create(baseUrl + path)).timeout(Duration.ofSeconds(13))
                     .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(
-                            json.writeValueAsString(new AgentRequest(VERSION, analysis.id(), fingerprint, input))))
+                    .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(payload)))
                     .build();
             var response = http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (response.statusCode() != 200) {
-                LOG.debug("Strategy Agent returned HTTP {}", response.statusCode());
+                LOG.debug("Strategy Agent returned HTTP {} for {}", response.statusCode(), path);
                 return Optional.empty();
             }
-            var result = json.readValue(response.body(), AgentResponse.class);
-            return Optional.of(new Generated(fingerprint, mapResponse(analysis, fingerprint, input.strategies(), facts, result)));
+            return Optional.ofNullable(json.readValue(response.body(), type));
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
             return Optional.empty();
         } catch (IOException | JacksonException | IllegalArgumentException error) {
-            LOG.debug("Strategy Agent unavailable or invalid ({})", error.getClass().getSimpleName());
+            LOG.debug("Strategy Agent unavailable for {} ({})", path, error.getClass().getSimpleName());
             return Optional.empty();
         }
+    }
+
+    private static boolean validGuide(GuideResponse guide) {
+        if (!VERSION.equals(guide.schemaVersion()) || guide.status() == null
+                || !Set.of("OK", "NO_RELEVANT_GUIDE", "CURATED_FALLBACK").contains(guide.status())
+                || guide.steps() == null || guide.sources() == null) return false;
+        var sourceIds = new HashSet<String>();
+        for (var source : guide.sources()) {
+            if (source == null || !hasText(source.id()) || !sourceIds.add(source.id())
+                    || !hasText(source.title()) || !hasText(source.url())) return false;
+            try {
+                var url = URI.create(source.url());
+                if (!"https".equals(url.getScheme()) || !"help.naver.com".equals(url.getHost())
+                        || url.getUserInfo() != null) return false;
+            } catch (IllegalArgumentException error) {
+                return false;
+            }
+        }
+        var cited = new HashSet<String>();
+        for (var step : guide.steps()) {
+            if (step == null || !hasText(step.text()) || step.sourceIds() == null) return false;
+            boolean official = "OFFICIAL_GUIDE".equals(step.kind());
+            if ((!official && !"STORE_CHECK".equals(step.kind())) || official == step.sourceIds().isEmpty()
+                    || !sourceIds.containsAll(step.sourceIds())) return false;
+            cited.addAll(step.sourceIds());
+        }
+        return sourceIds.equals(cited) && ("NO_RELEVANT_GUIDE".equals(guide.status()) == sourceIds.isEmpty());
     }
 
     String fingerprintFor(AnalysisResponse analysis) {
@@ -226,4 +274,12 @@ final class StrategyAgentClient {
                              List<String> missingInputs, String nextAction, String followUp) {}
 
     record Generated(String inputFingerprint, Response response) {}
+
+    private record GuideFocus(String label, String metric) {}
+    private record GuideRequest(String schemaVersion, String strategyCode, String industryCode, String channel,
+                                @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.ALWAYS)
+                                GuideFocus focus, String naverReservationOrOrder) {}
+    record GuideResponse(String schemaVersion, String status, String message, List<GuideStep> steps, List<GuideSource> sources) {}
+    record GuideStep(String kind, String text, String when, List<String> sourceIds) {}
+    record GuideSource(String id, String title, String publisher, String url, int revision) {}
 }

@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "1.0",
+  "documents": [
+    {
+      "documentId": "NAVER_PLACE_HOURS",
+      "revision": 1,
+      "publisher": "네이버 스마트플레이스 사업주 고객센터",
+      "title": "업체 휴무일, 영업시간 수정 방법",
+      "url": "https://help.naver.com/service/30026/contents/20380?lang=ko&osType=PC",
+      "reviewedOn": "2026-11-09",
+      "active": true,
+      "chunks": [
+        {
+          "chunkId": "NAVER_PLACE_HOURS#edit",
+          "strategyCodes": [
+            "OUTREACH"
+          ],
+          "industryCodes": [
+            "KOREAN_RESTAURANT"
+          ],
+          "channel": "NAVER",
+          "keywords": [
+            "영업시간",
+            "휴게시간",
+            "라스트오더",
+            "주문 안내"
+          ],
+          "condition": "ALWAYS",
+          "summary": "사업주가 내 업체의 정보 수정에서 공개 영업시간을 관리한다. 음식점은 라스트오더를 설정할 수 있다.",
+          "action": "네이버에 매장을 등록했다면 스마트플레이스 내 업체의 정보 수정에서 영업시간, 휴게시간, 라스트오더를 실제 운영과 대조해요."
+        }
+      ]
+    },
+    {
+      "documentId": "NAVER_ORDER_HOURS",
+      "revision": 1,
+      "publisher": "네이버 스마트플레이스 사업주 고객센터",
+      "title": "예약/주문 브레이크 타임 설정 방법",
+      "url": "https://help.naver.com/service/30026/contents/20700?lang=ko&osType=COMMONOS",
+      "reviewedOn": "2026-11-09",
+      "active": true,
+      "chunks": [
+        {
+          "chunkId": "NAVER_ORDER_HOURS#schedule",
+          "strategyCodes": [
+            "OUTREACH"
+          ],
+          "industryCodes": [
+            "KOREAN_RESTAURANT"
+          ],
+          "channel": "NAVER",
+          "keywords": [
+            "예약",
+            "주문",
+            "브레이크 타임",
+            "운영시간"
+          ],
+          "condition": "USES_NAVER_RESERVATION_OR_ORDER",
+          "summary": "예약이나 주문 서비스의 운영시간과 휴게시간은 해당 서비스 설정에서 관리한다. 설정 항목은 상품 유형에 따라 달라진다.",
+          "action": "스마트플레이스의 예약·주문 관리에서 해당 상품의 운영시간과 브레이크 타임을 실제 운영과 대조해요."
+        }
+      ]
+    }
+  ]
+}

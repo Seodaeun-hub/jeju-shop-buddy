@@ -2,6 +2,7 @@ import os
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
+from pydantic import BaseModel
 
 from .schemas import RecommendationDraft, StrategyRequest
 
@@ -50,18 +51,21 @@ followUp은 실행 후 어떤 조건에서
 """
 
 
-def generate_draft(request: StrategyRequest) -> RecommendationDraft:
+def structured_model(schema: type[BaseModel]):
     key = os.getenv("STRATEGY_AI_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not key:
         raise ValueError("strategy model credentials are missing")
 
-    model = ChatOpenAI(
+    return ChatOpenAI(
         model=os.getenv("STRATEGY_AI_MODEL", "gpt-4.1-mini"),
         api_key=key,
         timeout=10.0,
         max_retries=0,
-    ).with_structured_output(RecommendationDraft, method="json_schema", strict=True)
-    return model.invoke([
+    ).with_structured_output(schema, method="json_schema", strict=True)
+
+
+def generate_draft(request: StrategyRequest) -> RecommendationDraft:
+    return structured_model(RecommendationDraft).invoke([
         SystemMessage(content=SYSTEM_PROMPT),
         HumanMessage(content=request.model_dump_json(exclude_none=False)),
     ])

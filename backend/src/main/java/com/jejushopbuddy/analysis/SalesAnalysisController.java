@@ -95,6 +95,38 @@ class SalesAnalysisController {
                 .orElseGet(() -> salesStrategies.from(saved)));
     }
 
+    @PostMapping(path = "/api/analyses/{analysisId}/execution-guide", consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<?> executionGuide(@PathVariable String analysisId, @RequestBody JsonNode body, Principal owner) {
+        UUID id = parseId(analysisId, "INVALID_ANALYSIS_ID", "분석 ID 형식을 확인해 주세요.", "analysisId");
+        fields(body, Set.of("strategyCode", "channel", "recommendationId"), null);
+        var code = body.path("strategyCode");
+        if (!code.isString() || !"OUTREACH".equals(code.stringValue())) {
+            throw invalid("INVALID_STRATEGY_CODE", "주문 안내 점검 전략을 선택해 주세요.", "strategyCode");
+        }
+        var channel = body.path("channel");
+        if (!channel.isString() || !Set.of("NAVER", "IN_STORE").contains(channel.stringValue())) {
+            throw invalid("INVALID_GUIDE_CHANNEL", "네이버 안내 또는 매장 안내를 선택해 주세요.", "channel");
+        }
+        var recommendationId = readRecommendationId(body);
+        var analysis = reader.find(id, owner.getName());
+        if (analysis.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new ApiError("ANALYSIS_NOT_FOUND", "매출 분석을 찾을 수 없어요.", null));
+        }
+        var saved = analysis.get();
+        var strategy = recommendationId == null
+                ? salesStrategies.from(saved).strategies().stream().filter(item -> item.code().equals(code.stringValue()))
+                    .findFirst().orElseThrow()
+                : recommendations.select(saved, recommendationId, code.stringValue());
+        var guide = strategyAgent.executionGuide(saved, strategy, channel.stringValue());
+        if (guide.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(new ApiError("GUIDE_UNAVAILABLE", "실행 가이드를 불러올 수 없어요. 잠시 후 다시 시도해 주세요.", null));
+        }
+        return ResponseEntity.ok(guide.get());
+    }
+
     @GetMapping("/api/analyses/{analysisId}/reviews")
     ResponseEntity<?> reviewInsights(@PathVariable String analysisId, Principal owner) {
         var analysis = reader.find(reviewAnalysisId(analysisId), owner.getName());
@@ -324,18 +356,18 @@ class SalesAnalysisController {
         }
         String strategyCode = code.stringValue();
         var conditions = planConditions(body.get("conditions"), strategyCode);
-        var recommendation = body.get("recommendationId");
-        UUID recommendationId = null;
-        if (recommendation != null) {
-            recommendationId = parseId(recommendation.isString() ? recommendation.stringValue() : "",
-                    "INVALID_RECOMMENDATION_ID", "추천 ID 형식을 확인해 주세요.", "recommendationId");
-        }
-        var result = planWriter.create(id, owner.getName(), strategyCode, conditions, recommendationId);
+        var result = planWriter.create(id, owner.getName(), strategyCode, conditions, readRecommendationId(body));
         if (result.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(new ApiError("ANALYSIS_NOT_FOUND", "매출 분석을 찾을 수 없어요.", null));
         }
         return ResponseEntity.status(HttpStatus.CREATED).body(result.get());
+    }
+
+    private static UUID readRecommendationId(JsonNode body) {
+        var recommendation = body.get("recommendationId");
+        return recommendation == null ? null : parseId(recommendation.isString() ? recommendation.stringValue() : "",
+                "INVALID_RECOMMENDATION_ID", "추천 ID 형식을 확인해 주세요.", "recommendationId");
     }
 
     @ExceptionHandler(StrategyRecommendations.Unavailable.class)
