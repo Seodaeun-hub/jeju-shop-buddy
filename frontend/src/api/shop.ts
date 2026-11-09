@@ -145,6 +145,21 @@ export function generateRecommendation(auth: string, id: string, signal: AbortSi
   return request<StrategyResponse>(`/api/analyses/${encodeURIComponent(id)}/recommendations`, auth, 'POST', undefined, signal)
 }
 
+export type ExecutionGuideChannel = 'NAVER' | 'IN_STORE'
+
+export type ExecutionGuide = {
+  status: 'OK' | 'NO_RELEVANT_GUIDE' | 'CURATED_FALLBACK'
+  message: string | null
+  steps: { kind: 'STORE_CHECK' | 'OFFICIAL_GUIDE'; text: string; when: string | null; sourceIds: string[] }[]
+  sources: { id: string; title: string; publisher: string; url: string; revision: number }[]
+}
+
+export function fetchExecutionGuide(auth: string, id: string, channel: ExecutionGuideChannel,
+  recommendationId: string | undefined, signal: AbortSignal) {
+  return request<ExecutionGuide>(`/api/analyses/${encodeURIComponent(id)}/execution-guide`, auth, 'POST',
+    { strategyCode: 'OUTREACH', channel, recommendationId }, signal)
+}
+
 export function createPlan(auth: string, id: string, strategyCode: StrategyCode, conditions: PlanConditions, recommendationId?: string) {
   return request<SavedPlan>(`/api/analyses/${encodeURIComponent(id)}/plans`, auth, 'POST', { strategyCode, conditions, recommendationId })
 }

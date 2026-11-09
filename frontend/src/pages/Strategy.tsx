@@ -7,6 +7,7 @@ import { Citrus, PageTitle } from '../components/ui'
 import { addDays, changeRate, formatNumber, formatRate, monthLabel, strategies, won } from '../data/shop'
 import { bsiSource, marketSource } from '../data/marketSources'
 import { formatEvidence } from '../data/strategyEvidence'
+import { ExecutionGuidePanel } from '../components/ExecutionGuidePanel'
 import type { Analysis, Plan, TimeSeries } from '../data/shop'
 import '../styles/strategy.css'
 
@@ -253,6 +254,9 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
               {!!card.missingInputs?.length && <><dt>필요한 자료</dt><dd>{card.missingInputs.join(' · ')}</dd></>}
               {selectedCard && <><dt>실행 후 확인</dt><dd>{card.followUp}</dd></>}
             </dl>
+            {saved && id === 'outreach' && <ExecutionGuidePanel
+              key={saved.response.recommendationId ?? saved.analysisId}
+              auth={saved.auth} analysisId={saved.analysisId} recommendationId={saved.response.recommendationId} />}
           </div>
         })}
         <Link className="strategy-back" to={backTo}>← 매출 분석 다시 보기</Link>
