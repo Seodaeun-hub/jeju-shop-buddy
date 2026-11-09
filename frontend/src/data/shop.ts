@@ -104,6 +104,7 @@ export type Plan = {
   endDate: string
   timeLabel?: string
   followUp: string
+  recommendation?: { reason: string; evidence: string[]; contextEvidence: string[] }
   budget: number
   channel: string
   tasks: { id?: string; label: string; date: string }[]

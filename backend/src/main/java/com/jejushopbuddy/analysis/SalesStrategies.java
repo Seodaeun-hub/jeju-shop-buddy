@@ -24,7 +24,7 @@ final class SalesStrategies {
         long beforeAmount = amountFor(analysis, analysis.beforeMonth());
         long afterAmount = amountFor(analysis, analysis.afterMonth());
         var monthly = new Evidence("MONTHLY_SALES", "AMOUNT", null, beforeAmount, afterAmount);
-        var context = marketContext.forStore(analysis.storeId(), analysis.beforeMonth(), analysis.afterMonth());
+        var context = marketContext.forStore(analysis.storeId(), analysis.beforeMonth(), analysis.afterMonth()).context();
         var series = analysis.timeSeries();
         Evidence decline = series == null ? null : series.rows().stream()
                 .filter(slot -> slot.before() > slot.after())
@@ -78,7 +78,7 @@ final class SalesStrategies {
                 "확정 발주량과 실행 후 남은 재고를 같은 단위로 기록해요.");
 
         return new Response(analysis.id(), analysis.beforeMonth(), analysis.afterMonth(),
-                List.of(outreach, promotion, inventory));
+                List.of(outreach, promotion, inventory), "RULES", List.of());
     }
 
     private static String percent(BigDecimal before, BigDecimal after) {
@@ -86,21 +86,46 @@ final class SalesStrategies {
         return rate.toPlainString() + "%";
     }
 
-    private static long amountFor(AnalysisResponse analysis, String month) {
+    static long amountFor(AnalysisResponse analysis, String month) {
         return analysis.monthlySales().stream()
                 .filter(sale -> sale.month().equals(month))
                 .mapToLong(MonthlySale::amount)
                 .findFirst().orElseThrow();
     }
 
-    record Response(UUID analysisId, String beforeMonth, String afterMonth, List<Suggestion> strategies) {}
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record Response(UUID analysisId, String beforeMonth, String afterMonth, List<Suggestion> strategies,
+                    String recommendationSource, List<Evidence> contextEvidence, UUID recommendationId) {
+        Response(UUID analysisId, String beforeMonth, String afterMonth, List<Suggestion> strategies,
+                 String recommendationSource, List<Evidence> contextEvidence) {
+            this(analysisId, beforeMonth, afterMonth, strategies, recommendationSource, contextEvidence, null);
+        }
+
+        Response withId(UUID id) {
+            return new Response(analysisId, beforeMonth, afterMonth, strategies, recommendationSource, contextEvidence, id);
+        }
+    }
+
+    record RecommendationContext(UUID id, String beforeMonth, String afterMonth, List<Evidence> contextEvidence) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record Suggestion(String code, String title, String status, String reason, List<Evidence> evidence,
-                      List<String> missingInputs, String followUp, List<StoreReviewService.Review> reviewEvidence, ReviewTopic reviewTopic) {
+                      List<String> missingInputs, String followUp, List<StoreReviewService.Review> reviewEvidence,
+                      ReviewTopic reviewTopic, String nextAction, RecommendationContext recommendation) {
         Suggestion(String code, String title, String status, String reason, List<Evidence> evidence,
                    List<String> missingInputs, String followUp) {
-            this(code, title, status, reason, evidence, missingInputs, followUp, null, null);
+            this(code, title, status, reason, evidence, missingInputs, followUp, null, null, null, null);
+        }
+
+        Suggestion(String code, String title, String status, String reason, List<Evidence> evidence,
+                   List<String> missingInputs, String followUp, List<StoreReviewService.Review> reviewEvidence,
+                   ReviewTopic reviewTopic) {
+            this(code, title, status, reason, evidence, missingInputs, followUp, reviewEvidence, reviewTopic, null, null);
+        }
+
+        Suggestion withRecommendation(RecommendationContext context) {
+            return new Suggestion(code, title, status, reason, evidence, missingInputs, followUp,
+                    reviewEvidence, reviewTopic, nextAction, context);
         }
     }
 

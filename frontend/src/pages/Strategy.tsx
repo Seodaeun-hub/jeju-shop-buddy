@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router'
-import { createPlan, fetchStrategies, strategyIds, toPlan } from '../api/shop'
+import { createPlan, generateRecommendation, strategyIds, toPlan } from '../api/shop'
 import type { SavedStrategy, StrategyEvidence, StrategyResponse } from '../api/shop'
 import { Citrus, PageTitle } from '../components/ui'
 import { addDays, changeRate, formatNumber, formatRate, monthLabel, strategies, won } from '../data/shop'
 import { bsiSource, marketSource } from '../data/marketSources'
+import { formatEvidence } from '../data/strategyEvidence'
 import type { Analysis, Plan, TimeSeries } from '../data/shop'
 import '../styles/strategy.css'
 
@@ -16,23 +17,9 @@ type StrategyCard = {
   evidence?: { text: string; source: StrategyEvidence['source'] }[]
   reason: string
   followUp: string
+  nextAction?: string
   status?: SavedStrategy['status']
   missingInputs?: string[]
-}
-
-function formatEvidence(item: StrategyEvidence, beforeMonth: string, afterMonth: string) {
-  if (item.source === 'MONTHLY_SALES') {
-    return `월별 매출 · ${monthLabel(beforeMonth)} ${won(item.before)} → ${monthLabel(afterMonth)} ${won(item.after)}`
-  }
-  if (item.source === 'MARKET_CARD_SALES') {
-    return `같은 읍·면·동·업종 카드 이용액 · ${monthLabel(beforeMonth)} ${won(item.before)} → ${monthLabel(afterMonth)} ${won(item.after)}`
-  }
-  if (item.source === 'JEJU_BSI') {
-    return `제주 전체 소상공인 체감 BSI · ${monthLabel(beforeMonth)} ${item.before.toFixed(1)} → ${monthLabel(afterMonth)} ${item.after.toFixed(1)}`
-  }
-  const unit = item.metric === 'COUNT' ? '결제 건수' : '매출액'
-  const format = item.metric === 'COUNT' ? (value: number) => `${formatNumber(value)}건` : won
-  return `${item.label} ${unit} · ${monthLabel(beforeMonth)} ${format(item.before)} → ${monthLabel(afterMonth)} ${format(item.after)}`
 }
 
 export function SavedStrategyPage({ auth, analysisId, data, backTo, onPlan }: {
@@ -48,7 +35,7 @@ export function SavedStrategyPage({ auth, analysisId, data, backTo, onPlan }: {
 
   useEffect(() => {
     const controller = new AbortController()
-    fetchStrategies(auth, analysisId, controller.signal).then((value) => {
+    generateRecommendation(auth, analysisId, controller.signal).then((value) => {
       if (!controller.signal.aborted) setResponse(value)
     }).catch((error: Error) => {
       if (!controller.signal.aborted) setError(error.message)
@@ -149,7 +136,8 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
           source: item.source,
           text: formatEvidence(item, saved.response.beforeMonth, saved.response.afterMonth),
         })),
-        reason: strategy.reason, followUp: strategy.followUp, status: strategy.status, missingInputs: strategy.missingInputs,
+        reason: strategy.reason, followUp: strategy.followUp, nextAction: strategy.nextAction,
+        status: strategy.status, missingInputs: strategy.missingInputs,
       },
     }))
     : strategies.map(({ id }) => ({ id, card: demo!.cards[id] }))
@@ -163,6 +151,8 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
   const mounted = useRef(false)
   const selected = cards.find(({ id }) => id === choice)?.card ?? cards[0].card
   const summary = demo?.summary ?? (cards.find(({ id }) => id === recommendation) ?? cards[0]).card.observation
+  const response = saved?.response
+  const bsi = response?.contextEvidence?.find(({ source }) => source === 'JEJU_BSI')
 
   useEffect(() => {
     mounted.current = true
@@ -184,7 +174,8 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
       try {
         const plan = await createPlan(saved.auth, saved.analysisId, selectedStrategy.code, choice === 'inventory'
           ? { durationWeeks }
-          : { durationWeeks, budgetWon: Number(budget), channel: channel === '인스타그램' ? 'INSTAGRAM' : 'STORE_NOTICE' })
+          : { durationWeeks, budgetWon: Number(budget), channel: channel === '인스타그램' ? 'INSTAGRAM' : 'STORE_NOTICE' },
+          saved.response.recommendationId)
         if (mounted.current) onPlan(toPlan(plan, data.store))
       } catch (error) {
         if (mounted.current) setError(error instanceof Error ? error.message : '실행 계획을 저장할 수 없어요.')
@@ -228,9 +219,15 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
     <section className="receipt summary-strip strategy-summary" aria-label="짝꿍이 찾은 변화">
       <Citrus stamp />
       <strong>짝꿍이 찾은 변화</strong>
+      {response?.recommendationSource && <span className="badge">
+        {response.recommendationSource === 'AGENT' ? 'AI 추천' : '기본 추천'}
+      </span>}
       <span className="strategy-summary-detail">{summary}</span>
       {demo?.change && <strong className="strategy-summary-change">{demo.change}</strong>}
     </section>
+    {response && bsi && <p className="strategy-summary-detail">
+      경기 참고 · {formatEvidence(bsi, response.beforeMonth, response.afterMonth)} · <a href={bsiSource}>소상공인시장진흥공단</a>
+    </p>}
     <form className="split planning strategy-layout" onSubmit={submit}>
       <fieldset className="strategy-options" disabled={saving}>
         <legend>어떤 전략을 해볼까요?</legend>
@@ -246,12 +243,13 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
             <dl className="reason strategy-evidence">
               <dt>확인한 변화</dt>
               <dd>{card.evidence && card.evidence.length > 1 ? <ul className="strategy-evidence-list">
-                {card.evidence.map(({ text, source }) => <li key={source}>{text}
+                {card.evidence.map(({ text, source }) => <li key={text}>{text}
                   {source === 'MARKET_CARD_SALES' && <> · <a href={marketSource}>제주데이터허브</a></>}
                   {source === 'JEJU_BSI' && <> · <a href={bsiSource}>소상공인시장진흥공단</a></>}
                 </li>)}
               </ul> : card.observation}</dd>
               <dt>{recommendation === id ? '추천 이유' : '제안 이유'}</dt><dd>{card.reason}</dd>
+              {card.nextAction && <><dt>먼저 할 일</dt><dd>{card.nextAction}</dd></>}
               {!!card.missingInputs?.length && <><dt>필요한 자료</dt><dd>{card.missingInputs.join(' · ')}</dd></>}
               {selectedCard && <><dt>실행 후 확인</dt><dd>{card.followUp}</dd></>}
             </dl>

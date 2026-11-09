@@ -31,17 +31,18 @@ class JejuMarketContext {
         return new Context(pair(amounts, beforeMonth, afterMonth), pair(data.jejuBsi(), beforeMonth, afterMonth));
     }
 
-    Context forStore(UUID storeId, String beforeMonth, String afterMonth) {
+    StoreContext forStore(UUID storeId, String beforeMonth, String afterMonth) {
         var store = jdbc.sql("""
                 SELECT a.name, s.industry_code, s.custom_industry_name
                 FROM stores s JOIN jeju_areas a ON a.code = s.area_code
                 WHERE s.id = :id
                 """)
                 .param("id", storeId)
-                .query((rs, row) -> new StoreKey(rs.getString("name"),
+                .query((rs, row) -> new StoreKey(rs.getString("name"), rs.getString("industry_code"),
                         data.industryNames().getOrDefault(rs.getString("industry_code"), rs.getString("custom_industry_name"))))
                 .single();
-        return lookup(store.area(), store.industry() == null ? "" : store.industry(), beforeMonth, afterMonth);
+        var context = lookup(store.area(), store.industry() == null ? "" : store.industry(), beforeMonth, afterMonth);
+        return new StoreContext(store.area(), store.industryCode(), context);
     }
 
     private static Pair pair(Map<String, BigDecimal> values, String beforeMonth, String afterMonth) {
@@ -50,7 +51,9 @@ class JejuMarketContext {
         return before == null || after == null ? null : new Pair(before, after);
     }
 
-    private record StoreKey(String area, String industry) {}
+    private record StoreKey(String area, String industryCode, String industry) {}
+
+    record StoreContext(String area, String industryCode, Context context) {}
 
     record Dataset(Map<String, Map<String, Map<String, BigDecimal>>> cardAmounts,
                    Map<String, BigDecimal> jejuBsi, Map<String, String> industryNames) {}

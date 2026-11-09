@@ -36,6 +36,8 @@ class SalesAnalysisController {
     private final SalesAnalysisWriter writer;
     private final SalesAnalysisReader reader;
     private final SalesStrategies salesStrategies;
+    private final StrategyAgentClient strategyAgent;
+    private final StrategyRecommendations recommendations;
     private final StoreReviewService reviews;
     private final ExecutionPlanWriter planWriter;
     private final ExecutionPlanReader planReader;
@@ -44,10 +46,14 @@ class SalesAnalysisController {
 
     SalesAnalysisController(SalesAnalysisWriter writer, SalesAnalysisReader reader,
                             ExecutionPlanWriter planWriter, ExecutionPlanReader planReader,
-                            ExecutionResultWriter resultWriter, ExecutionResultReader resultReader, SalesStrategies salesStrategies, StoreReviewService reviews) {
+                            ExecutionResultWriter resultWriter, ExecutionResultReader resultReader,
+                            SalesStrategies salesStrategies, StoreReviewService reviews, StrategyAgentClient strategyAgent,
+                            StrategyRecommendations recommendations) {
         this.writer = writer;
         this.reader = reader;
         this.salesStrategies = salesStrategies;
+        this.strategyAgent = strategyAgent;
+        this.recommendations = recommendations;
         this.reviews = reviews;
         this.planWriter = planWriter;
         this.planReader = planReader;
@@ -68,13 +74,25 @@ class SalesAnalysisController {
 
     @GetMapping(path = "/api/analyses/{analysisId}/strategies", produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<?> strategies(@PathVariable String analysisId, Principal owner) {
+        return strategyResponse(analysisId, owner, false);
+    }
+
+    @PostMapping(path = "/api/analyses/{analysisId}/recommendations", produces = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<?> generateRecommendation(@PathVariable String analysisId, Principal owner) {
+        return strategyResponse(analysisId, owner, true);
+    }
+
+    private ResponseEntity<?> strategyResponse(String analysisId, Principal owner, boolean save) {
         UUID id = parseId(analysisId, "INVALID_ANALYSIS_ID", "분석 ID 형식을 확인해 주세요.", "analysisId");
         var analysis = reader.find(id, owner.getName());
         if (analysis.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(new ApiError("ANALYSIS_NOT_FOUND", "매출 분석을 찾을 수 없어요.", null));
         }
-        return ResponseEntity.ok(salesStrategies.from(analysis.get()));
+        var saved = analysis.get();
+        return ResponseEntity.ok(strategyAgent.recommend(saved)
+                .map(generated -> save ? recommendations.save(generated) : generated.response())
+                .orElseGet(() -> salesStrategies.from(saved)));
     }
 
     @GetMapping("/api/analyses/{analysisId}/reviews")
@@ -299,19 +317,31 @@ class SalesAnalysisController {
             produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<?> createPlan(@PathVariable String analysisId, @RequestBody JsonNode body, Principal owner) {
         UUID id = parseId(analysisId, "INVALID_ANALYSIS_ID", "분석 ID 형식을 확인해 주세요.", "analysisId");
-        fields(body, Set.of("strategyCode", "conditions"), null);
+        fields(body, Set.of("strategyCode", "conditions", "recommendationId"), null);
         var code = body.get("strategyCode");
         if (code == null || !code.isString() || !Set.of("OUTREACH", "PROMOTION", "INVENTORY").contains(code.stringValue())) {
             throw invalid("INVALID_STRATEGY_CODE", "대응 전략을 선택해 주세요.", "strategyCode");
         }
         String strategyCode = code.stringValue();
         var conditions = planConditions(body.get("conditions"), strategyCode);
-        var result = planWriter.create(id, owner.getName(), strategyCode, conditions);
+        var recommendation = body.get("recommendationId");
+        UUID recommendationId = null;
+        if (recommendation != null) {
+            recommendationId = parseId(recommendation.isString() ? recommendation.stringValue() : "",
+                    "INVALID_RECOMMENDATION_ID", "추천 ID 형식을 확인해 주세요.", "recommendationId");
+        }
+        var result = planWriter.create(id, owner.getName(), strategyCode, conditions, recommendationId);
         if (result.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(new ApiError("ANALYSIS_NOT_FOUND", "매출 분석을 찾을 수 없어요.", null));
         }
         return ResponseEntity.status(HttpStatus.CREATED).body(result.get());
+    }
+
+    @ExceptionHandler(StrategyRecommendations.Unavailable.class)
+    ResponseEntity<ApiError> recommendationUnavailable() {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiError("RECOMMENDATION_UNAVAILABLE",
+                "추천이 바뀌었거나 만료됐어요. 화면을 새로고침해 추천을 다시 받아 주세요.", "recommendationId"));
     }
 
     private static ExecutionPlanWriter.Conditions planConditions(JsonNode node, String strategyCode) {

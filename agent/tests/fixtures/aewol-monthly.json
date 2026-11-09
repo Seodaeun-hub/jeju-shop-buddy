@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "1.0",
+  "analysisId": "a1000000-0000-4000-8000-000000000002",
+  "inputFingerprint": "aewol-monthly-example",
+  "store": {"area": "제주시 애월읍", "industryCode": "KOREAN_RESTAURANT"},
+  "period": {"beforeMonth": "2021-04", "afterMonth": "2021-05"},
+  "concern": "매출이 줄어서 어디부터 확인할지 모르겠어요.",
+  "availability": {
+    "monthlySales": "AVAILABLE",
+    "timeSeries": "MISSING",
+    "marketCardSales": "AVAILABLE",
+    "jejuBsi": "AVAILABLE"
+  },
+  "evidence": [
+    {"id": "e1", "type": "MONTHLY_SALES", "scope": "STORE", "source": "OWNER_INPUT", "unit": "KRW", "before": 32379500, "after": 29581000, "change": {"unit": "PERCENT", "value": -8.64}},
+    {"id": "e3", "type": "MARKET_CARD_SALES", "scope": "AREA_AND_INDUSTRY", "source": "JEJU_DATAHUB", "unit": "KRW", "before": 2049456994, "after": 2199885864, "change": {"unit": "PERCENT", "value": 7.34}},
+    {"id": "e4", "type": "JEJU_BSI", "scope": "JEJU", "source": "SEMAS_BSI", "unit": "INDEX", "before": 63.1, "after": 64.4, "change": {"unit": "INDEX_POINT", "value": 1.3}}
+  ],
+  "strategies": [
+    {"code": "OUTREACH", "status": "AVAILABLE", "missingInputs": []},
+    {"code": "PROMOTION", "status": "NEEDS_INPUT", "missingInputs": ["TIME_SERIES", "ITEM_PRICE_AND_ORDER_COST", "DISCOUNT_BUDGET"]},
+    {"code": "INVENTORY", "status": "NEEDS_INPUT", "missingInputs": ["ON_HAND_STOCK", "EXPECTED_USAGE", "INCOMING_STOCK"]}
+  ]
+}

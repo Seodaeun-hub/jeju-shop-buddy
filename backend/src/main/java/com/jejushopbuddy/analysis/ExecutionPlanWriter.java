@@ -23,23 +23,29 @@ class ExecutionPlanWriter {
     private final JdbcClient jdbc;
     private final SalesAnalysisReader reader;
     private final SalesStrategies salesStrategies;
+    private final StrategyRecommendations recommendations;
     private final ObjectMapper json;
 
-    ExecutionPlanWriter(JdbcClient jdbc, SalesAnalysisReader reader, ObjectMapper json, SalesStrategies salesStrategies) {
+    ExecutionPlanWriter(JdbcClient jdbc, SalesAnalysisReader reader, ObjectMapper json, SalesStrategies salesStrategies,
+                        StrategyRecommendations recommendations) {
         this.jdbc = jdbc;
         this.reader = reader;
         this.salesStrategies = salesStrategies;
+        this.recommendations = recommendations;
         this.json = json;
     }
 
     @Transactional(isolation = Isolation.REPEATABLE_READ)
-    public Optional<Plan> create(UUID analysisId, String ownerEmail, String strategyCode, Conditions conditions) {
+    public Optional<Plan> create(UUID analysisId, String ownerEmail, String strategyCode, Conditions conditions,
+                                 UUID recommendationId) {
         var analysis = reader.find(analysisId, ownerEmail);
         if (analysis.isEmpty()) {
             return Optional.empty();
         }
-        var strategy = salesStrategies.from(analysis.get()).strategies().stream()
-                .filter(candidate -> candidate.code().equals(strategyCode)).findFirst().orElseThrow();
+        var strategy = recommendationId == null
+                ? salesStrategies.from(analysis.get()).strategies().stream()
+                    .filter(candidate -> candidate.code().equals(strategyCode)).findFirst().orElseThrow()
+                : recommendations.select(analysis.get(), recommendationId, strategyCode);
         return Optional.of(persist(analysisId, strategy, conditions));
     }
 
@@ -149,9 +155,11 @@ class ExecutionPlanWriter {
         }
 
         String channel = conditions.channel().equals("INSTAGRAM") ? "인스타그램" : "매장";
-        var evidence = strategy.evidence().getFirst();
-        String check = evidence.label() == null ? "실제 주문 가능 시간과 현재 " + channel + " 안내 확인"
-                : evidence.label() + " 구간의 주문 가능 시간과 현재 " + channel + " 안내 확인";
+        var timeLabel = strategy.evidence().stream().filter(evidence -> evidence.source().equals("TIME_SERIES"))
+                .max(java.util.Comparator.comparing(evidence -> evidence.before().subtract(evidence.after())))
+                .map(SalesStrategies.Evidence::label).orElse(null);
+        String check = timeLabel == null ? "실제 주문 가능 시간과 현재 " + channel + " 안내 확인"
+                : timeLabel + " 구간의 주문 가능 시간과 현재 " + channel + " 안내 확인";
         return List.of(item(check, start),
                 item("안내가 다르면 수정할 문구 정리", start.plusDays(1)),
                 item("필요한 경우 " + channel + " 주문 안내 수정", start.plusDays(2)),

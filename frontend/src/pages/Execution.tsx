@@ -163,6 +163,18 @@ export function Execution({ plan, onChange, onToggleChecklist, resultsTo }: {
       <span className="execution-period">{dateRange} · {plan.duration}{!inventory && ` · 예산 한도 ${won(plan.budget)}`}</span>
       <span className="badge">{next === -1 ? '완료' : '진행 중'}</span>
     </section>
+    {plan.recommendation && <section className="receipt ruled-block" aria-label="저장된 AI 추천">
+      <h2>선택한 AI 추천</h2>
+      <dl className="reason">
+        <dt>추천 이유</dt><dd>{plan.recommendation.reason}</dd>
+        <dt>확인한 변화</dt>
+        <dd><ul>{plan.recommendation.evidence.map((item) => <li key={item}>{item}</li>)}</ul></dd>
+        {plan.recommendation.contextEvidence.length > 0 && <>
+          <dt>경기 참고</dt>
+          <dd><ul>{plan.recommendation.contextEvidence.map((item) => <li key={item}>{item}</li>)}</ul></dd>
+        </>}
+      </dl>
+    </section>}
     <div className="split planning execution-layout">
       <section>
         <div className="section-top ruled">

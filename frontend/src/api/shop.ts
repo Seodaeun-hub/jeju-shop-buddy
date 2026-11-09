@@ -1,5 +1,6 @@
 import type { Review, ReviewTopic } from '../data/reviews'
 import type { Analysis, MonthlySales, Plan, SalesResult, TimeSeries } from '../data/shop'
+import { formatEvidence } from '../data/strategyEvidence'
 
 export type Area = { code: string; name: string }
 export type StoreInput = {
@@ -110,11 +111,21 @@ export type SavedStrategy = {
   reviewTopic?: ReviewTopic
   missingInputs: string[]
   followUp: string
+  nextAction?: string
+  recommendation?: {
+    id: string
+    beforeMonth: string
+    afterMonth: string
+    contextEvidence: StrategyEvidence[]
+  }
 }
 export type StrategyResponse = {
   beforeMonth: string
   afterMonth: string
   strategies: SavedStrategy[]
+  recommendationSource?: 'AGENT' | 'RULES'
+  contextEvidence?: StrategyEvidence[]
+  recommendationId?: string
 }
 export type PlanConditions = { durationWeeks: number; budgetWon?: number; channel?: 'INSTAGRAM' | 'STORE_NOTICE' }
 type ChecklistItem = { id: string; title: string; dueDate: string; completed: boolean }
@@ -130,12 +141,12 @@ type SavedPlan = {
 
 export const strategyIds = { OUTREACH: 'outreach', PROMOTION: 'promotion', INVENTORY: 'inventory' } as const
 
-export function fetchStrategies(auth: string, id: string, signal: AbortSignal) {
-  return request<StrategyResponse>(`/api/analyses/${encodeURIComponent(id)}/strategies`, auth, 'GET', undefined, signal)
+export function generateRecommendation(auth: string, id: string, signal: AbortSignal) {
+  return request<StrategyResponse>(`/api/analyses/${encodeURIComponent(id)}/recommendations`, auth, 'POST', undefined, signal)
 }
 
-export function createPlan(auth: string, id: string, strategyCode: StrategyCode, conditions: PlanConditions) {
-  return request<SavedPlan>(`/api/analyses/${encodeURIComponent(id)}/plans`, auth, 'POST', { strategyCode, conditions })
+export function createPlan(auth: string, id: string, strategyCode: StrategyCode, conditions: PlanConditions, recommendationId?: string) {
+  return request<SavedPlan>(`/api/analyses/${encodeURIComponent(id)}/plans`, auth, 'POST', { strategyCode, conditions, recommendationId })
 }
 
 export function fetchPlan(auth: string, id: string, signal: AbortSignal) {
@@ -201,6 +212,7 @@ export function createReviewPlan(auth: string, id: string, topic: ReviewTopic) {
 
 export function toPlan(saved: SavedPlan, store: string): Plan {
   const { conditions, strategy, checklist } = saved
+  const context = strategy.recommendation
   return {
     id: saved.id,
     analysisId: saved.analysisId,
@@ -213,6 +225,11 @@ export function toPlan(saved: SavedPlan, store: string): Plan {
     endDate: saved.endDate,
     timeLabel: strategy.evidence.find(({ source }) => source === 'TIME_SERIES')?.label,
     followUp: strategy.followUp,
+    recommendation: context && {
+      reason: strategy.reason,
+      evidence: strategy.evidence.map((item) => formatEvidence(item, context.beforeMonth, context.afterMonth)),
+      contextEvidence: context.contextEvidence.map((item) => formatEvidence(item, context.beforeMonth, context.afterMonth)),
+    },
     missingInputs: strategy.missingInputs,
     reviewAction: strategy.reviewEvidence && (strategy.reviewTopic ?? 'AFTERNOON_ORDER') === 'AFTERNOON_ORDER' ? true : undefined,
     reviewTopic: strategy.reviewTopic,
