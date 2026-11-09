@@ -1,0 +1,25 @@
+# Local source datasets, demo workbook, and design drafts at the repository root.
+/*.csv
+/*.xls
+/*.xlsx
+/*.png
+
+# Local credentials and overrides.
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Java, Node.js, and Python build artifacts.
+target/
+node_modules/
+dist/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local editor and system files.
+.idea/
+.DS_Store
+Thumbs.db

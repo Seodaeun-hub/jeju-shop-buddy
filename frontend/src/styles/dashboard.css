@@ -1,0 +1,113 @@
+.dashboard.analysis-dashboard {
+  grid-template-columns: minmax(0, 1.95fr) minmax(0, 1fr);
+  gap: 1.6rem;
+}
+
+.analysis-dashboard > .dashboard-aside {
+  border-left-color: var(--rule);
+  padding-left: 1.6rem;
+}
+
+.metrics.dashboard-metrics {
+  margin-bottom: 0;
+  padding-bottom: 1rem;
+}
+
+.dashboard-metrics strong { font-variant-numeric: tabular-nums; }
+.dashboard-metrics strong.muted { font-size: 1rem; }
+.analysis-dashboard .ruled-block { border-bottom-color: var(--rule); }
+.dashboard-source { margin-top: .55rem; }
+.dashboard-ask { color: var(--orange); border-color: var(--orange); background: var(--sheet); }
+.dashboard-ask:hover { background: var(--peach); }
+.dashboard-months .chart-track > span:not(.earlier) { background: var(--orange); }
+
+.market-chart, .time-comparison { list-style: none; padding: 0; }
+.market-chart { display: grid; gap: .7rem; margin: 1rem 0 .3rem; }
+.market-chart li, .market-axis {
+  display: grid;
+  grid-template-columns: 8.75rem minmax(0, 1fr) 5rem;
+  gap: .6rem;
+  align-items: center;
+}
+.market-chart li > span:first-child { font-size: .91rem; font-weight: 700; }
+.market-chart li > strong { text-align: right; font-variant-numeric: tabular-nums; }
+.market-track {
+  position: relative;
+  height: 1.35rem;
+  background: linear-gradient(90deg, transparent calc(50% - .5px), var(--rule) calc(50% - .5px) calc(50% + .5px), transparent calc(50% + .5px)), #ede0cd;
+}
+.market-bar { position: absolute; height: 100%; }
+.market-bar.down { background: var(--orange); }
+.market-bar.up { background: var(--green); }
+.market-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-inline: 9.35rem 5.6rem;
+  font-size: .78rem;
+}
+
+.time-legend { display: flex; flex-wrap: wrap; gap: .8rem; justify-content: end; font-size: .82rem; }
+.time-legend span { display: inline-flex; align-items: center; gap: .35rem; }
+.time-legend span::before { content: ""; width: .85rem; height: .5rem; border-radius: 2px; background: var(--sand); }
+.time-legend span:last-child::before { background: var(--orange); }
+.time-comparison { margin: .55rem 0 .7rem; }
+.time-comparison li {
+  display: grid;
+  grid-template-columns: 7.35rem minmax(0, 1fr) 6.4rem;
+  gap: .55rem;
+  align-items: center;
+  padding: .45rem .55rem;
+}
+.time-comparison li.highlight { background: var(--pale-green); border-radius: 5px; }
+.time-comparison h3 { font-family: inherit; font-size: .9rem; font-weight: 800; overflow-wrap: anywhere; }
+.time-pair { display: grid; gap: .25rem; }
+.time-pair > div { display: grid; grid-template-columns: minmax(0, 1fr) 6.5em; align-items: center; gap: .4rem; }
+.time-pair strong { font-size: .82rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.time-track { border-left: 1px solid var(--rule); }
+.time-track > span { display: block; height: .76rem; border-radius: 0 2px 2px 0; background: var(--sand); }
+.time-pair > div:last-child .time-track > span { background: var(--orange); }
+.time-drop { justify-self: end; font-size: .89rem; overflow-wrap: anywhere; }
+
+.dashboard-receipt .section-top { border-bottom: 1px solid var(--rule); padding-bottom: .7rem; }
+.dashboard-summary { margin-top: .8rem; font-size: clamp(1.12rem, 2.05vw, 1.55rem); font-weight: 800; line-height: 1.45; word-break: keep-all; }
+.dashboard-summary strong { color: var(--orange); }
+.dashboard-bsi .bsi { font-size: clamp(1.8rem, 3.7vw, 2.85rem); line-height: 1.2; font-variant-numeric: tabular-nums; }
+.dashboard-bsi h2 { margin-bottom: .45rem; }
+.dashboard-question-preview .chip { text-align: left; }
+.dashboard-chat-heading { padding-bottom: .45rem; border-bottom: 1px solid var(--line); }
+.dashboard-chat-heading h2 { display: flex; align-items: center; gap: .3rem; }
+.dashboard-chat-figure { color: var(--green); background: var(--pale-green); padding: .35rem .45rem; border-radius: 4px; font-weight: 800; }
+.dashboard-next { min-height: 3.1rem; }
+
+@media (max-width: 800px) {
+  .dashboard.analysis-dashboard { grid-template-columns: minmax(0, 1fr); }
+  .analysis-dashboard > .dashboard-aside { border-left: 0; padding-left: 0; }
+}
+
+@media (max-width: 480px) {
+  .market-chart li { grid-template-columns: 5.5rem minmax(0, 1fr) 3.6rem; gap: .35rem; }
+  .market-chart li > span:first-child, .market-chart li > strong { font-size: .8rem; }
+  .market-axis { margin-inline: 5.85rem 3.95rem; }
+  .time-comparison li { grid-template-columns: 4.4rem minmax(0, 1fr) 3.3rem; gap: .35rem; padding-inline: .35rem; }
+  .time-pair > div { grid-template-columns: minmax(0, 1fr) 5.4em; gap: .25rem; }
+}
+
+.dashboard-reviews { display: grid; gap: .55rem; }
+.dashboard-reviews .section-top { margin-bottom: 0; flex-wrap: wrap; }
+.dashboard-reviews > button, .review-action button { justify-self: start; }
+.review-count strong { color: var(--green); }
+.review-latest { padding: .55rem .65rem; background: var(--pale-green); border-radius: 6px; }
+.review-latest strong { display: block; }
+.dashboard-reviews summary { cursor: pointer; color: var(--green); font-weight: 750; }
+.review-evidence { list-style: none; padding: 0; margin: .5rem 0 0; }
+.review-evidence li { display: grid; gap: .15rem; padding: .45rem 0; border-top: 1px solid var(--line); }
+.review-evidence time { font-size: .83rem; color: var(--muted); }
+.review-action { display: grid; gap: .45rem; border: 1px solid var(--line); border-radius: 6px; padding: .65rem; background: var(--sheet); }
+.review-action label { display: flex; align-items: center; gap: .45rem; font-weight: 750; cursor: pointer; }
+
+.bsi-chart { list-style: none; padding: 0; display: grid; gap: .45rem; }
+.bsi-chart li { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) 2.7rem; gap: .4rem; align-items: center; font-size: .85rem; }
+.bsi-chart li > strong { text-align: right; font-variant-numeric: tabular-nums; }
+.bsi-track { position: relative; display: block; height: .65rem; background: var(--sand); }
+.bsi-track > span { display: block; height: 100%; background: var(--green); }
+.bsi-track::after { content: ""; position: absolute; top: -2px; bottom: -2px; left: 50%; border-left: 1px solid var(--green); }
