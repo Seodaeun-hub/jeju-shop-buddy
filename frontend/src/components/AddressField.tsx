@@ -44,7 +44,7 @@ export function AddressField({ address, area, onChange }: {
       setResults(matches)
       setMessage(matches.length ? '가게 주소를 골라주세요.' : '검색 결과가 없어요. 주소를 확인해 주세요.')
     } catch {
-      if (!controller.signal.aborted) setMessage('주소 검색에 연결할 수 없어요. 입력한 주소로 월별 매출 분석을 먼저 시작할 수 있어요.')
+      if (!controller.signal.aborted) setMessage('주소 검색에 연결할 수 없어요. 주소를 직접 입력하고 아래에서 읍·면·동을 선택해 주세요.')
     } finally {
       if (!controller.signal.aborted) setLoading(false)
     }
@@ -53,7 +53,7 @@ export function AddressField({ address, area, onChange }: {
   return <div className="address-field">
     <label htmlFor="store-address">매장 주소</label>
     <div className="address-search">
-      <input id="store-address" required value={address} placeholder="도로명이나 지번을 입력하세요"
+      <input id="store-address" required maxLength={255} value={address} placeholder="도로명이나 지번을 입력하세요"
         onChange={(event) => {
           request.current?.abort()
           setLoading(false)

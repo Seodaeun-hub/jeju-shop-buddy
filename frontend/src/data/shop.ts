@@ -74,13 +74,16 @@ export type SalesPeriod = {
   start: string
   end: string
   days: number
-  amount: number
+  amount?: number
   count?: number
 }
 
 export type SalesResult = { before: SalesPeriod; after: SalesPeriod }
 
 export type Plan = {
+  id?: string
+  analysisId?: string
+  missingInputs?: string[]
   salesResult?: SalesResult
   remainingStock?: Record<string, { unit: string; quantity: string }>
   inventoryItems?: InventoryItem[]
@@ -95,6 +98,6 @@ export type Plan = {
   followUp: string
   budget: number
   channel: string
-  tasks: { label: string; date: string }[]
+  tasks: { id?: string; label: string; date: string }[]
   done: number[]
 }

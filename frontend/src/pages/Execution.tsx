@@ -120,9 +120,31 @@ function PromoDraft({ plan }: { plan: Plan }) {
   </section>
 }
 
-export function Execution({ plan, onChange }: { plan: Plan; onChange: (value: Plan) => void }) {
+export function Execution({ plan, onChange, onToggleChecklist, resultsTo }: {
+  plan: Plan
+  onChange: (value: Plan) => void
+  onToggleChecklist: (index: number, completed: boolean) => Promise<void>
+  resultsTo: string
+}) {
+  const [savingIndex, setSavingIndex] = useState<number>()
+  const [checklistError, setChecklistError] = useState('')
+
+  async function toggleChecklist(index: number, completed: boolean) {
+    if (savingIndex !== undefined) return
+    setSavingIndex(index)
+    setChecklistError('')
+    try {
+      await onToggleChecklist(index, completed)
+    } catch (error) {
+      setChecklistError(error instanceof Error ? error.message : '점검 상태를 저장할 수 없어요. 다시 시도해 주세요.')
+    } finally {
+      setSavingIndex(undefined)
+    }
+  }
+
   const next = plan.tasks.findIndex((_, index) => !plan.done.includes(index))
   const inventory = plan.strategy === 'inventory'
+  const needsPromotionInputs = plan.strategy === 'promotion' && !!plan.missingInputs?.length
   const dateRange = `${plan.startDate.replaceAll('-', '.')} ~ ${plan.endDate.replaceAll('-', '.')}`
 
   return <>
@@ -139,14 +161,17 @@ export function Execution({ plan, onChange }: { plan: Plan; onChange: (value: Pl
           <h2>실행 일정과 점검표</h2>
           <span className="badge" aria-live="polite">{plan.done.length} / {plan.tasks.length} 완료</span>
         </div>
-        <ul className="execution-checklist">{plan.tasks.map(({ label, date }, index) => <li key={label} className={next === index ? 'highlight' : ''}>
+        <ul className="execution-checklist">{plan.tasks.map(({ id, label, date }, index) => <li key={id ?? index} className={next === index ? 'highlight' : ''}>
           <label>
-            <input type="checkbox" checked={plan.done.includes(index)} onChange={(event) => onChange({ ...plan, done: event.target.checked ? [...plan.done, index] : plan.done.filter((item) => item !== index) })} />
+            <input type="checkbox" checked={plan.done.includes(index)} disabled={savingIndex !== undefined}
+              onChange={(event) => void toggleChecklist(index, event.target.checked)} />
             <time dateTime={date}>{shortDate(date)}</time>
             <strong>{label}</strong>
             {next === index && <span className="badge">다음 할 일</span>}
           </label>
         </li>)}</ul>
+        {savingIndex !== undefined && <p className="muted" role="status">점검 상태를 저장하는 중이에요.</p>}
+        {checklistError && <p className="error" role="alert">{checklistError}</p>}
         {plan.strategy === 'promotion' && !plan.timeLabel && <p className="muted execution-note">행사 소식을 올리기 전에 혜택을 적용할 시간대를 정해 주세요.</p>}
       </section>
       <div className="form-stack execution-aside">
@@ -154,12 +179,15 @@ export function Execution({ plan, onChange }: { plan: Plan; onChange: (value: Pl
           items={plan.inventoryItems ?? []}
           reviewDate={shortDate(plan.tasks[2].date)}
           onChange={(inventoryItems) => onChange({ ...plan, inventoryItems })}
-        /> : <PromoDraft plan={plan} />}
+        /> : needsPromotionInputs ? <section className="execution-material">
+          <div className="ruled"><h2>혜택을 정하기 전에 확인할 자료</h2></div>
+          <ul>{plan.missingInputs?.map((input) => <li key={input}>{input}</li>)}</ul>
+        </section> : <PromoDraft plan={plan} />}
         <section>
           <h2>실행 후 확인할 지표</h2>
           <p className="execution-metric">{plan.followUp}</p>
         </section>
-        <Link className="button secondary full execution-results" to="/results">실행 결과 확인 <span aria-hidden="true">→</span></Link>
+        <Link className="button secondary full execution-results" to={resultsTo}>실행 결과 확인 <span aria-hidden="true">→</span></Link>
       </div>
     </div>
   </>

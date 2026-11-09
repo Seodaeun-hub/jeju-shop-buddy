@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router'
+import { deleteSalesResult, fetchSalesResult, saveSalesResult } from '../api/shop'
+import type { ResultMetric, SavedSalesResult } from '../api/shop'
 import { Citrus, PageTitle } from '../components/ui'
 import { formatQuantity, parseQuantity } from '../data/inventory'
 import { addDays, changeRate, formatNumber, formatRate, won } from '../data/shop'
@@ -12,19 +14,18 @@ const sample: SalesResult = {
   after: { start: '2021-06-02', end: '2021-06-14', days: 7, amount: 1_204_000, count: 45 },
 }
 
-const averageCount = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 1 }).format
+const averageCount = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 }).format
 
 function periodLabel(start: string, end: string) {
   return `${start.replaceAll('-', '.')} ~ ${end.replaceAll('-', '.')}`
 }
 
-function ResultChart({ title, before, after, format }: {
+function ResultChart({ title, metric, format }: {
   title: string
-  before: number
-  after: number
+  metric: ResultMetric
   format: (value: number) => string
 }) {
-  const rate = changeRate(before, after)
+  const { beforeDailyAverage: before, afterDailyAverage: after, changeRatePercent: rate } = metric
   const scale = Math.max(before, after, 1)
   return <section className="result-chart ruled-block">
     <div className="section-top">
@@ -49,8 +50,8 @@ function ResultFields({ phase, label, values }: { phase: 'before' | 'after'; lab
     <label>시작일<input name={`${phase}Start`} type="date" min="1900-01-01" max="9999-12-31" defaultValue={values.start} required /></label>
     <label>종료일<input name={`${phase}End`} type="date" min="1900-01-01" max="9999-12-31" defaultValue={values.end} required /></label>
     <label>비교한 영업일 수<input name={`${phase}Days`} type="number" min="1" step="1" defaultValue={values?.days} required /></label>
-    <label>매출 합계 (원)<input name={`${phase}Amount`} type="number" min="0" step="1" max={Number.MAX_SAFE_INTEGER} defaultValue={values?.amount} required /></label>
-    <label>결제 건수 합계 (선택)<input name={`${phase}Count`} type="number" min="0" step="1" max={Number.MAX_SAFE_INTEGER} defaultValue={values?.count} /></label>
+    <label>매출 합계 (원)<input name={`${phase}Amount`} type="number" min="0" step="1" max={Number.MAX_SAFE_INTEGER} defaultValue={values.amount} /></label>
+    <label>결제 건수 합계<input name={`${phase}Count`} type="number" min="0" step="1" max={Number.MAX_SAFE_INTEGER} defaultValue={values?.count} /></label>
   </fieldset>
 }
 
@@ -58,34 +59,63 @@ function getPeriod(fields: FormData, phase: 'before' | 'after'): SalesPeriod {
   const start = String(fields.get(`${phase}Start`))
   const end = String(fields.get(`${phase}End`))
   const days = Number(fields.get(`${phase}Days`))
-  const amount = Number(fields.get(`${phase}Amount`))
+  const amount = fields.get(`${phase}Amount`)
   const count = fields.get(`${phase}Count`)
-  return { start, end, days, amount, count: count === '' ? undefined : Number(count) }
+  return { start, end, days, amount: amount ? Number(amount) : undefined, count: count ? Number(count) : undefined }
 }
 
-function SalesResults({ plan, onChange }: { plan: Plan; onChange: (plan: Plan) => void }) {
-  const showSample = plan.demo && plan.strategy === 'promotion' && plan.duration === '2주' && plan.timeLabel === '오후 2~5시' && !plan.salesResult
-  const result = plan.salesResult ?? (showSample ? sample : undefined)
-  const [editing, setEditing] = useState(!result)
+function localMetric(before: number | undefined, after: number | undefined, result: SalesResult): ResultMetric | undefined {
+  if (before === undefined || after === undefined) return undefined
+  const beforeDailyAverage = before / result.before.days
+  const afterDailyAverage = after / result.after.days
+  return { beforeDailyAverage, afterDailyAverage, changeRatePercent: changeRate(beforeDailyAverage, afterDailyAverage) }
+}
+
+function metricSummary(name: string, metric: ResultMetric) {
+  const { beforeDailyAverage: before, afterDailyAverage: after } = metric
+  const direction = after > before ? '늘었어요' : after < before ? '줄었어요' : '같았어요'
+  return `하루 평균 ${name}${name === '매출' ? '이' : '가'} ${direction}.`
+}
+
+function SalesResults({ plan, onChange, auth }: { plan: Plan; onChange: (plan: Plan) => void; auth?: string }) {
+  const planId = plan.id
+  const [savedResult, setSavedResult] = useState<SavedSalesResult | null>()
+  const [loadError, setLoadError] = useState('')
+  const [reload, setReload] = useState(0)
+  const [editing, setEditing] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [pending, setPending] = useState<'save' | 'delete'>()
   const [error, setError] = useState('')
-  const scope = plan.strategy === 'promotion' ? plan.timeLabel || '사장님이 정한 행사 시간대' : '같은 영업 시간대'
-  const activeFrom = plan.tasks[plan.strategy === 'promotion' ? 1 : 2].date
+
+  useEffect(() => {
+    if (!auth || !planId) return
+    const controller = new AbortController()
+    fetchSalesResult(auth, planId, controller.signal).then((value) => {
+      if (!controller.signal.aborted) setSavedResult(value)
+    }).catch((error: Error) => {
+      if (!controller.signal.aborted) setLoadError(error.message)
+    })
+    return () => controller.abort()
+  }, [auth, planId, reload])
+
+  const showSample = !planId && plan.demo && plan.strategy === 'promotion' && plan.duration === '2주' && plan.timeLabel === '오후 2~5시' && !plan.salesResult
+  const result = planId ? savedResult : plan.salesResult ?? (showSample ? sample : undefined)
+  const scope = plan.strategy === 'promotion'
+    ? plan.timeLabel || '사장님이 정한 행사 시간대'
+    : '같은 영업 시간대'
+  const defaultScope = `같은 요일 · ${scope}`
+  const activeFrom = plan.tasks[plan.strategy === 'promotion' ? 1 : 2]?.date ?? plan.startDate
   const shift = -Number.parseInt(plan.duration, 10) * 7
   const defaults = {
     before: { start: addDays(activeFrom, shift), end: addDays(plan.endDate, shift) },
     after: { start: activeFrom, end: plan.endDate },
   }
-  const beforeSales = result ? result.before.amount / result.before.days : 0
-  const afterSales = result ? result.after.amount / result.after.days : 0
-  const beforeCount = result?.before.count !== undefined ? result.before.count / result.before.days : undefined
-  const afterCount = result?.after.count !== undefined ? result.after.count / result.after.days : undefined
-  const salesMessage = afterSales > beforeSales ? '늘었어요' : afterSales < beforeSales ? '줄었어요' : '같았어요'
-  const countMessage = beforeCount !== undefined && afterCount !== undefined
-    ? afterCount > beforeCount ? '늘었어요.' : afterCount < beforeCount ? '줄었어요.' : '같았어요.'
-    : undefined
+  const sales = planId ? savedResult?.comparison.amount : result && localMetric(result.before.amount, result.after.amount, result)
+  const count = planId ? savedResult?.comparison.count : result && localMetric(result.before.count, result.after.count, result)
 
-  function save(event: FormEvent<HTMLFormElement>) {
+  async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (pending) return
     const fields = new FormData(event.currentTarget)
     const before = getPeriod(fields, 'before')
     const after = getPeriod(fields, 'after')
@@ -100,22 +130,68 @@ function SalesResults({ plan, onChange }: { plan: Plan; onChange: (plan: Plan) =
       setError('실행 전 기간이 끝난 뒤에 실행 기간이 시작되도록 입력해 주세요.')
       return
     }
-    if ((before.count === undefined) !== (after.count === undefined)) {
-      setError('결제 건수는 두 기간 모두 입력하거나 둘 다 비워 주세요.')
+    if ((before.amount === undefined) !== (after.amount === undefined)
+      || (before.count === undefined) !== (after.count === undefined)) {
+      setError('비교할 항목의 합계는 두 기간 모두 입력해 주세요.')
       return
     }
-    onChange({ ...plan, salesResult: { before, after } })
+    if (before.amount === undefined && before.count === undefined) {
+      setError('매출 또는 결제 건수 중 하나 이상 입력해 주세요.')
+      return
+    }
+    setPending('save')
     setError('')
-    setEditing(false)
+    try {
+      if (auth && planId) {
+        const saved = await saveSalesResult(auth, planId, {
+          before, after, scope: String(fields.get('scope')).trim(),
+        }, savedResult?.id)
+        setSavedResult(saved)
+      } else {
+        onChange({ ...plan, salesResult: { before, after } })
+      }
+      setEditing(false)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : '실행 결과를 저장할 수 없어요.')
+    } finally {
+      setPending(undefined)
+    }
   }
 
+  async function remove() {
+    if (!auth || !planId || !savedResult || pending) return
+    setPending('delete')
+    setError('')
+    try {
+      await deleteSalesResult(auth, planId, savedResult.id)
+      setConfirmDelete(false)
+      setSavedResult(undefined)
+      setReload((value) => value + 1)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : '실행 결과를 삭제할 수 없어요.')
+    } finally {
+      setPending(undefined)
+    }
+  }
+
+  const loading = !!planId && savedResult === undefined
+  const showForm = !loading && (editing || !result)
   return <>
     <PageTitle title="실행 결과 확인" detail={`${plan.store}${showSample ? ' · 시연용 가상 결과' : ''}`} />
-    <ResultSummary plan={plan} detail={`같은 요일 · ${scope}`} />
+    <ResultSummary plan={plan} detail={savedResult?.scope ?? defaultScope} />
+    {loading && <section className="empty-state compact">
+      {loadError ? <>
+        <p role="alert" className="error">{loadError}</p>
+        <button type="button" className="button secondary" onClick={() => {
+          setLoadError('')
+          setReload((value) => value + 1)
+        }}>다시 불러오기</button>
+      </> : <p role="status">저장한 실행 결과를 불러오는 중이에요.</p>}
+    </section>}
     {result && <div className="split planning results-layout">
       <div className="form-stack">
-        {beforeCount !== undefined && afterCount !== undefined && <ResultChart title="하루 평균 결제 건수" before={beforeCount} after={afterCount} format={(value) => `${averageCount(value)}건`} />}
-        <ResultChart title="하루 평균 매출" before={beforeSales} after={afterSales} format={(value) => won(Math.round(value))} />
+        {count && <ResultChart title="하루 평균 결제 건수" metric={count} format={(value) => `${averageCount(value)}건`} />}
+        {sales && <ResultChart title="하루 평균 매출" metric={sales} format={won} />}
         <p className="muted result-method">기간 합계를 영업일 수로 나눴어요. 변화율은 반올림 전 평균으로 계산했어요.</p>
       </div>
       <aside className="form-stack results-aside">
@@ -126,28 +202,41 @@ function SalesResults({ plan, onChange }: { plan: Plan; onChange: (plan: Plan) =
         </section>
         <section className="receipt">
           <div className="section-top"><h2>짝꿍의 한눈 요약</h2><Citrus stamp /></div>
-          <p>실행 기간의 하루 평균 매출이 {salesMessage}.{countMessage && ` 하루 평균 결제 건수는 ${countMessage}`}</p>
-          <p className="muted">{showSample ? '비교 방법을 보여주는 가상 수치예요.' : '요일과 시간대를 맞춘 두 기간의 관측값을 비교했어요.'}</p>
+          <p>{[sales && metricSummary('매출', sales), count && metricSummary('결제 건수', count)].filter(Boolean).join(' ')}</p>
+          <p className="muted">{showSample ? '비교 방법을 보여주는 가상 수치예요.' : '입력한 두 기간의 하루 평균을 비교했어요.'}</p>
         </section>
-        {!editing && <button type="button" className="button secondary full" onClick={() => setEditing(true)}>{showSample ? '내 결과 입력하기' : '결과 자료 수정하기'}</button>}
+        {!editing && !confirmDelete && <button type="button" className="button secondary full" onClick={() => setEditing(true)}>{showSample ? '내 결과 입력하기' : '결과 자료 수정하기'}</button>}
+        {savedResult && !editing && !confirmDelete && <button type="button" className="button secondary full" onClick={() => {
+          setError('')
+          setConfirmDelete(true)
+        }}>결과 삭제하기</button>}
+        {confirmDelete && <section className="receipt">
+          <p>저장한 결과를 삭제할까요?</p>
+          <div className="result-form-actions">
+            <button type="button" className="button primary" disabled={!!pending} onClick={() => void remove()}>{pending === 'delete' ? '삭제 중…' : '삭제 확인'}</button>
+            <button type="button" className="button secondary" disabled={!!pending} onClick={() => { setConfirmDelete(false); setError('') }}>취소</button>
+          </div>
+          {error && <p className="error" role="alert">{error}</p>}
+        </section>}
       </aside>
     </div>}
-    {editing && <form className="receipt result-form" onSubmit={save}>
-      <div className="section-top"><h2>비교할 매출 입력</h2><Citrus stamp /></div>
-      <p>두 기간에서 같은 요일·시간대에 해당하는 영업일만 골라, 그 날짜의 매출 합계를 입력해 주세요.</p>
+    {showForm && <form className="receipt result-form" onSubmit={save}>
+      <div className="section-top"><h2>비교할 매출·결제 건수 입력</h2><Citrus stamp /></div>
+      <p>두 기간에서 같은 요일과 시간대의 영업일을 골라 주세요. 매출과 결제 건수 중 비교할 항목만 입력하면 돼요.</p>
+      {planId && <label>공통 비교 기준<input name="scope" required maxLength={100} defaultValue={savedResult?.scope ?? defaultScope} /></label>}
       <div className="result-form-grid">
-        <ResultFields phase="before" label="실행 전" values={plan.salesResult?.before ?? defaults.before} />
-        <ResultFields phase="after" label="실행 기간" values={plan.salesResult?.after ?? defaults.after} />
+        <ResultFields phase="before" label="실행 전" values={(showSample ? undefined : result?.before) ?? defaults.before} />
+        <ResultFields phase="after" label="실행 기간" values={(showSample ? undefined : result?.after) ?? defaults.after} />
       </div>
       {error && <p className="error" role="alert">{error}</p>}
       <div className="result-form-actions">
-        <button type="submit" className="button primary">전후 결과 비교하기</button>
-        {result && <button type="button" className="button secondary" onClick={() => { setEditing(false); setError('') }}>취소</button>}
+        <button type="submit" className="button primary" disabled={!!pending}>{pending === 'save' ? '저장 중…' : savedResult ? '수정 내용 저장' : '전후 결과 비교하기'}</button>
+        {result && <button type="button" className="button secondary" disabled={!!pending} onClick={() => { setEditing(false); setError('') }}>취소</button>}
       </div>
     </form>}
-    <ResultFooter />
   </>
 }
+
 
 function ResultSummary({ plan, detail }: { plan: Plan; detail: string }) {
   return <section className="receipt summary-strip results-summary" aria-label="실행 결과 기준">
@@ -157,7 +246,12 @@ function ResultSummary({ plan, detail }: { plan: Plan; detail: string }) {
   </section>
 }
 
-function InventoryResults({ plan, onChange }: { plan: Plan; onChange: (plan: Plan) => void }) {
+function InventoryResults({ plan, onChange, embedded, executionTo }: {
+  plan: Plan
+  onChange: (plan: Plan) => void
+  embedded?: boolean
+  executionTo: string
+}) {
   const items = plan.inventoryItems ?? []
   const remainingFor = (id: string, unit: string) => {
     const measurement = plan.remainingStock?.[id]
@@ -173,8 +267,10 @@ function InventoryResults({ plan, onChange }: { plan: Plan; onChange: (plan: Pla
   }
 
   return <>
-    <PageTitle title="실행 결과 확인" detail={plan.store} />
-    <ResultSummary plan={plan} detail={periodLabel(plan.startDate, plan.endDate)} />
+    {!embedded && <>
+      <PageTitle title="실행 결과 확인" detail={plan.store} />
+      <ResultSummary plan={plan} detail={periodLabel(plan.startDate, plan.endDate)} />
+    </>}
     <section className="inventory-results">
       <div className="section-top ruled"><h2>품목별 발주 결과</h2><span className="badge" aria-live="polite">{recorded} / {items.length}품목 기록</span></div>
       {items.length ? <>
@@ -198,14 +294,25 @@ function InventoryResults({ plan, onChange }: { plan: Plan; onChange: (plan: Pla
         </ul>
       </> : <div className="empty-state compact"><p>실행 관리에서 발주를 검토한 품목을 먼저 추가해 주세요.</p></div>}
     </section>
-    <ResultFooter />
+    {!embedded && <ResultFooter to={executionTo} />}
   </>
 }
 
-function ResultFooter() {
-  return <div className="form-footer"><Link className="button secondary" to="/execution">← 실행 관리로 돌아가기</Link></div>
+function ResultFooter({ to }: { to: string }) {
+  return <div className="form-footer"><Link className="button secondary" to={to}>← 실행 관리로 돌아가기</Link></div>
 }
 
-export function Results({ plan, onChange }: { plan: Plan; onChange: (plan: Plan) => void }) {
-  return plan.strategy === 'inventory' ? <InventoryResults plan={plan} onChange={onChange} /> : <SalesResults plan={plan} onChange={onChange} />
+export function Results({ plan, onChange, auth, executionTo }: {
+  plan: Plan
+  onChange: (plan: Plan) => void
+  auth?: string
+  executionTo: string
+}) {
+  if (plan.strategy === 'inventory' && !plan.id) return <InventoryResults plan={plan} onChange={onChange} executionTo={executionTo} />
+
+  return <>
+    <SalesResults plan={plan} onChange={onChange} auth={auth} />
+    {plan.strategy === 'inventory' && <InventoryResults plan={plan} onChange={onChange} executionTo={executionTo} embedded />}
+    <ResultFooter to={executionTo} />
+  </>
 }

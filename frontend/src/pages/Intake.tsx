@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Citrus, PageTitle } from '../components/ui'
+import { industryOptions, listAreas, registerStore, saveAnalysis } from '../api/shop'
+import type { Area, StoreInput } from '../api/shop'
 import { AddressField } from '../components/AddressField'
 import { example, monthLabel, timeSlots } from '../data/shop'
-import type { Analysis, MonthlySales, TimeSeries } from '../data/shop'
+import type { MonthlySales, TimeSeries } from '../data/shop'
 
 const concerns = [
   ['매출이 줄었어요', '지난달보다 매출이 줄었어요.'],
@@ -12,43 +14,7 @@ const concerns = [
   ['홍보 방법이 고민돼요', '우리 가게를 어떻게 홍보할지 고민돼요.'],
 ]
 
-const industryGroups = [
-  {
-    label: '음식점·카페',
-    options: [
-      ['한식 음식점', '한식 음식점업'],
-      ['중식 음식점', '중식 음식점업'],
-      ['일식 음식점', '일식 음식점업'],
-      ['양식 음식점', '서양식 음식점업'],
-      ['기타 외국식 음식점', '기타 외국식 음식점업'],
-      ['피자·햄버거·샌드위치', '피자, 햄버거, 샌드위치 및 유사 음식점업'],
-      ['카페·음료점', '비알콜 음료점업'],
-      ['주점', '기타 주점업'],
-    ],
-  },
-  {
-    label: '소매',
-    options: [
-      ['빵·과자 판매점', '빵 및 과자류 소매업'],
-      ['슈퍼마켓', '슈퍼마켓'],
-      ['편의점', '체인화 편의점'],
-      ['과일·채소 판매점', '과실 및 채소 소매업'],
-      ['수산물 판매점', '수산물 소매업'],
-      ['정육점', '육류 소매업'],
-      ['기념품·선물 가게', '관광 민예품 및 선물용품 소매업'],
-      ['화장품 판매점', '화장품 및 방향제 소매업'],
-    ],
-  },
-  {
-    label: '숙박·관광',
-    options: [
-      ['호텔', '호텔업'],
-      ['여관·모텔', '여관업'],
-      ['휴양콘도', '휴양콘도 운영업'],
-      ['여행사', '여행사업'],
-    ],
-  },
-]
+const industryGroups = [...new Set(industryOptions.map(({ group }) => group))]
 
 type InputRow = { id: number; month: string; amount: string }
 type InputMode = 'manual' | 'upload'
@@ -79,7 +45,7 @@ function UploadPreview() {
     <strong>매출 파일 선택</strong>
     <p>Excel (.xlsx) · CSV (.csv)</p>
     <label className="file-picker">파일 선택<input type="file" accept=".xlsx,.csv" onChange={(event) => setFilename(event.target.files?.[0]?.name ?? '')} /></label>
-    <small role="status">{filename ? `${filename} · 파일 분석은 Spring API 연결 후 사용할 수 있어요.` : '파일 선택 화면 미리보기'}</small>
+    <small role="status">{filename ? `${filename} · 파일 가져오기는 준비 중이에요. 직접 입력으로 저장해 주세요.` : '파일 선택 화면 미리보기'}</small>
   </div>
 }
 
@@ -94,7 +60,7 @@ export function TimeDialog({ monthly, initial, onClose, onSave }: {
   monthly: MonthlySales[]
   initial?: TimeSeries
   onClose: () => void
-  onSave: (value: TimeSeries) => void
+  onSave: (value: TimeSeries) => void | Promise<void>
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const [mode, setMode] = useState<InputMode>('manual')
@@ -107,6 +73,7 @@ export function TimeDialog({ monthly, initial, onClose, onSave }: {
     }))
   })
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
   const [before, after] = monthly.slice(-2)
 
   useEffect(() => {
@@ -128,8 +95,9 @@ export function TimeDialog({ monthly, initial, onClose, onSave }: {
     setError('')
   }
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (saving) return
     const labels = timeRows.map(({ label }) => label.trim())
     if (labels.some((label) => !label) || new Set(labels).size !== labels.length) {
       setError('시간대 이름을 비우거나 중복해서 입력할 수 없어요.')
@@ -144,11 +112,19 @@ export function TimeDialog({ monthly, initial, onClose, onSave }: {
       setError('합계는 정수로 입력해 주세요.')
       return
     }
-    onSave({ metric, rows })
+    setSaving(true)
+    setError('')
+    try {
+      await onSave({ metric, rows })
+    } catch (error) {
+      setError(error instanceof Error ? error.message : '시간대별 자료를 저장할 수 없어요.')
+    } finally {
+      setSaving(false)
+    }
   }
 
-  return <dialog ref={dialog} className="time-dialog" aria-labelledby="time-title" onCancel={(event) => { event.preventDefault(); onClose() }}>
-    <div className="section-top"><h2 id="time-title">시간대별 자료 추가</h2><button type="button" className="text-button close" aria-label="닫기" onClick={onClose}>×</button></div>
+  return <dialog ref={dialog} className="time-dialog" aria-labelledby="time-title" onCancel={(event) => { event.preventDefault(); if (!saving) onClose() }}>
+    <div className="section-top"><h2 id="time-title">시간대별 자료 추가</h2><button type="button" className="text-button close" aria-label="닫기" disabled={saving} onClick={onClose}>×</button></div>
     <p className="muted">비교 기간 · {monthLabel(before.month)}과 {monthLabel(after.month)}</p>
     <InputTabs mode={mode} onChange={setMode} manualLabel="시간대별 직접 입력" />
     {mode === 'upload' ? <UploadPreview /> : <form onSubmit={submit} className="form-stack">
@@ -174,17 +150,26 @@ export function TimeDialog({ monthly, initial, onClose, onSave }: {
       </table>
       <button className="button secondary fit" type="button" onClick={addTimeRow}>+ 시간대 추가</button>
       {error && <p role="alert" className="error">{error}</p>}
-      <div className="actions end"><button type="button" className="button secondary" onClick={onClose}>취소</button><button className="button primary">저장하고 차트 보기 <span aria-hidden="true">→</span></button></div>
+      <div className="actions end"><button type="button" className="button secondary" disabled={saving} onClick={onClose}>취소</button><button className="button primary" disabled={saving}>{saving ? '저장 중…' : '저장하고 차트 보기'} <span aria-hidden="true">→</span></button></div>
     </form>}
   </dialog>
 }
 
-export function Intake({ onAnalyze }: { onAnalyze: (value: Analysis) => void }) {
+export function Intake({ auth, onAnalyze }: { auth: string; onAnalyze: (id: string) => void }) {
+  const registeredStores = useRef(new Map<string, string>())
+  const submitting = useRef(false)
+  const [saving, setSaving] = useState(false)
+  const [areas, setAreas] = useState<Area[]>()
+  const [areaError, setAreaError] = useState('')
+  const [areaRetry, setAreaRetry] = useState(0)
   const nextId = useRef(2)
   const [rows, setRows] = useState<InputRow[]>([{ id: 0, month: '', amount: '' }, { id: 1, month: '', amount: '' }])
   const [store, setStore] = useState('')
   const [address, setAddress] = useState('')
-  const [area, setArea] = useState<string>()
+  const [areaCode, setAreaCode] = useState('')
+  const [searchedArea, setSearchedArea] = useState<string>()
+  const resolvedAreaCode = areaCode || areas?.find(({ name }) => name === searchedArea)?.code || ''
+  const resolvedArea = areas?.find(({ code }) => code === resolvedAreaCode)?.name
   const [industry, setIndustry] = useState('')
   const [customIndustry, setCustomIndustry] = useState('')
   const [concern, setConcern] = useState('')
@@ -196,21 +181,54 @@ export function Intake({ onAnalyze }: { onAnalyze: (value: Analysis) => void }) 
   const monthly = monthlyValues(rows)
   const period = monthly?.slice(-2).map(({ month }) => month).join('/')
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    const controller = new AbortController()
+    listAreas(controller.signal).then(setAreas).catch((error: Error) => {
+      if (!controller.signal.aborted) setAreaError(error.message)
+    })
+    return () => controller.abort()
+  }, [areaRetry])
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const industryName = industry === 'other' ? customIndustry.trim() : industry
-    if (!store.trim() || !address.trim() || !industryName || !monthly) {
-      setError('가게 정보와 서로 다른 두 달 이상의 매출을 확인해 주세요.')
+    if (submitting.current || mode === 'upload') return
+    if (!store.trim() || !address.trim() || !resolvedAreaCode || !industry
+        || (industry === 'OTHER' && !customIndustry.trim()) || !monthly) {
+      setError('가게 정보, 제주 읍·면·동, 서로 다른 두 달 이상의 매출을 확인해 주세요.')
       return
     }
-    onAnalyze({ store: store.trim(), address: address.trim(), area, industry: industryName, concern: concern.trim(), monthly, timeSeries: extra?.period === period ? extra?.value : undefined, demo: false })
+    const input: StoreInput = {
+      name: store.trim(), address: address.trim(), areaCode: resolvedAreaCode,
+      addressSource: searchedArea && searchedArea === resolvedArea ? 'SEARCH' : 'MANUAL',
+      industryCode: industry,
+      customIndustryName: industry === 'OTHER' ? customIndustry.trim() : undefined,
+    }
+    const storeKey = JSON.stringify(input)
+    submitting.current = true
+    setSaving(true)
+    setError('')
+    try {
+      let storeId = registeredStores.current.get(storeKey)
+      if (!storeId) {
+        storeId = (await registerStore(auth, input)).id
+        registeredStores.current.set(storeKey, storeId)
+      }
+      const saved = await saveAnalysis(auth, storeId, monthly, concern.trim(), extra?.period === period ? extra?.value : undefined)
+      onAnalyze(saved.id)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : '매출을 저장할 수 없어요.')
+    } finally {
+      submitting.current = false
+      setSaving(false)
+    }
   }
 
   function loadExample() {
     setStore(example.store)
     setAddress(example.address ?? '')
-    setArea(example.area)
-    setIndustry(example.industry)
+    setSearchedArea(undefined)
+    setAreaCode('JEJU_AEWOL')
+    setIndustry('KOREAN_RESTAURANT')
     setConcern(example.concern)
     setRows(example.monthly.map(({ month, amount }) => ({ id: nextId.current++, month, amount: String(amount) })))
     setExtra(undefined)
@@ -228,19 +246,29 @@ export function Intake({ onAnalyze }: { onAnalyze: (value: Analysis) => void }) 
       <div className="split">
         <section className="form-stack">
           <div className="section-top ruled"><h2>01 가게 정보</h2><button type="button" className="text-button" onClick={loadExample}>예시값 채우기</button></div>
-          <label>가게 이름<input required value={store} onChange={(event) => setStore(event.target.value)} placeholder="가게 이름을 입력하세요" /></label>
+          <label>가게 이름<input required maxLength={100} value={store} onChange={(event) => setStore(event.target.value)} placeholder="가게 이름을 입력하세요" /></label>
           <label>업종<select required value={industry} onChange={(event) => setIndustry(event.target.value)}>
             <option value="">업종을 선택해 주세요</option>
-            {industryGroups.map((group) => <optgroup key={group.label} label={group.label}>
-              {group.options.map(([label, value]) => <option key={value} value={value}>{label}</option>)}
+            {industryGroups.map((group) => <optgroup key={group} label={group}>
+              {industryOptions.filter((option) => option.group === group).map(({ label, code }) => <option key={code} value={code}>{label}</option>)}
             </optgroup>)}
-            <option value="other">기타 (직접 입력)</option>
+            <option value="OTHER">기타 (직접 입력)</option>
           </select></label>
-          {industry === 'other' && <label>업종명 직접 입력<input required value={customIndustry} onChange={(event) => setCustomIndustry(event.target.value)} placeholder="예: 꽃집" /></label>}
-          <AddressField address={address} area={area} onChange={(value, district) => {
+          {industry === 'OTHER' && <label>업종명 직접 입력<input required maxLength={100} value={customIndustry} onChange={(event) => setCustomIndustry(event.target.value)} placeholder="예: 꽃집" /></label>}
+          <AddressField address={address} area={searchedArea} onChange={(value, district) => {
             setAddress(value)
-            setArea(district)
+            setSearchedArea(district)
+            setAreaCode('')
           }} />
+          <label>제주 읍·면·동<select required value={resolvedAreaCode} disabled={!areas}
+            onChange={(event) => setAreaCode(event.target.value)}>
+            <option value="">{areas ? '지역을 선택해 주세요' : areaError ? '지역 목록을 불러오지 못했어요' : '지역 목록 불러오는 중…'}</option>
+            {areas?.map(({ code, name }) => <option key={code} value={code}>{name}</option>)}
+          </select></label>
+          {areaError && <div role="alert" className="error">{areaError} <button type="button" className="text-button" onClick={() => {
+            setAreaError('')
+            setAreaRetry((value) => value + 1)
+          }}>다시 불러오기</button></div>}
           <label>요즘 어떤 점이 고민인가요? <span className="muted">선택</span><textarea rows={3} value={concern} onChange={(event) => setConcern(event.target.value)} /></label>
           <div className="chips">{concerns.map(([label, value]) => <button className="chip" key={label} type="button" aria-pressed={selectedConcern === label} onClick={() => { setSelectedConcern(label); setConcern(value) }}>{label}</button>)}</div>
         </section>
@@ -265,7 +293,7 @@ export function Intake({ onAnalyze }: { onAnalyze: (value: Analysis) => void }) 
       </div>
       <div className="form-footer">
         <span role="alert" className="error">{error}</span>
-        <button className="button primary" disabled={mode === 'upload'}>분석 시작 <span aria-hidden="true">→</span></button>
+        <button className="button primary" disabled={saving || !areas?.length || mode === 'upload'}>{saving ? '저장 중…' : '분석 시작'} <span aria-hidden="true">→</span></button>
       </div>
     </form>
     {timeOpen && monthly && period && <TimeDialog monthly={monthly} initial={extra?.period === period ? extra.value : undefined} onClose={() => setTimeOpen(false)} onSave={(value) => { setExtra({ value, period }); setTimeOpen(false) }} />}

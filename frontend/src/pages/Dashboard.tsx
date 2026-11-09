@@ -108,7 +108,11 @@ function AskButton({ onClick, label }: { onClick: (button: HTMLButtonElement) =>
   return <button type="button" className="button small dashboard-ask" aria-label={label} onClick={(event) => onClick(event.currentTarget)}>이 차트 질문</button>
 }
 
-export function Dashboard({ data, onChange }: { data: Analysis; onChange: (value: Analysis) => void }) {
+export function Dashboard({ data, onSaveTimeSeries, strategyTo }: {
+  data: Analysis
+  onSaveTimeSeries: (value: TimeSeries) => Promise<void>
+  strategyTo: string
+}) {
   const [question, setQuestion] = useState<{ topic: Topic; showExample: boolean }>()
   const [timeOpen, setTimeOpen] = useState(false)
   const panel = useRef<HTMLElement>(null)
@@ -228,11 +232,11 @@ export function Dashboard({ data, onChange }: { data: Analysis; onChange: (value
             <button ref={previewQuestion} type="button" className="chip" onClick={(event) => openTopic(suggestedTopic, event.currentTarget, true)}>{suggestedTopic.suggestion}</button>
           </section>
         </>}
-        <Link className="button primary full dashboard-next" to="/strategy">대응 전략 보기 <span aria-hidden="true">→</span></Link>
+        <Link className="button primary full dashboard-next" to={strategyTo}>대응 전략 보기 <span aria-hidden="true">→</span></Link>
       </aside>
     </div>
-    {timeOpen && <TimeDialog monthly={data.monthly} initial={series} onClose={() => setTimeOpen(false)} onSave={(value) => {
-      onChange({ ...data, timeSeries: value })
+    {timeOpen && <TimeDialog monthly={data.monthly} initial={series} onClose={() => setTimeOpen(false)} onSave={async (value) => {
+      await onSaveTimeSeries(value)
       setTimeOpen(false)
       setQuestion(undefined)
     }} />}
