@@ -1,3 +1,5 @@
+import { ReviewInsights, SavedReviewInsights } from '../components/ReviewInsights'
+import type { Plan } from '../data/shop'
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router'
@@ -127,8 +129,12 @@ function AskButton({ onClick, label }: { onClick: (button: HTMLButtonElement) =>
   return <button type="button" className="button small dashboard-ask" aria-label={label} onClick={(event) => onClick(event.currentTarget)}>이 차트 질문</button>
 }
 
-export function Dashboard({ data, onSaveTimeSeries, strategyTo }: {
+export function Dashboard({ data, auth, analysisId, onChange, onPlan, onSaveTimeSeries, strategyTo }: {
   data: Analysis
+  auth?: string
+  analysisId?: string
+  onChange: (value: Analysis) => void
+  onPlan: (value: Plan) => void
   onSaveTimeSeries: (value: TimeSeries) => Promise<void>
   strategyTo: string
 }) {
@@ -259,6 +265,13 @@ export function Dashboard({ data, onSaveTimeSeries, strategyTo }: {
               : summary}</p>
             {biggestDrop && <p className="muted">{formatTime(biggestDrop.before)} → {formatTime(biggestDrop.after)}</p>}
           </section>
+          {data.demo && data.reviews && <ReviewInsights
+            store={data.store}
+            reviews={data.reviews}
+            onReviews={(reviews) => onChange({ ...data, reviews })}
+            onPlan={onPlan}
+          />}
+          {auth && analysisId && <SavedReviewInsights auth={auth} analysisId={analysisId} store={data.store} onPlan={onPlan} />}
           <section className="ruled-block dashboard-bsi">
             <h2>제주 경기동향</h2>
             {bsi

@@ -1,3 +1,4 @@
+import type { Review } from '../data/reviews'
 import type { Analysis, MonthlySales, Plan, SalesResult, TimeSeries } from '../data/shop'
 
 export type Area = { code: string; name: string }
@@ -105,6 +106,7 @@ export type SavedStrategy = {
   status: 'RECOMMENDED' | 'AVAILABLE' | 'NEEDS_INPUT'
   reason: string
   evidence: StrategyEvidence[]
+  reviewEvidence?: Review[]
   missingInputs: string[]
   followUp: string
 }
@@ -174,6 +176,20 @@ export async function deleteSalesResult(auth: string, planId: string, resultId: 
   await send(resultsPath(planId, resultId), auth, 'DELETE')
 }
 
+export type ReviewInsight = { total: number; evidence: Review[]; repeated: boolean }
+
+export function fetchReviewInsight(auth: string, id: string, signal: AbortSignal) {
+  return request<ReviewInsight>(`/api/analyses/${encodeURIComponent(id)}/reviews`, auth, 'GET', undefined, signal)
+}
+
+export function addReview(auth: string, id: string, date: string, text: string) {
+  return request<Review>(`/api/analyses/${encodeURIComponent(id)}/reviews`, auth, 'POST', { date, text })
+}
+
+export function createReviewPlan(auth: string, id: string) {
+  return request<SavedPlan>(`/api/analyses/${encodeURIComponent(id)}/review-plans`, auth, 'POST', { confirmed: true })
+}
+
 export function toPlan(saved: SavedPlan, store: string): Plan {
   const { conditions, strategy, checklist } = saved
   return {
@@ -189,6 +205,8 @@ export function toPlan(saved: SavedPlan, store: string): Plan {
     timeLabel: strategy.evidence.find(({ source }) => source === 'TIME_SERIES')?.label,
     followUp: strategy.followUp,
     missingInputs: strategy.missingInputs,
+    reviewAction: strategy.reviewEvidence ? true : undefined,
+    reviewEvidence: strategy.reviewEvidence,
     budget: conditions.budgetWon ?? 0,
     channel: conditions.channel === 'INSTAGRAM' ? '인스타그램' : conditions.channel === 'STORE_NOTICE' ? '매장 안내' : '',
     tasks: checklist.map(({ id, title, dueDate }) => ({ id, label: title, date: dueDate })),

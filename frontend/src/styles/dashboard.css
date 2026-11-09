@@ -92,6 +92,19 @@
   .time-pair > div { grid-template-columns: minmax(0, 1fr) 5.4em; gap: .25rem; }
 }
 
+.dashboard-reviews { display: grid; gap: .55rem; }
+.dashboard-reviews .section-top { margin-bottom: 0; flex-wrap: wrap; }
+.dashboard-reviews > button, .review-action button { justify-self: start; }
+.review-count strong { color: var(--green); }
+.review-latest { padding: .55rem .65rem; background: var(--pale-green); border-radius: 6px; }
+.review-latest strong { display: block; }
+.dashboard-reviews summary { cursor: pointer; color: var(--green); font-weight: 750; }
+.review-evidence { list-style: none; padding: 0; margin: .5rem 0 0; }
+.review-evidence li { display: grid; gap: .15rem; padding: .45rem 0; border-top: 1px solid var(--line); }
+.review-evidence time { font-size: .83rem; color: var(--muted); }
+.review-action { display: grid; gap: .45rem; border: 1px solid var(--line); border-radius: 6px; padding: .65rem; background: var(--sheet); }
+.review-action label { display: flex; align-items: center; gap: .45rem; font-weight: 750; cursor: pointer; }
+
 .bsi-chart { list-style: none; padding: 0; display: grid; gap: .45rem; }
 .bsi-chart li { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) 2.7rem; gap: .4rem; align-items: center; font-size: .85rem; }
 .bsi-chart li > strong { text-align: right; font-variant-numeric: tabular-nums; }

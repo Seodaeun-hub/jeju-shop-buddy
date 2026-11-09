@@ -1,3 +1,6 @@
+import { exampleReviews } from './reviews'
+import type { Review } from './reviews'
+
 export type MonthlySales = { month: string; amount: number }
 export type TimeSeries = {
   metric: 'amount' | 'count'
@@ -11,6 +14,7 @@ export type Analysis = {
   concern: string
   monthly: MonthlySales[]
   timeSeries?: TimeSeries
+  reviews?: Review[]
   demo: boolean
 }
 
@@ -35,6 +39,7 @@ export const example: Analysis = {
     ],
   },
   demo: true,
+  reviews: exampleReviews,
 }
 
 export const formatNumber = new Intl.NumberFormat('ko-KR').format
@@ -85,6 +90,8 @@ export type Plan = {
   analysisId?: string
   missingInputs?: string[]
   salesResult?: SalesResult
+  reviewAction?: true
+  reviewEvidence?: Review[]
   remainingStock?: Record<string, { unit: string; quantity: string }>
   inventoryItems?: InventoryItem[]
   strategy: (typeof strategies)[number]['id']

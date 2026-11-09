@@ -95,8 +95,14 @@ final class SalesStrategies {
 
     record Response(UUID analysisId, String beforeMonth, String afterMonth, List<Suggestion> strategies) {}
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     record Suggestion(String code, String title, String status, String reason, List<Evidence> evidence,
-                      List<String> missingInputs, String followUp) {}
+                      List<String> missingInputs, String followUp, List<StoreReviewService.Review> reviewEvidence) {
+        Suggestion(String code, String title, String status, String reason, List<Evidence> evidence,
+                   List<String> missingInputs, String followUp) {
+            this(code, title, status, reason, evidence, missingInputs, followUp, null);
+        }
+    }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record Evidence(String source, String metric, String label, BigDecimal before, BigDecimal after) {

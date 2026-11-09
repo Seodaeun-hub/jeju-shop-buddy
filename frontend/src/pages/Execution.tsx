@@ -15,6 +15,14 @@ function getDraft(plan: Plan) {
   const { store, strategy, timeLabel, tasks, budget, endDate, demo } = plan
   const start = tasks[strategy === 'promotion' ? 1 : 2].date
   const period = `${shortDate(start)} ~ ${shortDate(endDate)}`
+  if (plan.reviewAction) {
+    return {
+      headline: '오후 식사 주문 안내',
+      feature: '오후 2~5시 주문 가능',
+      detail: period,
+      caption: store + '에서는 오후 2~5시에도 식사 주문을 받아요. 이용 가능한 메뉴는 매장에 문의해 주세요.',
+    }
+  }
   const isPromotion = strategy === 'promotion'
   const sampleLimit = demo && isPromotion ? Math.min(50, Math.floor(budget / 1000)) : 0
   const headline = isPromotion ? '한정 시간대 방문 안내' : '우리 가게 소식'
@@ -161,6 +169,12 @@ export function Execution({ plan, onChange, onToggleChecklist, resultsTo }: {
           <h2>실행 일정과 점검표</h2>
           <span className="badge" aria-live="polite">{plan.done.length} / {plan.tasks.length} 완료</span>
         </div>
+        {plan.reviewEvidence && <details className="ruled-block">
+          <summary>이 계획의 리뷰 근거 {plan.reviewEvidence.length}건 보기</summary>
+          <ul className="review-evidence">{plan.reviewEvidence.map((review) => <li key={review.id}>
+            <time dateTime={review.date}>{review.date}</time><span>{review.text}</span>
+          </li>)}</ul>
+        </details>}
         <ul className="execution-checklist">{plan.tasks.map(({ id, label, date }, index) => <li key={id ?? index} className={next === index ? 'highlight' : ''}>
           <label>
             <input type="checkbox" checked={plan.done.includes(index)} disabled={savingIndex !== undefined}

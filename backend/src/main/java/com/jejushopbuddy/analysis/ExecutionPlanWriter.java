@@ -40,6 +40,18 @@ class ExecutionPlanWriter {
         }
         var strategy = salesStrategies.from(analysis.get()).strategies().stream()
                 .filter(candidate -> candidate.code().equals(strategyCode)).findFirst().orElseThrow();
+        return Optional.of(persist(analysisId, strategy, conditions));
+    }
+
+    @Transactional
+    public Plan createReviewPlan(UUID analysisId, StoreReviewService.Insight insight) {
+        var strategy = new Suggestion("OUTREACH", "오후 식사 주문 안내 개선", "RECOMMENDED",
+                "등록된 리뷰 중 " + insight.evidence().size() + "건에서 오후 주문 안내가 헷갈렸다는 의견이 나왔어요.",
+                List.of(), List.of(), "같은 요일·오후 2~5시의 하루 평균 결제 건수를 비교해요.", insight.evidence());
+        return persist(analysisId, strategy, new Conditions(1, 0L, "STORE_NOTICE"));
+    }
+
+    private Plan persist(UUID analysisId, Suggestion strategy, Conditions conditions) {
         UUID id = UUID.randomUUID();
         LocalDate start = LocalDate.now(SEOUL);
         LocalDate end = start.plusWeeks(conditions.durationWeeks()).minusDays(1);
@@ -81,7 +93,7 @@ class ExecutionPlanWriter {
                     .param("completed", item.completed())
                     .update();
         }
-        return Optional.of(new Plan(id, analysisId, strategy, conditions, start, end, checklist, createdAt));
+        return new Plan(id, analysisId, strategy, conditions, start, end, checklist, createdAt);
     }
 
     @Transactional
@@ -118,6 +130,12 @@ class ExecutionPlanWriter {
 
     private static List<ChecklistItem> checklistFor(Suggestion strategy, Conditions conditions,
                                                      LocalDate start, LocalDate end) {
+        if (strategy.reviewEvidence() != null) {
+            return List.of(item("오후에 주문받는 시간과 메뉴 확인하기", start),
+                    item("안내 문구 확인하기", start.plusDays(1)),
+                    item("매장 입구와 지도에 주문 안내 추가하기", start.plusDays(2)),
+                    item("오후 2~5시 결제 건수 확인하기", end));
+        }
         if (strategy.status().equals("NEEDS_INPUT")) {
             var items = new ArrayList<ChecklistItem>();
             for (String input : strategy.missingInputs()) {

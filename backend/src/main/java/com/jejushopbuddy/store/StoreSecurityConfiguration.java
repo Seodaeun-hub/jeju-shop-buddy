@@ -61,6 +61,7 @@ class StoreSecurityConfiguration {
         };
         return http.securityMatcher("/api/stores", "/api/stores/{storeId}/analyses",
                         "/api/analyses/{analysisId}", "/api/analyses/{analysisId}/time-series", "/api/analyses/{analysisId}/strategies", "/api/analyses/{analysisId}/plans",
+                        "/api/analyses/{analysisId}/reviews", "/api/analyses/{analysisId}/review-plans",
                         "/api/plans/{planId}", "/api/plans/{planId}/checklist/{itemId}", "/api/plans/{planId}/results",
                         "/api/plans/{planId}/results/{resultId}")
                 .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())

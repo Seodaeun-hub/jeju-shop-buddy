@@ -2,9 +2,11 @@
 
 ## API 연동 로컬 실행
 
-1. 빈 개발용 PostgreSQL 데이터베이스에 `schema.sql`, `seed-jeju-areas.sql`, `seed-aewol-demo.sql` 순서로 적용합니다. 마지막 파일은 가상 매장과 개발용 로그인 정보를 제공합니다.
+1. 빈 개발용 PostgreSQL 데이터베이스에 `schema.sql`, `migration-store-reviews.sql`, `seed-jeju-areas.sql`, `seed-aewol-demo.sql` 순서로 적용합니다. 마지막 파일은 가상 매장과 개발용 로그인 정보를 제공합니다.
 2. 백엔드에 `SHOP_BUDDY_DB_URL`, `SHOP_BUDDY_DB_USER`, `SHOP_BUDDY_DB_PASSWORD`를 설정하고 Java 21에서 `mvn -f backend/pom.xml spring-boot:run`을 실행합니다.
 3. 저장소 루트에서 `npm --prefix frontend ci`와 `npm --prefix frontend run dev`를 실행합니다. 프론트엔드 개발 서버는 `/api` 요청을 로컬 백엔드의 8080 포트로 전달합니다.
+
+기존 개발용 DB에는 `migration-store-reviews.sql`만 추가 적용합니다.
 
 [OpenAPI 명세](openapi-store.yaml)
 
@@ -25,3 +27,9 @@
 새로고침 후 다시 로그인해 실행 결과를 조회했고, PostgreSQL에서 매장·분석·계획·점검표·결과의 연결을 대조했습니다. 실행 결과 수치는 계산 및 저장 동작을 검증하기 위해 입력한 가상 값입니다.
 
 같은 열을 갖춘 결제 내역 CSV도 업로드, 집계, 저장을 확인했습니다. 카드 이용액은 같은 읍·면·동과 업종의 월별 합계이며, BSI는 제주 전체 지표입니다. [제주데이터허브 상권 데이터](https://data.edmgr.kr/dataView.do?id=jejudatahub-net-748) · [소상공인시장진흥공단 BSI 데이터](https://www.data.go.kr/data/3060077/fileData.do)
+
+### 애월 리뷰 개선 계획 테스트
+
+1. 애월 가상 한식당의 매출 분석 화면에서 가상 리뷰 3건을 날짜와 함께 등록했습니다. 긍정적인 주문 안내 리뷰 1건과 오후 주문 안내가 헷갈렸다는 리뷰 2건을 사용했습니다.
+2. 같은 불편을 언급한 두 번째 리뷰가 저장되자 대시보드에 **3건 중 2건**이 표시됐습니다. 근거를 펼치면 해당 리뷰 2건의 날짜와 원문을 확인할 수 있었습니다. 탐지 범위는 오후 식사 주문 안내입니다.
+3. **오후 2~5시에도 식사 주문을 받아요**를 확인하고 **안내 개선 계획 만들기**를 선택했습니다. PostgreSQL에 **오후 식사 주문 안내 개선** 계획과 점검표 4개, 근거 리뷰 2건이 저장됐습니다. 새로고침 후 다시 로그인해도 대시보드의 리뷰 집계와 실행 계획의 리뷰 근거를 다시 조회할 수 있었습니다.

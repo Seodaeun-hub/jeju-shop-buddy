@@ -36,6 +36,7 @@ class SalesAnalysisController {
     private final SalesAnalysisWriter writer;
     private final SalesAnalysisReader reader;
     private final SalesStrategies salesStrategies;
+    private final StoreReviewService reviews;
     private final ExecutionPlanWriter planWriter;
     private final ExecutionPlanReader planReader;
     private final ExecutionResultWriter resultWriter;
@@ -43,10 +44,11 @@ class SalesAnalysisController {
 
     SalesAnalysisController(SalesAnalysisWriter writer, SalesAnalysisReader reader,
                             ExecutionPlanWriter planWriter, ExecutionPlanReader planReader,
-                            ExecutionResultWriter resultWriter, ExecutionResultReader resultReader, SalesStrategies salesStrategies) {
+                            ExecutionResultWriter resultWriter, ExecutionResultReader resultReader, SalesStrategies salesStrategies, StoreReviewService reviews) {
         this.writer = writer;
         this.reader = reader;
         this.salesStrategies = salesStrategies;
+        this.reviews = reviews;
         this.planWriter = planWriter;
         this.planReader = planReader;
         this.resultWriter = resultWriter;
@@ -73,6 +75,63 @@ class SalesAnalysisController {
                     .body(new ApiError("ANALYSIS_NOT_FOUND", "매출 분석을 찾을 수 없어요.", null));
         }
         return ResponseEntity.ok(salesStrategies.from(analysis.get()));
+    }
+
+    @GetMapping("/api/analyses/{analysisId}/reviews")
+    ResponseEntity<?> reviewInsights(@PathVariable String analysisId, Principal owner) {
+        var analysis = reader.find(reviewAnalysisId(analysisId), owner.getName());
+        if (analysis.isEmpty()) return reviewAnalysisNotFound();
+        return ResponseEntity.ok(reviews.insight(analysis.get().storeId()));
+    }
+
+    @PostMapping(path = "/api/analyses/{analysisId}/reviews", consumes = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<?> addReview(@PathVariable String analysisId, @RequestBody JsonNode body, Principal owner) {
+        var analysis = reader.find(reviewAnalysisId(analysisId), owner.getName());
+        if (analysis.isEmpty()) return reviewAnalysisNotFound();
+        fields(body, Set.of("date", "text"), null);
+        var dateValue = body.path("date");
+        LocalDate date;
+        try {
+            if (!dateValue.isString() || !dateValue.stringValue().matches("[0-9]{4}-[0-9]{2}-[0-9]{2}")) {
+                throw invalid("INVALID_REVIEW_DATE", "리뷰 날짜를 입력해 주세요.", "date");
+            }
+            date = LocalDate.parse(dateValue.stringValue());
+        } catch (DateTimeParseException failure) {
+            throw invalid("INVALID_REVIEW_DATE", "리뷰 날짜를 확인해 주세요.", "date");
+        }
+        var textValue = body.path("text");
+        String text = textValue.isString() ? textValue.stringValue().strip() : "";
+        if (date.getYear() < 1) throw invalid("INVALID_REVIEW_DATE", "리뷰 날짜를 확인해 주세요.", "date");
+        if (text.isEmpty() || text.indexOf(0) >= 0 || text.codePointCount(0, text.length()) > 1000) {
+            throw invalid("INVALID_REVIEW_TEXT", "리뷰 내용을 1~1,000자로 입력해 주세요.", "text");
+        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(reviews.add(analysis.get().storeId(), date, text));
+    }
+
+    @PostMapping(path = "/api/analyses/{analysisId}/review-plans", consumes = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<?> createReviewPlan(@PathVariable String analysisId, @RequestBody JsonNode body, Principal owner) {
+        var id = reviewAnalysisId(analysisId);
+        var analysis = reader.find(id, owner.getName());
+        if (analysis.isEmpty()) return reviewAnalysisNotFound();
+        fields(body, Set.of("confirmed"), null);
+        if (!body.path("confirmed").isBoolean() || !body.path("confirmed").booleanValue()) {
+            throw invalid("REVIEW_ACTION_UNCONFIRMED", "오후 주문 가능 여부를 확인해 주세요.", "confirmed");
+        }
+        var insight = reviews.insight(analysis.get().storeId());
+        if (!insight.repeated()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(new ApiError("REVIEW_PATTERN_NOT_FOUND", "같은 불편이 담긴 리뷰가 두 건 이상 필요해요.", null));
+        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(planWriter.createReviewPlan(id, insight));
+    }
+
+    private static UUID reviewAnalysisId(String value) {
+        return parseId(value, "INVALID_ANALYSIS_ID", "분석 ID 형식을 확인해 주세요.", "analysisId");
+    }
+
+    private static ResponseEntity<ApiError> reviewAnalysisNotFound() {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError("ANALYSIS_NOT_FOUND", "매출 분석을 찾을 수 없어요.", null));
     }
 
     @GetMapping(path = "/api/plans/{planId}", produces = MediaType.APPLICATION_JSON_VALUE)

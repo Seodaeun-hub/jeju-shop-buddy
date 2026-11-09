@@ -218,7 +218,7 @@ export function App() {
   </section>
   const dashboard = analysisId && !auth
     ? <Navigate to="/login" state={{ returnTo: dashboardPath(analysisId) }} replace />
-    : currentAnalysis ? <Dashboard key={analysisId ?? 'demo'} data={currentAnalysis} onSaveTimeSeries={updateTimeSeries} strategyTo={strategyPath} />
+    : currentAnalysis ? <Dashboard key={analysisId ?? 'demo'} data={currentAnalysis} auth={auth} analysisId={analysisId} onChange={setAnalysis} onPlan={openPlan} onSaveTimeSeries={updateTimeSeries} strategyTo={strategyPath} />
     : analysisId ? analysisStatus : <Placeholder to="/sales" action="매출 입력하기">분석할 매출을 입력해 주세요.</Placeholder>
 
   const strategyPage = analysisId && !auth

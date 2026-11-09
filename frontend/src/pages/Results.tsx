@@ -100,8 +100,8 @@ function SalesResults({ plan, onChange, auth }: { plan: Plan; onChange: (plan: P
 
   const showSample = !planId && plan.demo && plan.strategy === 'promotion' && plan.duration === '2주' && plan.timeLabel === '오후 2~5시' && !plan.salesResult
   const result = planId ? savedResult : plan.salesResult ?? (showSample ? sample : undefined)
-  const scope = plan.strategy === 'promotion'
-    ? plan.timeLabel || '사장님이 정한 행사 시간대'
+  const scope = plan.reviewAction ? '오후 2~5시'
+    : plan.strategy === 'promotion' ? plan.timeLabel || '사장님이 정한 행사 시간대'
     : '같은 영업 시간대'
   const defaultScope = `같은 요일 · ${scope}`
   const activeFrom = plan.tasks[plan.strategy === 'promotion' ? 1 : 2]?.date ?? plan.startDate
