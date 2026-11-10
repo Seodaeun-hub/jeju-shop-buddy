@@ -145,9 +145,15 @@ class ChartQuestionTest(unittest.TestCase):
         partial = self.ask(fixture(), question, intent)
         self.assertEqual(partial["status"], "PARTIAL")
         self.assert_text(partial, "시간대별 매출액", "결제 건수", "189건")
-        underspecified_intent = classified(["TIME_SLOT"], largestTimeDrop=True)
-        answer = self.ask(fixture("monthly"), question, underspecified_intent)
+        overlapping_intent = classified(["TIME_SLOT", "SALES"], largestTimeDrop=True)
+        answer = self.ask(fixture("monthly"), question, overlapping_intent)
+        self.assertEqual(answer["status"], "MISSING_DATA")
+        self.assertEqual(answer["evidence"], [])
         self.assertEqual(answer["missingInputs"][0]["code"], "TIME_SERIES_AMOUNT")
+        combined = self.ask(fixture("monthly"), "월별 매출과 매출이 가장 많이 줄어든 시간대를 알려주세요.",
+                            classified(["SALES", "TIME_SLOT"], timeMetric="KRW"))
+        self.assertEqual(combined["status"], "PARTIAL")
+        self.assertEqual([fact["metric"] for fact in combined["evidence"]], ["MONTHLY_SALES"])
 
     def test_partial_market_and_missing_operational_data(self):
         payload = fixture()
@@ -208,6 +214,8 @@ class ChartQuestionTest(unittest.TestCase):
     @unittest.skipUnless(os.getenv("RUN_LIVE_CHART_QA") == "1", "Live OpenAI verification is opt-in")
     def test_live_aewol_and_missing_data(self):
         self.aewol_conversation(live=True)
-        answer = self.ask(fixture("monthly"), "몇 시에 매출이 가장 많이 줄었어요?")
-        self.assertEqual(answer["status"], "MISSING_DATA")
-        self.assertEqual(answer["missingInputs"][0]["code"], "TIME_SERIES_AMOUNT")
+        for _ in range(3):
+            answer = self.ask(fixture("monthly"), "몇 시에 매출이 가장 많이 줄었어요?")
+            self.assertEqual(answer["status"], "MISSING_DATA")
+            self.assertEqual(answer["evidence"], [])
+            self.assertEqual(answer["missingInputs"][0]["code"], "TIME_SERIES_AMOUNT")

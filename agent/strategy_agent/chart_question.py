@@ -24,6 +24,7 @@ TIME_SLOT은 어느 시간대에 줄었는지 묻거나 이전 시간대를 지�
 단위가 없으면 null, '가장 많이 줄었는지'를 물으면 largestTimeDrop=true입니다.
 예를 들어 '몇 시에 매출이 가장 많이 줄었어요?'는 시간대 자료가 없어도
 TIME_SLOT, timeMetric=KRW, largestTimeDrop=true입니다.
+매출이나 결제가 감소한 시간대만 묻는 단일 질문에는 SALES를 추가하지 마세요.
 CAUSE는 매출이 왜 변했는지, STRATEGY는 어떤 대응을 추천하는지,
 GUIDE는 구체적 실행 방법이나 공식 안내를 묻는 의도입니다.
 이전 시간대를 가리키며 무엇을 먼저 확인할지 물으면 TIME_SLOT, STRATEGY, GUIDE를 함께 선택하세요.
@@ -49,6 +50,13 @@ METRICS = {
 TOPICS = {"AFTERNOON_ORDER": "오후 주문 안내", "PARKING": "주차", "WAIT_TIME": "대기시간"}
 STRATEGIES = {"OUTREACH": "주문 안내 점검", "PROMOTION": "시간대 혜택 검토", "INVENTORY": "발주량 검토"}
 TOKEN = re.compile(r"\{\{([\w-]+)\.([\w.]+)\}\}")
+TIME_DROP_QUESTION = re.compile(
+    r"(?:(?:우리\s*가게|매장)\s*)?"
+    r"(?:몇\s*시(?:에|쯤)?|어느\s*시간대(?:에|에서)?)\s*"
+    r"(?:매출(?:액)?|결제\s*금액|결제(?:\s*건수)?)\s*(?:이|가|은|는)?\s*"
+    r"(?P<largest>(?:가장|제일)\s*(?:많이|크게)?\s*)?"
+    r"(?:줄었|줄어들었|감소했|떨어졌)(?:나요|어요|습니까|어)?[?.]?"
+)
 
 
 class QuestionState(TypedDict, total=False):
@@ -339,6 +347,14 @@ class Answer:
 
     def assemble(self):
         intents = list(dict.fromkeys(self.intent.intents)) or ["OUT_OF_SCOPE"]
+        # A single question about when a metric fell cannot be answered by a monthly total.
+        time_question = TIME_DROP_QUESTION.fullmatch(self.request.question.strip())
+        if time_question:
+            unit = "COUNT" if re.search(r"결제(?!\s*금액)", self.request.question) else "KRW"
+            self.intent = self.intent.model_copy(update={
+                "timeMetric": unit, "largestTimeDrop": bool(time_question["largest"]),
+            })
+            intents = ["TIME_SLOT"]
         intents = [intent for intent in intents if intent != "OUT_OF_SCOPE"] or ["OUT_OF_SCOPE"]
         for intent in intents:
             if intent in METRICS:

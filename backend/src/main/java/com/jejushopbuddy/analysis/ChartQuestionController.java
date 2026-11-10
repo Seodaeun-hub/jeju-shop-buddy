@@ -69,7 +69,6 @@ class ChartQuestionController {
         }
 
         var planId = request.planId() != null ? request.planId() : rememberedPlan(analysisId, history);
-        var snapshot = evidence.forAnalysis(analysis, owner.getName(), planId);
         var context = json.createObjectNode().put("planId", planId == null ? null : planId.toString());
         context.set("comparisonPeriod", json.valueToTree(List.of(analysis.beforeMonth(), analysis.afterMonth())));
         var recent = history.subList(Math.max(0, history.size() - 5), history.size());
@@ -78,9 +77,11 @@ class ChartQuestionController {
         for (var turn : recent.reversed()) {
             if ("CLARIFICATION_REQUIRED".equals(turn.answer().path("status").asString())) continue;
             for (var id : turn.answer().path("focusedEvidenceIds")) {
-                if (snapshot.facts().containsKey(id.asString())) focus.add(id.asString());
+                focus.add(id.asString());
             }
         }
+        var snapshot = evidence.forAnalysis(analysis, owner.getName(), planId, question, focus);
+        focus.retainAll(snapshot.facts().keySet());
         context.set("focusedEvidenceIds", json.valueToTree(focus));
         var payload = json.createObjectNode().put("schemaVersion", "1.0").put("question", question).put("chart", request.chart());
         payload.set("context", context);

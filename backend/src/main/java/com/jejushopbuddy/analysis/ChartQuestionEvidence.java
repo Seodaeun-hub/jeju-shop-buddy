@@ -3,10 +3,15 @@ package com.jejushopbuddy.analysis;
 import com.jejushopbuddy.analysis.ExecutionResultWriter.Metric;
 import com.jejushopbuddy.analysis.ExecutionResultWriter.Period;
 import com.jejushopbuddy.analysis.SalesAnalysisController.AnalysisResponse;
+import com.jejushopbuddy.analysis.SalesAnalysisController.TimeSlot;
 import com.jejushopbuddy.analysis.SalesStrategies.Response;
 import com.jejushopbuddy.analysis.StrategyAgentClient.GuideResponse;
+import java.nio.charset.StandardCharsets;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
@@ -15,6 +20,9 @@ import tools.jackson.databind.node.ObjectNode;
 
 @Component
 class ChartQuestionEvidence {
+    private static final int MAX_AGENT_FACTS = 200;
+    private static final int MAX_TIME_FACTS = 120;
+
     private final JdbcClient jdbc;
     private final ObjectMapper json;
     private final JejuMarketContext market;
@@ -37,7 +45,7 @@ class ChartQuestionEvidence {
         this.results = results;
     }
 
-    Snapshot forAnalysis(AnalysisResponse analysis, String owner, UUID selectedPlan) {
+    Snapshot forAnalysis(AnalysisResponse analysis, String owner, UUID selectedPlan, String question, Set<String> focus) {
         var snapshot = new Snapshot(new LinkedHashMap<>(), new java.util.ArrayList<>());
         var store = market.forStore(analysis.storeId(), analysis.beforeMonth(), analysis.afterMonth());
         var context = store.context();
@@ -54,14 +62,6 @@ class ChartQuestionEvidence {
                     context.bsi().before(), context.bsi().after(), "소상공인시장진흥공단",
                     "https://www.data.go.kr/data/3060077/fileData.do"));
         }
-        if (analysis.timeSeries() != null) {
-            for (var slot : analysis.timeSeries().rows()) {
-                String id = "time-" + UUID.nameUUIDFromBytes(slot.label().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                snapshot.add(metric(analysis, id, "TIME_SERIES", slot.label(), "해당 매장",
-                        "COUNT".equals(analysis.timeSeries().metric()) ? "COUNT" : "KRW", slot.before(), slot.after(),
-                        "저장된 시간대별 자료", null));
-            }
-        }
         var fingerprint = agent.fingerprintFor(analysis);
         var recommendation = jdbc.sql("""
                 SELECT snapshot FROM strategy_recommendations WHERE analysis_id = :id AND input_fingerprint = :fingerprint
@@ -69,14 +69,20 @@ class ChartQuestionEvidence {
                 """).param("id", analysis.id()).param("fingerprint", fingerprint)
                 .query((rs, row) -> json.readValue(rs.getString(1), Response.class)).optional()
                 .orElseGet(() -> strategies.from(analysis));
+        var timeReferences = new HashSet<String>();
         for (var strategy : recommendation.strategies()) {
             var evidence = fact("strategy-" + strategy.code(), "STRATEGY", strategy.title(),
                     "AGENT".equals(recommendation.recommendationSource()) ? "저장된 AI 추천" : "기본 대응 전략", null)
                     .put("code", strategy.code()).put("reason", strategy.reason());
             var ids = evidence.putArray("evidenceIds");
             for (var item : strategy.evidence()) {
-                snapshot.facts().values().stream().filter(value -> item.source().equals(value.path("metric").asString())
-                        && (!"TIME_SERIES".equals(item.source()) || item.label().equals(value.path("label").asString())))
+                if ("TIME_SERIES".equals(item.source()) && item.label() != null) {
+                    String id = timeId(item.label());
+                    timeReferences.add(id);
+                    ids.add(id);
+                    continue;
+                }
+                snapshot.facts().values().stream().filter(value -> item.source().equals(value.path("metric").asString()))
                         .findFirst().ifPresent(value -> ids.add(value.path("id").asString()));
             }
             snapshot.add(evidence);
@@ -118,6 +124,7 @@ class ChartQuestionEvidence {
                 });
             });
         }
+        addTimeFacts(snapshot, analysis, question, focus, timeReferences);
         snapshot.allow("ADD_TIME_SERIES", "AMOUNT");
         snapshot.allow("ADD_TIME_SERIES", "COUNT");
         snapshot.allow("OPEN_REVIEWS", "ALL");
@@ -125,12 +132,36 @@ class ChartQuestionEvidence {
         for (var entry : reviews.classified(analysis.storeId())) {
             var review = entry.review();
             for (var topic : entry.topics()) {
-                if (snapshot.facts().size() >= 200) break;
+                if (snapshot.facts().size() >= MAX_AGENT_FACTS) return snapshot;
                 snapshot.add(fact("review-" + review.id() + "-" + topic, "REVIEW", "매장 리뷰", "매장 등록 리뷰", null)
                         .put("date", review.date().toString()).put("topic", topic.name()).put("excerpt", review.text()));
             }
         }
         return snapshot;
+    }
+
+    private void addTimeFacts(Snapshot snapshot, AnalysisResponse analysis, String question,
+                              Set<String> focus, Set<String> references) {
+        var series = analysis.timeSeries();
+        if (series == null || series.rows().isEmpty()) return;
+        var byDrop = Comparator.comparingLong((TimeSlot slot) -> slot.after() - slot.before());
+        var largestDrop = series.rows().stream().min(byDrop).orElseThrow();
+        // Preserve the global maximum and cited or named slots before filling the time-series budget.
+        var ordered = Comparator.comparingInt((TimeSlot slot) -> {
+            if (slot.equals(largestDrop)) return 0;
+            if (references.contains(timeId(slot.label()))) return 1;
+            if (question.contains(slot.label()) || focus.contains(timeId(slot.label()))) return 2;
+            return 3;
+        }).thenComparing(byDrop);
+        int limit = Math.min(MAX_TIME_FACTS, MAX_AGENT_FACTS - snapshot.facts().size());
+        var unit = "COUNT".equals(series.metric()) ? "COUNT" : "KRW";
+        series.rows().stream().sorted(ordered).limit(limit).forEach(slot -> snapshot.add(
+                metric(analysis, timeId(slot.label()), "TIME_SERIES", slot.label(), "해당 매장",
+                        unit, slot.before(), slot.after(), "저장된 시간대별 자료", null)));
+    }
+
+    private static String timeId(String label) {
+        return "time-" + UUID.nameUUIDFromBytes(label.getBytes(StandardCharsets.UTF_8));
     }
 
     private void addGuide(Snapshot snapshot, String code, GuideResponse guide) {
