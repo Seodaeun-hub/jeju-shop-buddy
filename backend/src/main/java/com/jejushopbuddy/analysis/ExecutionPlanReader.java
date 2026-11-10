@@ -6,6 +6,7 @@ import com.jejushopbuddy.analysis.ExecutionPlanWriter.Plan;
 import com.jejushopbuddy.analysis.SalesStrategies.Suggestion;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -28,7 +29,7 @@ class ExecutionPlanReader {
     public Optional<Plan> find(UUID id, String ownerEmail) {
         var plan = jdbc.sql("""
                 SELECT p.analysis_id, p.duration_weeks, p.budget_won, p.channel,
-                       p.start_date, p.end_date, p.created_at,
+                       p.start_date, p.end_date, p.created_at, p.inventory_review,
                        p.strategy_snapshot || jsonb_build_object('code', p.strategy_code) AS strategy
                 FROM execution_plans p
                 JOIN sales_analyses a ON a.id = p.analysis_id
@@ -44,7 +45,7 @@ class ExecutionPlanReader {
                         new Conditions(rs.getInt("duration_weeks"), rs.getObject("budget_won", Long.class),
                                 rs.getString("channel")),
                         rs.getObject("start_date", LocalDate.class), rs.getObject("end_date", LocalDate.class),
-                        rs.getObject("created_at", OffsetDateTime.class)))
+                        rs.getObject("created_at", OffsetDateTime.class), rs.getString("inventory_review")))
                 .optional();
         if (plan.isEmpty()) {
             return Optional.empty();
@@ -59,10 +60,12 @@ class ExecutionPlanReader {
                         rs.getObject("due_date", LocalDate.class), rs.getBoolean("completed")))
                 .list();
         var saved = plan.get();
+        var items = saved.inventoryReview() == null ? null
+                : List.of(json.readValue(saved.inventoryReview(), InventoryReviewController.Item[].class));
         return Optional.of(new Plan(id, saved.analysisId(), saved.strategy(), saved.conditions(),
-                saved.startDate(), saved.endDate(), checklist, saved.createdAt()));
+                saved.startDate(), saved.endDate(), checklist, saved.createdAt(), items));
     }
 
     private record SavedPlan(UUID analysisId, Suggestion strategy, Conditions conditions,
-                             LocalDate startDate, LocalDate endDate, OffsetDateTime createdAt) {}
+                             LocalDate startDate, LocalDate endDate, OffsetDateTime createdAt, String inventoryReview) {}
 }

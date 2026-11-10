@@ -3,7 +3,7 @@ import { Link } from 'react-router'
 import { Citrus, PageTitle } from '../components/ui'
 import { ExecutionGuideSteps } from '../components/ExecutionGuidePanel'
 import { formatNumber, won } from '../data/shop'
-import type { Plan } from '../data/shop'
+import type { Analysis, InventoryItem, Plan } from '../data/shop'
 import { InventoryReview } from './InventoryReview'
 import '../styles/execution.css'
 
@@ -129,10 +129,12 @@ function PromoDraft({ plan }: { plan: Plan }) {
   </section>
 }
 
-export function Execution({ plan, onChange, onToggleChecklist, resultsTo }: {
+export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveInventory, resultsTo }: {
   plan: Plan
   onChange: (value: Plan) => void
   onToggleChecklist: (index: number, completed: boolean) => Promise<void>
+  analysis: Analysis
+  onSaveInventory?: (items: InventoryItem[]) => Promise<void>
   resultsTo: string
 }) {
   const [savingIndex, setSavingIndex] = useState<number>()
@@ -209,6 +211,8 @@ export function Execution({ plan, onChange, onToggleChecklist, resultsTo }: {
       <div className="form-stack execution-aside">
         {inventory ? <InventoryReview
           items={plan.inventoryItems ?? []}
+          analysis={analysis}
+          onSave={onSaveInventory}
           reviewDate={shortDate(plan.tasks[2].date)}
           onChange={(inventoryItems) => onChange({ ...plan, inventoryItems })}
         /> : needsPromotionInputs ? <section className="execution-material">

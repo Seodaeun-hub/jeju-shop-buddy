@@ -937,6 +937,43 @@ paths:
               example:
                 code: PLAN_NOT_FOUND
                 message: 실행 계획을 찾을 수 없어요.
+  /api/plans/{planId}/inventory-review:
+    put:
+      operationId: saveInventoryReview
+      tags: [실행 계획]
+      summary: 발주 검토표 저장
+      description: 사업주가 소유한 발주 검토 계획의 품목 목록을 교체한다. 세 수량이 입력되면 예상 사용량에서 현재 재고와 입고 예정량을 뺀 값을 최소 0으로 계산한다.
+      security:
+        - ownerBasic: []
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              maxItems: 500
+              items:
+                $ref: '#/components/schemas/InventoryReviewInput'
+      responses:
+        '200':
+          description: 부족 수량을 계산해 저장한 품목 목록
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InventoryReviewItem'
+        '400':
+          description: 품목 또는 수량이 잘못된 요청
+        '401':
+          description: 로그인 필요
+        '404':
+          description: 조회할 수 있는 발주 검토 계획이 없음
   /api/plans/{planId}/checklist/{itemId}:
     patch:
       operationId: updateExecutionChecklistItem
@@ -1804,9 +1841,32 @@ components:
           description: 실행 순서대로 정렬한 체크리스트
           items:
             $ref: '#/components/schemas/ExecutionChecklistItem'
+        inventoryItems:
+          type: array
+          description: 발주 검토 계획에 저장한 품목과 계산 결과
+          items:
+            $ref: '#/components/schemas/InventoryReviewItem'
         createdAt:
           type: string
           format: date-time
+    InventoryReviewInput:
+      type: object
+      required: [id, name, unit]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 50 }
+        unit: { type: string, minLength: 1, maxLength: 12 }
+        stock: { type: string, example: '8.250' }
+        expectedUse: { type: string, example: '15.5' }
+        incoming: { type: string, example: '2' }
+        finalOrder: { type: string, example: '6' }
+      description: 수량은 0 이상 10억 이하의 소수점 셋째 자리까지 입력한다. 미입력 값은 빈 문자열로 저장한다.
+    InventoryReviewItem:
+      allOf:
+        - $ref: '#/components/schemas/InventoryReviewInput'
+        - type: object
+          properties:
+            shortage: { type: number, nullable: true, minimum: 0, example: 5.25 }
     CreateExecutionPlanResultRequest:
       type: object
       additionalProperties: false
