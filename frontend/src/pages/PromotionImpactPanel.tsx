@@ -104,7 +104,7 @@ export function PromotionImpactPanel({ auth, planId }: { auth: string; planId: s
         <p className="muted">두 파일의 주문 기록일 수가 달라요. 합계를 해석하기 전에 영업일과 내보낸 기간을 확인해 주세요.</p>}
       <p className="muted">결제 완료된 주문의 수량과 실판매금액을 합산해요. 기간 중 관측된 변화를 보여줘요.</p>
       {result.beforeTotals && result.afterTotals && result.advice &&
-        <NextPromotionCard before={result.beforeTotals} after={result.afterTotals}
+        <NextPromotionCard auth={auth} planId={planId} before={result.beforeTotals} after={result.afterTotals}
           advice={result.advice} checklist={result.nextChecklist} pending={pending}
           onCreate={() => void saveChecklist()}
           onToggle={(item, completed) => void saveChecklist({ item, completed })} />}

@@ -8,12 +8,14 @@ from .chart_question_schemas import ChartQuestionRequest, ChartQuestionResponse
 from .execution_guide import GuideRequest, GuideResponse, build_guide_graph, load_catalog
 from .graph import build_graph
 from .model import structured_model
+from .next_promotion import NextPromotionExplanation, NextPromotionRequest, build_next_promotion_graph
 from .schemas import Contract, StrategyRequest, StrategyResponse
 
 app = FastAPI(title="가게짝꿍 대응 전략 Agent")
 graph = build_graph()
 guide_graph = build_guide_graph(load_catalog())
 question_graph = build_question_graph()
+next_promotion_graph = build_next_promotion_graph()
 
 
 @app.post("/internal/strategy-recommendations", response_model=StrategyResponse)
@@ -32,6 +34,14 @@ def chart_question(request: ChartQuestionRequest) -> ChartQuestionResponse:
         return question_graph.invoke({"request": request})["result"]
     except (OpenAIError, OutputParserException, ValueError, TimeoutError):
         raise HTTPException(status_code=503, detail={"code": "QA_UNAVAILABLE"}) from None
+
+
+@app.post("/internal/next-promotion-explanation", response_model=NextPromotionExplanation)
+def next_promotion_explanation(request: NextPromotionRequest) -> NextPromotionExplanation:
+    try:
+        return next_promotion_graph.invoke({"request": request})["result"]
+    except (OpenAIError, OutputParserException, ValueError, TimeoutError):
+        raise HTTPException(status_code=503, detail={"code": "NEXT_PROMOTION_EXPLANATION_UNAVAILABLE"}) from None
 
 
 class PromotionCopyRequest(Contract):

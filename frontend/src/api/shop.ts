@@ -349,6 +349,13 @@ export const savePromotionImpact = (auth: string, planId: string,
   input: PromotionImpactPeriod & PromotionImpactTotals & {phase: 'BEFORE' | 'AFTER'}) =>
   request<PromotionImpact>(promotionImpactPath(planId), auth, 'PUT', input)
 
+export type NextPromotionExplanation = {
+  input: { before: PromotionImpactTotals; after: PromotionImpactTotals; advice: PromotionImpactAdvice }
+  explanation: string | null
+}
+export const fetchNextPromotionExplanation = (auth: string, planId: string, signal: AbortSignal) =>
+  request<NextPromotionExplanation>(promotionImpactPath(planId) + '/next-explanation', auth, 'GET', undefined, signal)
+
 export const saveNextPromotionChecklist = (auth: string, planId: string,
   update: { item: NextPromotionChecklistItem; completed: boolean } | Record<string, never>) =>
   request<PromotionImpact>(promotionImpactPath(planId) + '/next-checklist', auth, 'PUT', update)

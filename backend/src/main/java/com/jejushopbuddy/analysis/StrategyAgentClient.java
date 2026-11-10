@@ -91,6 +91,16 @@ final class StrategyAgentClient {
                 : post("/internal/chart-questions", payload, tools.jackson.databind.JsonNode.class);
     }
 
+    Optional<String> nextPromotionExplanation(PromotionImpactController.ExplanationInput input) {
+        if (baseUrl.isEmpty()) return Optional.empty();
+        return post("/internal/next-promotion-explanation", input, NextPromotionResponse.class)
+                .map(NextPromotionResponse::explanation).map(String::strip)
+                .filter(line -> !line.isBlank() && line.length() <= 360
+                        && !line.matches("(?s).*[\\p{N}\\p{Cntrl}].*"));
+    }
+
+    private record NextPromotionResponse(String explanation) {}
+
     Optional<String> promotionOpening(String productName) {
         if (baseUrl.isEmpty()) return Optional.empty();
         return post("/internal/promotion-copy", java.util.Map.of("productName", productName),
