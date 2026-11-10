@@ -5,7 +5,7 @@ import { Citrus, PageTitle } from '../components/ui'
 import { ExecutionGuideSteps } from '../components/ExecutionGuidePanel'
 import { drawPromotionCard } from '../data/promotionCard'
 import { formatNumber, won } from '../data/shop'
-import type { Analysis, InventoryItem, Plan, PromotionDraftInput, PromotionReviewInput } from '../data/shop'
+import type { Analysis, InventoryItem, Plan, PromotionDraftInput, PromotionReviewInput, PromotionTone } from '../data/shop'
 import { InventoryReview } from './InventoryReview'
 import { PromotionReview } from './PromotionReview'
 import { InstagramPublish } from './InstagramPublish'
@@ -184,7 +184,7 @@ function PromoDraft({ plan, auth, instagramStatus, onInstagramStatus }: {
   </section>
 }
 
-export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveInventory, onSavePromotion, auth, onSavePromotionDraft, resultsTo }: {
+export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveInventory, onSavePromotion, auth, onSavePromotionDraft, onRegeneratePromotionCaption, resultsTo }: {
   plan: Plan
   onChange: (value: Plan) => void
   onToggleChecklist: (index: number, completed: boolean) => Promise<void>
@@ -193,6 +193,7 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
   onSavePromotion?: (input: PromotionReviewInput) => Promise<void>
   auth?: string
   onSavePromotionDraft?: (input: PromotionDraftInput) => Promise<void>
+  onRegeneratePromotionCaption: (tone: PromotionTone) => Promise<void>
   resultsTo: string
 }) {
   const [savingIndex, setSavingIndex] = useState<number>()
@@ -285,7 +286,7 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
         {plan.strategy === 'promotion' && auth && onSavePromotionDraft && <>
           {locked && <p className="muted">인스타그램 게시를 예약했거나 시작한 계획의 할인 조건과 홍보물은 수정할 수 없어요.</p>}
           {!locked && !loadingInstagram &&
-            <PromotionDraftForm key={plan.promotionReview?.productName} plan={plan} auth={auth} onSave={onSavePromotionDraft} />}
+            <PromotionDraftForm key={plan.promotionReview?.productName} plan={plan} auth={auth} onSave={onSavePromotionDraft} onRegenerate={onRegeneratePromotionCaption} />}
           {plan.promotionDraft && <PromoDraft plan={plan} auth={auth} instagramStatus={instagramStatus}
             onInstagramStatus={setInstagramStatus} />}
         </>}

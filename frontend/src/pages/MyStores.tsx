@@ -5,9 +5,11 @@ import type { Store, StoreAnalysisSummary } from '../api/shop'
 import { monthLabel } from '../data/shop'
 import { PageTitle } from '../components/ui'
 import { MenuPhotos } from './MenuPhotos'
+import { StorePromotionTone } from './StorePromotionTone'
 
 function StoreHistory({ auth, store }: { auth: string; store: Store }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [toneOpen, setToneOpen] = useState(false)
   const [history, setHistory] = useState<StoreAnalysisSummary[]>()
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
@@ -26,11 +28,14 @@ function StoreHistory({ auth, store }: { auth: string; store: Store }) {
     <div className="section-top ruled">
       <div><h2 id="analysis-history">{store.name} 분석 이력</h2><p className="muted">{store.areaName} · {store.address}</p></div>
       <div className="actions">
+        <button type="button" className="button secondary" aria-expanded={toneOpen}
+          onClick={() => setToneOpen(!toneOpen)}>홍보 말투 설정</button>
         <button type="button" className="button secondary" aria-expanded={menuOpen}
           onClick={() => setMenuOpen(!menuOpen)}>메뉴 사진 관리</button>
         <Link className="button primary" to={'/sales?' + new URLSearchParams({ storeId: store.id })}>새 POS 올리기</Link>
       </div>
     </div>
+    {toneOpen && <StorePromotionTone auth={auth} storeId={store.id} />}
     {menuOpen && <MenuPhotos auth={auth} storeId={store.id} />}
     {error ? <div role="alert" className="error">{error} <button type="button" className="text-button" onClick={() => {
       setError('')
