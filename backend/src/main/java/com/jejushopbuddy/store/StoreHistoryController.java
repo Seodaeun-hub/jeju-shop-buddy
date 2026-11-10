@@ -28,7 +28,8 @@ class StoreHistoryController {
         var rows = jdbc.sql("""
                 SELECT a.id AS analysis_id, a.before_month, a.after_month, a.concern, a.created_at,
                        p.id AS plan_id, p.strategy_snapshot->>'title' AS title, p.start_date, p.end_date,
-                       EXISTS (SELECT 1 FROM execution_results r WHERE r.plan_id = p.id) AS has_result
+                       (EXISTS (SELECT 1 FROM execution_results r WHERE r.plan_id = p.id)
+                        OR (p.promotion_impact->'before' IS NOT NULL AND p.promotion_impact->'after' IS NOT NULL)) AS has_result
                 FROM stores s
                 JOIN owners o ON o.id = s.owner_id
                 LEFT JOIN sales_analyses a ON a.store_id = s.id
