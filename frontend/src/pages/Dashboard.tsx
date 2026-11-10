@@ -2,7 +2,7 @@ import { ChartQuestions } from '../components/ChartQuestions'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router'
-import { Citrus, PageTitle } from '../components/ui'
+import { Citrus } from '../components/ui'
 import { changeRate, example, formatNumber, formatRate, monthLabel, won } from '../data/shop'
 import type { Analysis, TimeSeries } from '../data/shop'
 import { attachHourlySales, checkConcern, fetchMarketContext } from '../api/shop'
@@ -312,7 +312,6 @@ export function Dashboard({ data, auth, analysisId, onSaveTimeSeries, strategyTo
   }, [chatOpen, timeOpen, closeTopic])
 
   return <>
-    <PageTitle title="매출 분석" detail={`${data.store} · ${period}${data.demo ? ' · 시연 예시' : ''}`} />
     <div className="split dashboard analysis-dashboard">
       <div className="dashboard-main form-stack">
         {concern && <section className="notice dashboard-concern" aria-label="사장님이 적은 고민">

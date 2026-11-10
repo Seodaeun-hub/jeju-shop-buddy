@@ -16,6 +16,7 @@ type ApiTimeSeries = { metric: 'COUNT' | 'AMOUNT'; rows: TimeSeries['rows'] }
 type SavedAnalysis = {
   id: string
   storeId: string
+  createdAt: string
   concern?: string
   monthlySales: MonthlySales[]
   timeSeries?: ApiTimeSeries
@@ -183,7 +184,8 @@ export async function fetchAnalysis(auth: string, id: string, signal: AbortSigna
   const store = (await listStores(auth, signal)).find(({ id }) => id === saved.storeId)
   if (!store) throw new Error('분석에 연결된 매장을 찾을 수 없어요.')
   return {
-    store: store.name, address: store.address, area: store.areaName,
+    store: store.name, storeId: store.id, createdAt: saved.createdAt,
+    address: store.address, area: store.areaName,
     industry: store.customIndustryName ?? industryOptions.find(({ code }) => code === store.industryCode)?.name ?? store.industryCode,
     concern: saved.concern ?? '', monthly: saved.monthlySales,
     productSales: saved.productSales,

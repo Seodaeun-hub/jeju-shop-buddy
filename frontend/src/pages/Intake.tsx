@@ -46,7 +46,29 @@ function InputTabs({ mode, onChange, manualLabel }: {
   </div>
 }
 
-type ImportedFile = PosImport & { filename: string }
+type ImportedFile = PosImport & { filename: string; productFilename?: string }
+
+function PosFilePicker({ label, filename, placeholder, accept, disabled, onSelect }: {
+  label: string
+  filename?: string
+  placeholder?: string
+  accept: string
+  disabled: boolean
+  onSelect: (file: File) => void
+}) {
+  const input = useRef<HTMLInputElement>(null)
+  return <div className={filename || placeholder ? 'pos-file-picker with-filename' : 'pos-file-picker'}>
+    <button type="button" className="button secondary small" disabled={disabled} onClick={() => input.current?.click()}>
+      {label}
+    </button>
+    {(filename || placeholder) && <span className={filename ? undefined : 'muted'}>{filename ?? placeholder}</span>}
+    <input ref={input} type="file" aria-label={label} accept={accept} disabled={disabled} hidden onChange={event => {
+      const file = event.target.files?.[0]
+      event.target.value = ''
+      if (file) onSelect(file)
+    }} />
+  </div>
+}
 
 function PosUpload({ value, onChange, compareMonths, disabled, onProductReadingChange }: {
   value?: ImportedFile
@@ -55,70 +77,90 @@ function PosUpload({ value, onChange, compareMonths, disabled, onProductReadingC
   disabled?: boolean
   onProductReadingChange?: (reading: boolean) => void
 }) {
-  const [reading, setReading] = useState(false)
+  const [reading, setReading] = useState<{ kind: 'payment' | 'product'; filename: string }>()
   const [error, setError] = useState('')
   const request = useRef(0)
-  const [productFilename, setProductFilename] = useState('')
   useEffect(() => () => { request.current++ }, [])
 
   async function selectFile(file: File) {
     const id = ++request.current
     onChange(undefined)
-    setProductFilename('')
     setError('')
-    setReading(true)
+    setReading({ kind: 'payment', filename: file.name })
     try {
       const data = await importPos(file, compareMonths)
       if (id === request.current) onChange({ ...data, filename: file.name })
     } catch (error) {
       if (id === request.current) setError(error instanceof Error ? error.message : 'POS 파일을 읽을 수 없어요.')
     } finally {
-      if (id === request.current) setReading(false)
+      if (id === request.current) setReading(undefined)
     }
   }
 
   async function selectProductFile(file: File, payment: ImportedFile) {
     const id = ++request.current
     setError('')
-    setReading(true)
+    setReading({ kind: 'product', filename: file.name })
     onProductReadingChange?.(true)
     try {
       const productSales = await readProductSales(file, ...payment.months)
       if (!productSales.length) throw new Error('비교 기간에 해당하는 상품 주문이 없어요.')
       if (id === request.current) {
-        onChange({ ...payment, productSales, productWarning: undefined })
-        setProductFilename(file.name)
+        onChange({ ...payment, productSales, productWarning: undefined, productFilename: file.name })
       }
     } catch {
-      if (id === request.current) setError('상품 주문 CSV의 형식과 비교 기간을 확인해 주세요.')
+      if (id === request.current) setError(file.name + ' 파일을 읽지 못했어요. 상품 주문 CSV의 형식과 비교 기간을 확인해 주세요.')
     } finally {
       if (id === request.current) {
-        setReading(false)
+        setReading(undefined)
         onProductReadingChange?.(false)
       }
     }
   }
 
+  const productCount = value?.productSales?.length ?? 0
+  const priceCount = value?.productSales?.filter(item => item.priceWon != null).length ?? 0
+  const canAddProductCsv = value && /\.csv$/i.test(value.filename)
+  const pickerDisabled = Boolean(disabled || reading)
+
   return <div className="upload-preview">
     <span className="upload-arrow" aria-hidden="true">↑</span>
     <strong>토스포스 결제 내역 선택</strong>
     <p>Excel (.xlsx) · 결제 내역 CSV (.csv) · 최대 10MB</p>
-    <label className="file-picker">파일 선택<input type="file" accept=".xlsx,.csv" disabled={disabled || reading} onChange={(event) => {
-      const file = event.target.files?.[0]
-      event.target.value = ''
-      if (file) void selectFile(file)
-    }} /></label>
-    <small role="status">{reading ? '결제 내역을 집계하는 중이에요.' : value ? `${value.filename} · 집계 완료` : '서로 다른 두 달 이상의 결제 내역을 올려 주세요.'}</small>
-    {!compareMonths && value && /\.csv$/i.test(value.filename) && <label className="file-picker">
-      {productFilename ? '상품 주문 CSV 교체' : '상품 주문 CSV 추가 (선택)'}
-      <input type="file" accept=".csv" disabled={disabled || reading} onChange={(event) => {
-        const file = event.target.files?.[0]
-        event.target.value = ''
-        if (file) void selectProductFile(file, value)
-      }} />
-    </label>}
-    {productFilename && <small>{productFilename} · 상품 주문 집계 완료</small>}
+    <div className="pos-file-statuses">
+      <div className="pos-file-status">
+        <div role="status">
+          <strong>결제 내역</strong>
+          {reading?.kind === 'payment' ? <small>집계 중</small>
+            : value ? <>
+              <span className="badge">집계 완료</span>
+              <small>{compareMonths ? '시간대별 결제 건수' : '월별 매출 · 시간대별 결제 건수'}</small>
+            </> : <small>서로 다른 두 달 이상의 결제 내역을 올려 주세요.</small>}
+        </div>
+        <PosFilePicker label={value ? '결제 파일 교체' : '결제 파일 선택'}
+          filename={reading?.kind === 'payment' ? reading.filename : value?.filename}
+          placeholder="결제 CSV 또는 엑셀 파일" accept=".xlsx,.csv"
+          disabled={pickerDisabled} onSelect={selectFile} />
+      </div>
+      {!compareMonths && <div className="pos-file-status">
+        <div role="status">
+          <strong>상품 주문</strong>
+          {reading?.kind === 'product' ? <small>집계 중</small>
+            : productCount ? <>
+              {!value?.productFilename && <small>엑셀의 상품 주문 시트</small>}
+              <span className="badge">집계 완료</span>
+              <small>판매량 {formatNumber(productCount)}개 품목 · 판매가 {formatNumber(priceCount)}개 품목</small>
+            </> : <small>{!value ? '결제 파일을 먼저 올려 주세요.'
+              : canAddProductCsv ? '상품 주문 CSV를 추가하면 품목별 판매량과 판매가를 볼 수 있어요.'
+              : value.productWarning ?? '비교 기간에 해당하는 상품 주문이 없어요.'}</small>}
+        </div>
+        {canAddProductCsv && <PosFilePicker label={value.productFilename ? '상품 주문 파일 교체' : '파일 추가'}
+          filename={reading?.kind === 'product' ? reading.filename : value.productFilename}
+          accept=".csv" disabled={pickerDisabled} onSelect={file => void selectProductFile(file, value)} />}
+      </div>}
+    </div>
     {error && <p role="alert" className="error">{error}</p>}
+    {value && !reading && !compareMonths && <small>분석 시작을 누르면 집계된 자료를 저장해요.</small>}
   </div>
 }
 
@@ -301,7 +343,7 @@ export function Intake({ auth, onAnalyze, existingStore }: { auth: string; onAna
   const [customIndustry, setCustomIndustry] = useState('')
   const [concern, setConcern] = useState('')
   const [selectedConcern, setSelectedConcern] = useState('')
-  const [mode, setMode] = useState<InputMode>(existingStore ? 'upload' : 'manual')
+  const [mode, setMode] = useState<InputMode>('upload')
   const [error, setError] = useState('')
   const [timeOpen, setTimeOpen] = useState(false)
   const [extra, setExtra] = useState<{ value: TimeSeries; period: string }>()
@@ -441,7 +483,6 @@ export function Intake({ auth, onAnalyze, existingStore }: { auth: string; onAna
               </table>
               <p className="muted">가장 최근 두 달의 시간대를 비교해요. 취소된 결제는 집계에서 제외했어요.</p>
               <PosTimeSummary series={pos.timeSeries} months={pos.months} />
-              {pos.productWarning && <p className="muted" role="status">{pos.productWarning}</p>}
             </>}
           </> : <>
             <table className="input-table"><thead><tr><th scope="col">연도와 월</th><th scope="col">매출액 (원)</th>{rows.length > 2 && <th scope="col">삭제</th>}</tr></thead>

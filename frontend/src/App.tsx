@@ -3,15 +3,16 @@ import type { FormEvent, ReactNode } from 'react'
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
 import { createPromotionDraft, fetchAnalysis, fetchOwnerSession, fetchPlan, loginOwner, logoutOwner, ownerSession, signupOwner, type OwnerSession, regeneratePromotionCaption, saveInventoryReview, savePromotionReview, saveTimeSeries, toPlan, updateChecklistItem } from './api/shop'
 import { Dashboard } from './pages/Dashboard'
+import { AnalysisSwitcher } from './components/AnalysisSwitcher'
 import { ExistingStoreIntake, Intake } from './pages/Intake'
 import { MyStores } from './pages/MyStores'
 import { MyPage } from './pages/MyPage'
 import { Execution } from './pages/Execution'
 import { Results } from './pages/Results'
 import { SavedStrategyPage, Strategy } from './pages/Strategy'
-import { example } from './data/shop'
+import { example, monthLabel } from './data/shop'
 import type { Analysis, InventoryItem, Plan, PromotionDraftInput, PromotionReviewInput, PromotionTone, TimeSeries } from './data/shop'
-import { Citrus } from './components/ui'
+import { Citrus, PageTitle } from './components/ui'
 
 const navigation = [
   { to: '/stores', label: '내 매장' },
@@ -278,10 +279,17 @@ export function App() {
       setRetry((value) => value + 1)
     }}>다시 불러오기</button></> : <p role="status">저장한 매출 분석을 불러오는 중이에요.</p>}
   </section>
-  const dashboard = analysisId && !auth
+  const dashboardContent = analysisId && !auth
     ? <Navigate to="/login" state={{ returnTo: dashboardPath(analysisId) }} replace />
     : currentAnalysis ? <Dashboard key={analysisId ?? 'demo'} data={currentAnalysis} auth={auth} analysisId={analysisId} onSaveTimeSeries={updateTimeSeries} strategyTo={strategyPath} />
-    : analysisId ? analysisStatus : <Placeholder to="/sales" action="매출 입력하기">분석할 매출을 입력해 주세요.</Placeholder>
+    : analysisId ? analysisStatus : <section className="empty-state"><p>저장된 분석을 선택하거나 새 매출을 입력해 주세요.</p><Link className="button primary" to="/sales">매출 입력하기 →</Link></section>
+  const dashboard = <>
+    <PageTitle title="매출 분석" detail={!auth && currentAnalysis
+      ? `${currentAnalysis.store} · ${currentAnalysis.monthly.slice(-2).map(({ month }) => monthLabel(month)).join(' → ')} · 시연 예시`
+      : undefined} />
+    {auth && <AnalysisSwitcher key={account?.email} auth={auth} analysis={currentAnalysis} analysisId={analysisId} onOpen={openSavedAnalysis} />}
+    {dashboardContent}
+  </>
 
   const strategyPage = analysisId && !auth
     ? <Navigate to="/login" state={{ returnTo: pathname + search }} replace />

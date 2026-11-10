@@ -9,6 +9,8 @@ export type TimeSeries = {
 }
 export type Analysis = {
   store: string
+  storeId?: string
+  createdAt?: string
   address?: string
   area?: string
   industry: string
