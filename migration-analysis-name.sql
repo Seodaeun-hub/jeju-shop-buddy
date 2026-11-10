@@ -1,0 +1,1 @@
+ALTER TABLE sales_analyses ADD COLUMN IF NOT EXISTS name VARCHAR(100);

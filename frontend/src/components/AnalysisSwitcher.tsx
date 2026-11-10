@@ -41,9 +41,9 @@ function AnalysisOptions({ auth, storeId, analysisId, onOpen }: {
 
   const current = history.find(item => item.id === analysisId)
   return <label>저장된 분석<select value={current?.id ?? ''} onChange={event => onOpen(event.target.value)}>
-    <option value="" disabled>비교 기간과 저장일로 분석 선택</option>
+    <option value="" disabled>분석 이름, 비교 기간, 저장일로 선택</option>
     {history.map(item => <option key={item.id} value={item.id}>
-      {comparePeriod(item.beforeMonth, item.afterMonth)} · {savedAt.format(new Date(item.createdAt))}
+      {item.name || '이름 없는 분석'} · {comparePeriod(item.beforeMonth, item.afterMonth)} · {savedAt.format(new Date(item.createdAt))}
     </option>)}
   </select></label>
 }
@@ -75,6 +75,7 @@ export function AnalysisSwitcher({ auth, analysis, analysisId, onOpen }: {
     {analysis && <div className="analysis-current">
       <span className="badge">{analysis.demo ? '시연 예시' : '현재 보는 분석'}</span>
       <dl>
+        {!analysis.demo && <div><dt>분석 이름</dt><dd>{analysis.name || '이름 없는 분석'}</dd></div>}
         <div><dt>매장명</dt><dd>{analysis.store}</dd></div>
         {before && after && <div><dt>비교 기간</dt><dd>{comparePeriod(before.month, after.month)}</dd></div>}
         {analysis.createdAt && <div><dt>저장일</dt><dd><time dateTime={analysis.createdAt}>{savedAt.format(new Date(analysis.createdAt))}</time></dd></div>}

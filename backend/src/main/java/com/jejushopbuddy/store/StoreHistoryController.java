@@ -26,7 +26,7 @@ class StoreHistoryController {
     @GetMapping("/api/stores/{storeId}/analyses")
     ResponseEntity<?> history(@PathVariable UUID storeId, Principal owner) {
         var rows = jdbc.sql("""
-                SELECT a.id AS analysis_id, a.before_month, a.after_month, a.concern, a.created_at,
+                SELECT a.id AS analysis_id, a.name, a.before_month, a.after_month, a.concern, a.created_at,
                        p.id AS plan_id, p.strategy_snapshot->>'title' AS title, p.start_date, p.end_date,
                        (EXISTS (SELECT 1 FROM execution_results r WHERE r.plan_id = p.id)
                         OR (p.promotion_impact->'before' IS NOT NULL AND p.promotion_impact->'after' IS NOT NULL)) AS has_result
@@ -42,7 +42,7 @@ class StoreHistoryController {
                 .query((rs, row) -> {
                     var analysisId = rs.getObject("analysis_id", UUID.class);
                     if (analysisId == null) return new HistoryRow(null, null);
-                    var analysis = new AnalysisSummary(analysisId,
+                    var analysis = new AnalysisSummary(analysisId, rs.getString("name"),
                             YearMonth.from(rs.getObject("before_month", LocalDate.class)).toString(),
                             YearMonth.from(rs.getObject("after_month", LocalDate.class)).toString(),
                             rs.getString("concern"), rs.getObject("created_at", OffsetDateTime.class),
@@ -68,7 +68,7 @@ class StoreHistoryController {
     }
 
     private record HistoryRow(AnalysisSummary analysis, PlanSummary plan) {}
-    record AnalysisSummary(UUID id, String beforeMonth, String afterMonth, String concern,
+    record AnalysisSummary(UUID id, String name, String beforeMonth, String afterMonth, String concern,
                            OffsetDateTime createdAt, List<PlanSummary> plans) {}
     record PlanSummary(UUID id, String title, LocalDate startDate, LocalDate endDate, boolean hasResult) {}
 }

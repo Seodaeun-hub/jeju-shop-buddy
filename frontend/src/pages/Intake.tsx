@@ -341,6 +341,7 @@ export function Intake({ auth, onAnalyze, existingStore }: { auth: string; onAna
   const resolvedArea = areas?.find(({ code }) => code === resolvedAreaCode)?.name
   const [industry, setIndustry] = useState('')
   const [customIndustry, setCustomIndustry] = useState('')
+  const [analysisName, setAnalysisName] = useState('')
   const [concern, setConcern] = useState('')
   const [selectedConcern, setSelectedConcern] = useState('')
   const [mode, setMode] = useState<InputMode>('upload')
@@ -376,7 +377,7 @@ export function Intake({ auth, onAnalyze, existingStore }: { auth: string; onAna
     try {
       const storeId = existingStore?.id ?? await saveNewStore()
       const timeSeries = mode === 'upload' ? pos?.timeSeries : extra?.period === period ? extra?.value : undefined
-      const saved = await saveAnalysis(auth, storeId, monthly, concern.trim(), timeSeries,
+      const saved = await saveAnalysis(auth, storeId, monthly, concern.trim(), analysisName.trim(), timeSeries,
         mode === 'upload' ? pos?.productSales : undefined, mode === 'upload' ? pos?.hourlySales : undefined)
       onAnalyze(saved.id)
     } catch (error) {
@@ -471,6 +472,8 @@ export function Intake({ auth, onAnalyze, existingStore }: { auth: string; onAna
         </section>
         <section className="form-stack">
           <div className="section-top ruled"><h2>02 매출 입력</h2></div>
+          <label>분석 이름 (선택)<input value={analysisName} onChange={event => setAnalysisName(event.target.value)}
+            placeholder="예: 봄철 점심 매출 비교" maxLength={100} disabled={saving} /></label>
           <InputTabs mode={mode} onChange={(next) => { if (!saving && !productReading) { setError(''); setMode(next) } }} manualLabel="월별 매출 직접 입력" />
           {mode === 'upload' ? <>
             <PosUpload value={pos} onChange={setPos} disabled={saving} onProductReadingChange={setProductReading} />

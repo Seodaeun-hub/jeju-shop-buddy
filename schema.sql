@@ -66,6 +66,7 @@ CREATE TABLE stores (
 CREATE TABLE sales_analyses (
     id UUID PRIMARY KEY,
     store_id UUID NOT NULL,
+    name VARCHAR(100),
     concern TEXT,
     hourly_sales JSONB,
     before_month DATE NOT NULL,
