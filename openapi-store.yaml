@@ -937,6 +937,37 @@ paths:
               example:
                 code: PLAN_NOT_FOUND
                 message: 실행 계획을 찾을 수 없어요.
+  /api/plans/{planId}/promotion-review:
+    put:
+      operationId: savePromotionReview
+      tags: [실행 계획]
+      summary: 프로모션 검토 저장
+      security:
+        - ownerBasic: []
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromotionReviewInput'
+      responses:
+        '200':
+          description: 입력값과 서버에서 계산한 할인 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromotionReview'
+        '400':
+          description: 품목명이나 입력 금액을 확인해야 하는 요청
+        '401':
+          description: 로그인 필요
+        '404':
+          description: 저장할 수 있는 프로모션 계획이 없음
   /api/plans/{planId}/inventory-review:
     put:
       operationId: saveInventoryReview
@@ -1846,9 +1877,29 @@ components:
           description: 발주 검토 계획에 저장한 품목과 계산 결과
           items:
             $ref: '#/components/schemas/InventoryReviewItem'
+        promotionReview:
+          $ref: '#/components/schemas/PromotionReview'
         createdAt:
           type: string
           format: date-time
+    PromotionReviewInput:
+      type: object
+      required: [productName, priceWon, costWon, discountWon, budgetWon]
+      properties:
+        productName: { type: string, minLength: 1, maxLength: 255 }
+        priceWon: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991, example: 8500 }
+        costWon: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991, example: 4000 }
+        discountWon: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991, example: 1000, description: 판매가 이하의 개당 할인액 }
+        budgetWon: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991, example: 30500 }
+    PromotionReview:
+      allOf:
+        - $ref: '#/components/schemas/PromotionReviewInput'
+        - type: object
+          required: [discountedPriceWon, marginPerItemWon, maxDiscountQuantity]
+          properties:
+            discountedPriceWon: { type: integer, format: int64, minimum: 0, example: 7500 }
+            marginPerItemWon: { type: integer, format: int64, example: 3500 }
+            maxDiscountQuantity: { type: integer, format: int64, minimum: 0, example: 30 }
     InventoryReviewInput:
       type: object
       required: [id, name, unit]

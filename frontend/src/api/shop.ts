@@ -1,5 +1,5 @@
 import type { Review, ReviewTopic } from '../data/reviews'
-import type { Analysis, InventoryItem, MonthlySales, Plan, ProductSale, SalesResult, TimeSeries } from '../data/shop'
+import type { Analysis, InventoryItem, MonthlySales, Plan, ProductSale, PromotionReview, PromotionReviewInput, SalesResult, TimeSeries } from '../data/shop'
 import { formatEvidence } from '../data/strategyEvidence'
 
 export type Area = { code: string; name: string }
@@ -187,6 +187,7 @@ export type PlanConditions = { durationWeeks: number; budgetWon?: number; channe
 type ChecklistItem = { id: string; title: string; dueDate: string; completed: boolean }
 type SavedPlan = {
   inventoryItems?: InventoryItem[]
+  promotionReview?: PromotionReview
   id: string
   analysisId: string
   strategy: SavedStrategy
@@ -232,6 +233,10 @@ export function fetchPlan(auth: string, id: string, signal: AbortSignal) {
 export function saveInventoryReview(auth: string, id: string, items: InventoryItem[]) {
   return request<InventoryItem[]>(`/api/plans/${encodeURIComponent(id)}/inventory-review`, auth, 'PUT',
     items.map(({ shortage: _shortage, ...input }) => input))
+}
+
+export function savePromotionReview(auth: string, id: string, input: PromotionReviewInput) {
+  return request<PromotionReview>(`/api/plans/${encodeURIComponent(id)}/promotion-review`, auth, 'PUT', input)
 }
 
 export function updateChecklistItem(auth: string, planId: string, itemId: string, completed: boolean) {
@@ -298,6 +303,7 @@ export function toPlan(saved: SavedPlan, store: string): Plan {
     id: saved.id,
     analysisId: saved.analysisId,
     inventoryItems: saved.inventoryItems,
+    promotionReview: saved.promotionReview,
     strategy: strategyIds[strategy.code],
     title: strategy.title,
     store,

@@ -69,7 +69,8 @@ class StoreSecurityConfiguration {
                         "/api/analyses/{analysisId}/reviews", "/api/analyses/{analysisId}/review-plans",
                         "/api/analyses/{analysisId}/questions",
                         "/api/plans/{planId}", "/api/plans/{planId}/checklist/{itemId}", "/api/plans/{planId}/results",
-                        "/api/plans/{planId}/results/{resultId}", "/api/plans/{planId}/inventory-review")
+                        "/api/plans/{planId}/results/{resultId}", "/api/plans/{planId}/inventory-review",
+                        "/api/plans/{planId}/promotion-review")
                 .authorizeHttpRequests(auth -> auth.anyRequest().access((authentication, context) -> {
                     var request = context.getRequest();
                     boolean read = request.getMethod().equals("GET") || request.getMethod().equals("HEAD");
