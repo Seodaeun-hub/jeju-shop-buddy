@@ -15,9 +15,12 @@ export type Analysis = {
   concern: string
   monthly: MonthlySales[]
   timeSeries?: TimeSeries
+  productSales?: ProductSale[]
   reviews?: Review[]
   demo: boolean
 }
+
+export type ProductSale = { productName: string; before: number; after: number }
 
 export const timeSlots = ['오후 2시 전', '오후 2~5시', '오후 5시 이후']
 

@@ -1545,6 +1545,8 @@ components:
           $ref: '#/components/schemas/MonthlySales'
         timeSeries:
           $ref: '#/components/schemas/AnalysisTimeSeries'
+        productSales:
+          $ref: '#/components/schemas/AnalysisProductSales'
     SalesAnalysisResponse:
       type: object
       required: [id, storeId, beforeMonth, afterMonth, monthlySales, createdAt]
@@ -1566,6 +1568,8 @@ components:
           $ref: '#/components/schemas/MonthlySales'
         timeSeries:
           $ref: '#/components/schemas/AnalysisTimeSeries'
+        productSales:
+          $ref: '#/components/schemas/AnalysisProductSales'
         createdAt:
           type: string
           format: date-time
@@ -1934,6 +1938,17 @@ components:
             minimum: 0
             maximum: 9007199254740991
             description: 원 단위 월별 매출 합계
+    AnalysisProductSales:
+      type: array
+      description: 상품 주문 시트에서 결제 완료 건의 수량을 품목별로 합산한 값. 분석의 비교 두 달과 같은 순서다.
+      items:
+        type: object
+        additionalProperties: false
+        required: [productName, before, after]
+        properties:
+          productName: { type: string, minLength: 1, maxLength: 255 }
+          before: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
+          after: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
     AnalysisTimeSeries:
       type: object
       additionalProperties: false

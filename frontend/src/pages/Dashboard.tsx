@@ -270,6 +270,28 @@ export function Dashboard({ data, auth, analysisId, onChange, onPlan, onSaveTime
             <button type="button" className="button secondary" onClick={() => setTimeOpen(true)}>시간대별 자료 추가</button>
           </div>}
         </section>
+        <section className="ruled-block">
+          <div className="section-top"><h2>품목별 판매량</h2></div>
+          {data.productSales?.length ? <>
+            <p className="muted">토스포스 상품 주문 시트 · 결제 완료 수량 합계</p>
+            <table className="input-table" aria-label="품목별 판매량 비교">
+              <thead><tr>
+                <th scope="col">품목</th><th scope="col">{monthLabel(before.month)}</th>
+                <th scope="col">{monthLabel(after.month)}</th><th scope="col">수량 변화</th>
+              </tr></thead>
+              <tbody>{data.productSales.map(({ productName, before, after }) => {
+                const difference = after - before
+                return <tr key={productName}>
+                  <th scope="row">{productName}</th>
+                  <td>{formatNumber(before)}개</td><td>{formatNumber(after)}개</td>
+                  <td className={difference < 0 ? 'down' : difference > 0 ? 'up' : 'muted'}>
+                    {difference > 0 ? '+' : ''}{formatNumber(difference)}개
+                  </td>
+                </tr>
+              })}</tbody>
+            </table>
+          </> : <p className="muted">상품 주문 시트가 포함된 POS 엑셀로 분석하면 품목별 판매량을 볼 수 있어요.</p>}
+        </section>
       </div>
       <aside tabIndex={-1} ref={panel} className="dashboard-aside form-stack">
         {auth && analysisId && <ChartQuestions auth={auth} analysisId={analysisId}

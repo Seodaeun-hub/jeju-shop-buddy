@@ -442,7 +442,7 @@ class SalesAnalysisController {
         }
         return ResponseEntity.status(HttpStatus.CREATED).body(new AnalysisResponse(
                 id, store, input.concern(), input.beforeMonth(), input.afterMonth(), input.monthlySales(),
-                input.timeSeries(), createdAt.get()));
+                input.timeSeries(), input.productSales(), createdAt.get()));
     }
 
     private static UUID parseId(String value, String code, String message, String field) {
@@ -458,7 +458,7 @@ class SalesAnalysisController {
     }
 
     private static AnalysisInput readInput(JsonNode body) {
-        fields(body, Set.of("concern", "monthlySales", "timeSeries"), null);
+        fields(body, Set.of("concern", "monthlySales", "timeSeries", "productSales"), null);
         var concern = body.get("concern");
         if (concern != null && (!concern.isString() || concern.stringValue().indexOf(0) >= 0)) {
             throw invalid("INVALID_REQUEST", "고민은 글로 입력해 주세요.", "concern");
@@ -484,7 +484,33 @@ class SalesAnalysisController {
                 .map(month -> new MonthlySale(month.getKey().toString(), month.getValue())).toList();
         var timeSeries = body.get("timeSeries");
         return new AnalysisInput(concern == null ? null : concern.stringValue(), ordered,
-                timeSeries == null ? null : readTimeSeries(timeSeries, "timeSeries."));
+                timeSeries == null ? null : readTimeSeries(timeSeries, "timeSeries."),
+                readProductSales(body.get("productSales")));
+    }
+
+    private static List<ProductSale> readProductSales(JsonNode node) {
+        if (node == null) return List.of();
+        String code = "INVALID_PRODUCT_SALES";
+        if (!node.isArray()) throw invalid(code, "품목별 판매량 목록을 확인해 주세요.", "productSales");
+        var names = new HashSet<String>();
+        var products = new ArrayList<ProductSale>();
+        for (var row : node) {
+            fields(row, Set.of("productName", "before", "after"), "productSales");
+            var name = row.path("productName");
+            String productName = name.isString() ? name.stringValue().strip() : "";
+            if (productName.isEmpty() || productName.length() > 255 || productName.indexOf(0) >= 0) {
+                throw invalid(code, "품목 이름을 확인해 주세요.", "productSales.productName");
+            }
+            if (!names.add(productName)) {
+                throw invalid(code, "같은 품목은 한 번만 입력해 주세요.", "productSales.productName");
+            }
+            products.add(new ProductSale(productName, number(row.get("before"), "productSales.before", code),
+                    number(row.get("after"), "productSales.after", code)));
+        }
+        products.sort(java.util.Comparator.comparingLong(ProductSale::after).reversed()
+                .thenComparing(java.util.Comparator.comparingLong(ProductSale::before).reversed())
+                .thenComparing(ProductSale::productName));
+        return List.copyOf(products);
     }
 
     private static TimeSeries readTimeSeries(JsonNode node, String prefix) {
@@ -559,7 +585,7 @@ class SalesAnalysisController {
         }
     }
 
-    record AnalysisInput(String concern, List<MonthlySale> monthlySales, TimeSeries timeSeries) {
+    record AnalysisInput(String concern, List<MonthlySale> monthlySales, TimeSeries timeSeries, List<ProductSale> productSales) {
         String beforeMonth() {
             return monthlySales.get(monthlySales.size() - 2).month();
         }
@@ -572,10 +598,13 @@ class SalesAnalysisController {
     record MonthlySale(String month, long amount) {}
     record TimeSeries(String metric, List<TimeSlot> rows) {}
     record TimeSlot(String label, long before, long after) {}
+    record ProductSale(String productName, long before, long after) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record AnalysisResponse(UUID id, UUID storeId, String concern, String beforeMonth, String afterMonth,
-                            List<MonthlySale> monthlySales, TimeSeries timeSeries, OffsetDateTime createdAt) {}
+                            List<MonthlySale> monthlySales, TimeSeries timeSeries,
+                            @JsonInclude(JsonInclude.Include.NON_EMPTY) List<ProductSale> productSales,
+                            OffsetDateTime createdAt) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record ApiError(String code, String message, String field) {}

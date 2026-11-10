@@ -1,13 +1,20 @@
 import { timeSlots } from './shop'
-import type { MonthlySales, TimeSeries } from './shop'
+import type { MonthlySales, ProductSale, TimeSeries } from './shop'
 import { parseCsv } from './csv'
 import type { CellValue } from 'read-excel-file/browser'
 
 type Cell = CellValue | null | undefined
 type MonthlyTotals = { amount: number; counts: [number, number, number] }
-export type PosImport = { monthly: MonthlySales[]; timeSeries: TimeSeries; months: [string, string] }
+export type PosImport = {
+  monthly: MonthlySales[]
+  timeSeries: TimeSeries
+  months: [string, string]
+  productSales?: ProductSale[]
+  productWarning?: string
+}
 
 const columns = ['결제기준일자', '결제시각', '결제건수', '결제금액', '결제상태'] as const
+const productColumns = ['주문기준일자', '결제상태', '상품명', '수량'] as const
 const maxFileSize = 10 * 1024 * 1024
 
 function readMonth(value: Cell) {
@@ -55,6 +62,39 @@ async function readPosRows(file: File): Promise<Cell[][]> {
   return parseCsv(text)
 }
 
+async function readProductSales(file: File, beforeMonth: string, afterMonth: string): Promise<ProductSale[]> {
+  const { readSheet } = await import('read-excel-file/browser')
+  const rows = await readSheet(file, '상품 주문')
+  const headerIndex = rows.findIndex((row) => row.some((cell) => String(cell ?? '').trim()))
+  const header = rows[headerIndex]?.map((value) => String(value ?? '').replace(/\s/g, ''))
+  const indices = productColumns.map((column) => header?.indexOf(column) ?? -1)
+  if (indices.includes(-1)) throw new Error('Invalid product order columns')
+
+  const products = new Map<string, ProductSale>()
+  for (const row of rows.slice(headerIndex + 1)) {
+    if (row.every((cell) => !String(cell ?? '').trim())) continue
+    const [date, state, name, quantity] = indices.map((index) => row[index])
+    const status = String(state ?? '').trim()
+    if (status === '취소' || status === '결제취소') continue
+    const month = readMonth(date)
+    if (!month) throw new Error('Invalid product order date')
+    if (month !== beforeMonth && month !== afterMonth) continue
+    const productName = typeof name === 'string' ? name.trim() : ''
+    const count = readTotal(quantity)
+    if ((status !== '완료' && status !== '결제완료') || !productName || productName.length > 255
+        || productName.includes('\0') || count === undefined) {
+      throw new Error('Invalid product order row')
+    }
+    const totals = products.get(productName) ?? { productName, before: 0, after: 0 }
+    const period = month === beforeMonth ? 'before' : 'after'
+    totals[period] += count
+    if (!Number.isSafeInteger(totals[period])) throw new Error('Product quantity total overflow')
+    products.set(productName, totals)
+  }
+  return [...products.values()].sort((a, b) => b.after - a.after || b.before - a.before
+    || a.productName.localeCompare(b.productName, 'ko'))
+}
+
 export async function importPos(file: File, compareMonths?: [string, string]): Promise<PosImport> {
   if (file.size > maxFileSize) throw new Error('10MB 이하의 POS 파일을 선택해 주세요.')
   const rows = await readPosRows(file)
@@ -93,7 +133,7 @@ export async function importPos(file: File, compareMonths?: [string, string]): P
   const before = totals.get(beforeMonth)
   const after = totals.get(afterMonth)
   if (!before || !after) throw new Error('비교할 두 달의 결제 완료 내역이 모두 포함된 파일을 선택해 주세요.')
-  return {
+  const imported: PosImport = {
     monthly,
     months: [beforeMonth, afterMonth],
     timeSeries: {
@@ -101,4 +141,12 @@ export async function importPos(file: File, compareMonths?: [string, string]): P
       rows: timeSlots.map((label, index) => ({ label, before: before.counts[index], after: after.counts[index] })),
     },
   }
+  if (/\.xlsx$/i.test(file.name) && !compareMonths) {
+    try {
+      imported.productSales = await readProductSales(file, beforeMonth, afterMonth)
+    } catch {
+      imported.productWarning = '상품 주문 시트가 없거나 형식이 달라 품목별 판매량을 읽지 못했어요. 월별 매출과 시간대별 결제 건수는 저장할 수 있어요.'
+    }
+  }
+  return imported
 }

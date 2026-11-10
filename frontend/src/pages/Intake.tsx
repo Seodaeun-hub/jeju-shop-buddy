@@ -294,7 +294,8 @@ export function Intake({ auth, onAnalyze, existingStore }: { auth: string; onAna
     try {
       const storeId = existingStore?.id ?? await saveNewStore()
       const timeSeries = mode === 'upload' ? pos?.timeSeries : extra?.period === period ? extra?.value : undefined
-      const saved = await saveAnalysis(auth, storeId, monthly, concern.trim(), timeSeries)
+      const saved = await saveAnalysis(auth, storeId, monthly, concern.trim(), timeSeries,
+        mode === 'upload' ? pos?.productSales : undefined)
       onAnalyze(saved.id)
     } catch (error) {
       setError(error instanceof Error ? error.message : '매출을 저장할 수 없어요.')
@@ -391,6 +392,7 @@ export function Intake({ auth, onAnalyze, existingStore }: { auth: string; onAna
               </table>
               <p className="muted">가장 최근 두 달의 시간대를 비교해요. 취소된 결제는 집계에서 제외했어요.</p>
               <PosTimeSummary series={pos.timeSeries} months={pos.months} />
+              {pos.productWarning && <p className="muted" role="status">{pos.productWarning}</p>}
             </>}
           </> : <>
             <table className="input-table"><thead><tr><th scope="col">연도와 월</th><th scope="col">매출액 (원)</th>{rows.length > 2 && <th scope="col">삭제</th>}</tr></thead>

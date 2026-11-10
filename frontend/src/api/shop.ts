@@ -1,5 +1,5 @@
 import type { Review, ReviewTopic } from '../data/reviews'
-import type { Analysis, MonthlySales, Plan, SalesResult, TimeSeries } from '../data/shop'
+import type { Analysis, MonthlySales, Plan, ProductSale, SalesResult, TimeSeries } from '../data/shop'
 import { formatEvidence } from '../data/strategyEvidence'
 
 export type Area = { code: string; name: string }
@@ -19,6 +19,7 @@ type SavedAnalysis = {
   concern?: string
   monthlySales: MonthlySales[]
   timeSeries?: ApiTimeSeries
+  productSales?: ProductSale[]
 }
 
 async function send(path: string, authorization?: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<Response> {
@@ -110,9 +111,10 @@ function toApiTimeSeries(value: TimeSeries): ApiTimeSeries {
   return { metric: value.metric === 'count' ? 'COUNT' : 'AMOUNT', rows: value.rows }
 }
 
-export function saveAnalysis(auth: string, storeId: string, monthlySales: MonthlySales[], concern: string, timeSeries?: TimeSeries) {
+export function saveAnalysis(auth: string, storeId: string, monthlySales: MonthlySales[], concern: string,
+  timeSeries?: TimeSeries, productSales?: ProductSale[]) {
   return request<SavedAnalysis>(`/api/stores/${storeId}/analyses`, auth, 'POST', {
-    monthlySales, concern: concern || undefined, timeSeries: timeSeries && toApiTimeSeries(timeSeries),
+    monthlySales, concern: concern || undefined, timeSeries: timeSeries && toApiTimeSeries(timeSeries), productSales,
   })
 }
 
@@ -124,6 +126,7 @@ export async function fetchAnalysis(auth: string, id: string, signal: AbortSigna
     store: store.name, address: store.address, area: store.areaName,
     industry: store.customIndustryName ?? industryOptions.find(({ code }) => code === store.industryCode)?.name ?? store.industryCode,
     concern: saved.concern ?? '', monthly: saved.monthlySales,
+    productSales: saved.productSales,
     timeSeries: saved.timeSeries && {
       metric: saved.timeSeries.metric === 'COUNT' ? 'count' : 'amount', rows: saved.timeSeries.rows,
     },
