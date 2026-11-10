@@ -32,7 +32,32 @@ function Evidence({ item }: { item: QuestionEvidence }) {
   </li>
 }
 
-export function ChartQuestions({ auth, analysisId, chart, title, period, suggestion, strategyTo, onRestore, onClose, onTime, onReviews }: {
+function AnswerSummary({ answer }: { answer: QuestionTurn['answer'] }) {
+  const observations = answer.sections.filter(({ kind }) => kind === 'OBSERVATION')
+  const notes = answer.sections.filter(({ kind }) => kind === 'HYPOTHESIS')
+  const nextSteps = answer.sections.filter(({ kind, text }) => kind === 'ACTION'
+    && !answer.missingInputs.some(({ label }) => text === `${label} 자료를 추가해 주세요.`))
+
+  return <>
+    {observations.length > 0 && <ul className="chat-answer-highlights" aria-label="핵심 답변">
+      {observations.map(({ text }, index) => <li key={index}>{text}</li>)}
+    </ul>}
+    {nextSteps.length > 0 && <div className="chat-answer-next">
+      {observations.length > 0 && <strong>다음에 할 일</strong>}
+      {nextSteps.map(({ text }, index) => <p key={index}>{text}</p>)}
+    </div>}
+    {answer.missingInputs.length > 0 && <div className="chat-answer-note">
+      <strong>확인에 필요한 자료</strong>
+      <ul>{answer.missingInputs.map(({ code, label }) => <li key={code}>{label}</li>)}</ul>
+    </div>}
+    {notes.length > 0 && <div className="chat-answer-note">
+      <strong>함께 확인해 보세요</strong>
+      {notes.map(({ text }, index) => <p key={index}>{text}</p>)}
+    </div>}
+  </>
+}
+
+export function ChartQuestions({ auth, analysisId, chart, title, period, suggestion, strategyTo, onClose, onTime, onReviews }: {
   auth: string
   analysisId: string
   chart?: QuestionChart
@@ -40,7 +65,6 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
   period: string
   suggestion?: string
   strategyTo: string
-  onRestore: (chart: QuestionChart) => void
   onClose: () => void
   onTime: () => void
   onReviews: () => void
@@ -53,9 +77,7 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
   const [failed, setFailed] = useState<QuestionInput>()
   const [reload, setReload] = useState(0)
   const [historyFailed, setHistoryFailed] = useState(false)
-  const restoring = useRef(onRestore)
   const thread = useRef<HTMLDivElement>(null)
-  restoring.current = onRestore
 
   useEffect(() => {
     const controller = new AbortController()
@@ -65,8 +87,6 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
     fetchQuestions(auth, analysisId, controller.signal).then(({ turns }) => {
       if (controller.signal.aborted) return
       setTurns(turns)
-      const latest = turns.at(-1)
-      if (latest) restoring.current(latest.chart)
     }).catch((failure: Error) => {
       if (controller.signal.aborted) return
       setHistoryFailed(true)
@@ -79,7 +99,10 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
 
   useEffect(() => {
     const list = thread.current
-    if (list) list.scrollTop = list.scrollHeight
+    const latest = list?.lastElementChild
+    if (list && latest) {
+      list.scrollTop += latest.getBoundingClientRect().top - list.getBoundingClientRect().top
+    }
   }, [turns.length, chart])
 
   async function submit(input: QuestionInput) {
@@ -134,24 +157,21 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
       <p className="badge">{title} · {period}</p>
       {loading && <p role="status">대화를 불러오는 중이에요.</p>}
       <div className="chat-messages chart-question-history" ref={thread} aria-live="polite">
-        {turns.map((turn) => <div key={turn.turnId}>
+        {turns.map((turn) => <div key={turn.turnId} className="chat-turn">
           <p className="question-bubble">{turn.question}</p>
-          <div className="answer-bubble">
-            <strong>가게짝꿍</strong>
-            {turn.answer.sections.map((section, index) => <p key={index}>
-              {section.kind === 'HYPOTHESIS' && <strong>확인할 점 · </strong>}{section.text}
-            </p>)}
-            {turn.answer.evidence.length > 0 && <details className="chart-question-evidence">
-              <summary>이 답변에 사용한 근거 {turn.answer.evidence.length}개</summary>
-              <ul>{turn.answer.evidence.map((item) => <Evidence key={item.id} item={item} />)}</ul>
-            </details>}
-            {turn.answer.missingInputs.length > 0 && <div className="chart-question-missing">
-              <strong>더 필요한 자료</strong>
-              <ul>{turn.answer.missingInputs.map((item) => <li key={item.code}>{item.label}</li>)}</ul>
-            </div>}
-            <div className="chart-question-actions">{turn.answer.actions
-              .filter((action, index, all) => action.type !== 'OPEN_EXECUTION_GUIDE' || !all.slice(0, index).some(({ type }) => type === 'OPEN_STRATEGY' || type === 'OPEN_EXECUTION_GUIDE'))
-              .map((action) => actionButton(action, turn))}</div>
+          <div className="chat-reply">
+            <Citrus />
+            <div className="answer-bubble chat-answer">
+              <strong className="chat-answer-name">가게짝꿍</strong>
+              <AnswerSummary answer={turn.answer} />
+              <div className="chart-question-actions">{turn.answer.actions
+                .filter((action, index, all) => action.type !== 'OPEN_EXECUTION_GUIDE' || !all.slice(0, index).some(({ type }) => type === 'OPEN_STRATEGY' || type === 'OPEN_EXECUTION_GUIDE'))
+                .map((action) => actionButton(action, turn))}</div>
+              {turn.answer.evidence.length > 0 && <details className="chart-question-evidence">
+                <summary>근거와 출처 보기 ({turn.answer.evidence.length})</summary>
+                <ul>{turn.answer.evidence.map((item) => <Evidence key={item.id} item={item} />)}</ul>
+              </details>}
+            </div>
           </div>
         </div>)}
         {pending && <p role="status">자료를 확인하고 있어요.</p>}

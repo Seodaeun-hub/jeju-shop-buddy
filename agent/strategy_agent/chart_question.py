@@ -174,9 +174,15 @@ class Answer:
             (fact.id, "change"): change(fact.before, fact.after, fact.unit),
         }
         title = f"{{{{{fact.id}.label}}}} {label}" if time_slot else label
+        if fact.before == fact.after:
+            comparison = f"{{{{{fact.id}.after}}}}에서 변함없어요."
+        else:
+            direction = "늘었어요" if fact.after > fact.before else "줄었어요"
+            comparison = (f"{{{{{fact.id}.before}}}}에서 {{{{{fact.id}.after}}}}까지 {direction}. "
+                          f"({{{{{fact.id}.change}}}})")
         self.section(
             "OBSERVATION",
-            f"{title} {{{{{fact.id}.before}}}} → {{{{{fact.id}.after}}}} ({{{{{fact.id}.change}}}})",
+            f"{title} · {comparison}",
             fact, values=values,
         )
 
@@ -354,7 +360,7 @@ class Answer:
                     },
                 )
         if has_result:
-            self.section("HYPOTHESIS", "저장한 두 기간의 비교예요. 변화에 전략이 얼마나 영향을 줬는지 보려면 같은 요일·시간대의 추가 비교가 필요해요.", result)
+            self.section("HYPOTHESIS", "저장한 두 기간의 비교예요. 전략의 효과를 보려면 같은 요일과 시간대를 비교해 보세요.", result)
         else:
             self.need("RESULT", "이 계획의 실행 전후 비교")
 

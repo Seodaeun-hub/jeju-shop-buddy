@@ -45,7 +45,7 @@ export function ReviewInsights({ store, reviews, onReviews, onPlan }: {
 
   return <section className="ruled-block dashboard-reviews" aria-labelledby="review-heading">
     <div className="section-top">
-      <h2 id="review-heading">손님 리뷰에서 찾은 불편</h2>
+      <h2 id="review-heading" tabIndex={-1}>손님 리뷰에서 찾은 불편</h2>
       <span className="badge">가상 리뷰</span>
     </div>
     <p className="muted">애월 가상 한식당 · 2021년 4~5월</p>
@@ -130,7 +130,7 @@ export function SavedReviewInsights({ auth, analysisId, store, onPlan }: {
   }
 
   return <section className="ruled-block dashboard-reviews" aria-labelledby="review-heading">
-    <div className="section-top"><h2 id="review-heading">손님 리뷰에서 찾은 불편</h2></div>
+    <div className="section-top"><h2 id="review-heading" tabIndex={-1}>손님 리뷰에서 찾은 불편</h2></div>
     <form className="form-stack" onSubmit={save}>
       <label>리뷰 날짜<input type="date" value={date} onChange={(event) => setDate(event.target.value)} required /></label>
       <label>리뷰 내용<textarea rows={3} value={text} onChange={(event) => setText(event.target.value)} maxLength={1000} required /></label>
