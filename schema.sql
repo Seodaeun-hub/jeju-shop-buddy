@@ -149,6 +149,7 @@ CREATE TABLE execution_plans (
     strategy_snapshot JSONB NOT NULL,
     inventory_review JSONB CHECK (inventory_review IS NULL OR (strategy_code = 'INVENTORY' AND jsonb_typeof(inventory_review) = 'array')),
     promotion_review JSONB CHECK (promotion_review IS NULL OR (strategy_code = 'PROMOTION' AND jsonb_typeof(promotion_review) = 'object')),
+    instagram_scheduled_at TIMESTAMPTZ,
     instagram_publication JSONB CHECK (instagram_publication IS NULL OR (strategy_code = 'PROMOTION' AND jsonb_typeof(instagram_publication) = 'object')),
     promotion_draft JSONB CHECK (promotion_draft IS NULL OR (strategy_code = 'PROMOTION' AND jsonb_typeof(promotion_draft) = 'object')),
     duration_weeks SMALLINT NOT NULL,
@@ -250,6 +251,7 @@ CREATE INDEX ix_stores_owner_id ON stores (owner_id);
 CREATE INDEX ix_stores_area_code ON stores (area_code);
 CREATE INDEX ix_sales_analyses_store_id ON sales_analyses (store_id);
 CREATE INDEX ix_execution_plans_analysis_id ON execution_plans (analysis_id);
+CREATE INDEX ix_execution_plans_instagram_due ON execution_plans (instagram_scheduled_at) WHERE instagram_scheduled_at IS NOT NULL;
 CREATE INDEX ix_execution_results_latest ON execution_results (plan_id, registration_no DESC);
 
 CREATE TABLE chart_question_conversations (

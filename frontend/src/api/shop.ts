@@ -47,12 +47,14 @@ async function request<T>(...args: Parameters<typeof send>): Promise<T> {
 }
 
 export type InstagramPublication = {
-  state: 'PUBLISHING' | 'PUBLISHED' | 'VERIFY_REQUIRED'
+  state: 'SCHEDULED' | 'PUBLISHING' | 'PUBLISHED' | 'FAILED' | 'VERIFY_REQUIRED'
   username: string
   mediaId?: string | null
   permalink?: string | null
   caption?: string | null
   imageDataUrl?: string | null
+  scheduledAt?: string | null
+  publishedAt?: string | null
 }
 export type InstagramPublicationStatus = {
   available: boolean
@@ -62,8 +64,10 @@ export type InstagramPublicationStatus = {
 const instagramPublicationPath = (planId: string) => `/api/plans/${encodeURIComponent(planId)}/instagram-publication`
 export const fetchInstagramPublication = (auth: string, planId: string, signal?: AbortSignal) =>
   request<InstagramPublicationStatus>(instagramPublicationPath(planId), auth, 'GET', undefined, signal)
-export const publishInstagram = (auth: string, planId: string, input: { username: string; caption: string; image: string }) =>
+export const publishInstagram = (auth: string, planId: string, input: { username: string; caption: string; image: string; scheduledAt?: string }) =>
   request<InstagramPublication>(instagramPublicationPath(planId), auth, 'POST', input)
+export const cancelInstagramSchedule = (auth: string, planId: string) =>
+  request<InstagramPublicationStatus>(instagramPublicationPath(planId), auth, 'DELETE')
 
 function basicAuthorization(email: string, password: string) {
   const bytes = new TextEncoder().encode(email.trim() + ':' + password)
