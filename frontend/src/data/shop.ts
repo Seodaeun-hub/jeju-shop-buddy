@@ -104,6 +104,29 @@ export type PromotionReview = PromotionReviewInput & {
   maxDiscountQuantity: number
 }
 
+export type PromotionDraft = {
+  storeName: string
+  headline: string
+  feature: string
+  discountedPrice: string
+  detail: string
+  caption: string
+  publishDate: string
+  publishTime: string
+  timeZone: 'Asia/Seoul'
+  copySource: 'GPT' | 'TEMPLATE'
+  photoDataUrl: string | null
+  templateVersion: number
+}
+
+export type PromotionDraftInput = {
+  review: PromotionReview
+  publishDate: string
+  publishTime: string
+  photoDataUrl?: string
+  useSavedPhoto: boolean
+}
+
 export type Plan = {
   id?: string
   analysisId?: string
@@ -115,6 +138,7 @@ export type Plan = {
   remainingStock?: Record<string, { unit: string; quantity: string }>
   inventoryItems?: InventoryItem[]
   promotionReview?: PromotionReview
+  promotionDraft?: PromotionDraft
   strategy: (typeof strategies)[number]['id']
   title: string
   store: string

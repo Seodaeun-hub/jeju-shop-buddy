@@ -4,8 +4,10 @@ import { listStoreAnalyses, listStores } from '../api/shop'
 import type { Store, StoreAnalysisSummary } from '../api/shop'
 import { monthLabel } from '../data/shop'
 import { PageTitle } from '../components/ui'
+import { MenuPhotos } from './MenuPhotos'
 
 function StoreHistory({ auth, store }: { auth: string; store: Store }) {
+  const [menuOpen, setMenuOpen] = useState(false)
   const [history, setHistory] = useState<StoreAnalysisSummary[]>()
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
@@ -23,8 +25,13 @@ function StoreHistory({ auth, store }: { auth: string; store: Store }) {
   return <section className="form-stack" aria-labelledby="analysis-history">
     <div className="section-top ruled">
       <div><h2 id="analysis-history">{store.name} 분석 이력</h2><p className="muted">{store.areaName} · {store.address}</p></div>
-      <Link className="button primary" to={'/sales?' + new URLSearchParams({ storeId: store.id })}>새 POS 올리기</Link>
+      <div className="actions">
+        <button type="button" className="button secondary" aria-expanded={menuOpen}
+          onClick={() => setMenuOpen(!menuOpen)}>메뉴 사진 관리</button>
+        <Link className="button primary" to={'/sales?' + new URLSearchParams({ storeId: store.id })}>새 POS 올리기</Link>
+      </div>
     </div>
+    {menuOpen && <MenuPhotos auth={auth} storeId={store.id} />}
     {error ? <div role="alert" className="error">{error} <button type="button" className="text-button" onClick={() => {
       setError('')
       setRetry((value) => value + 1)
