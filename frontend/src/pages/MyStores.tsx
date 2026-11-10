@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { listStoreAnalyses, listStores } from '../api/shop'
+import { deleteAnalysis, listStoreAnalyses, listStores } from '../api/shop'
 import type { Store, StoreAnalysisSummary } from '../api/shop'
 import { monthLabel } from '../data/shop'
 import { PageTitle } from '../components/ui'
 import { MenuPhotos } from './MenuPhotos'
 import { StorePromotionTone } from './StorePromotionTone'
 
-function StoreHistory({ auth, store }: { auth: string; store: Store }) {
+function StoreHistory({ auth, store, onAnalysisDeleted }: { auth: string; store: Store; onAnalysisDeleted: (id: string) => void }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [toneOpen, setToneOpen] = useState(false)
   const [history, setHistory] = useState<StoreAnalysisSummary[]>()
+  const [deleting, setDeleting] = useState<string>()
+  const [deleteError, setDeleteError] = useState('')
+  const [deleteMessage, setDeleteMessage] = useState('')
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
 
@@ -23,6 +26,27 @@ function StoreHistory({ auth, store }: { auth: string; store: Store }) {
     })
     return () => controller.abort()
   }, [auth, store.id, retry])
+
+  async function removeAnalysis(analysis: StoreAnalysisSummary) {
+    const label = analysis.name || `${monthLabel(analysis.beforeMonth)} → ${monthLabel(analysis.afterMonth)}`
+    const linked = analysis.plans.length
+      ? ` 연결된 실행 계획 ${analysis.plans.length}개와 점검표·결과도 함께 삭제돼요. 이미 게시된 인스타그램 게시물은 인스타그램에 남아요.`
+      : ''
+    if (!window.confirm(`‘${label}’ 분석을 삭제할까요?${linked} 삭제한 분석은 되돌릴 수 없어요.`)) return
+    setDeleting(analysis.id)
+    setDeleteError('')
+    setDeleteMessage('')
+    try {
+      await deleteAnalysis(auth, analysis.id)
+      setHistory(items => items?.filter(item => item.id !== analysis.id))
+      onAnalysisDeleted(analysis.id)
+      setDeleteMessage('분석을 삭제했어요.')
+    } catch (failure) {
+      setDeleteError(failure instanceof Error ? failure.message : '분석을 삭제하지 못했어요.')
+    } finally {
+      setDeleting(undefined)
+    }
+  }
 
   return <section className="form-stack" aria-labelledby="analysis-history">
     <div className="section-top ruled">
@@ -37,6 +61,8 @@ function StoreHistory({ auth, store }: { auth: string; store: Store }) {
     </div>
     {toneOpen && <StorePromotionTone auth={auth} storeId={store.id} />}
     {menuOpen && <MenuPhotos auth={auth} storeId={store.id} />}
+    {deleteError && <p role="alert" className="error">{deleteError}</p>}
+    {deleteMessage && <p role="status">{deleteMessage}</p>}
     {error ? <div role="alert" className="error">{error} <button type="button" className="text-button" onClick={() => {
       setError('')
       setRetry((value) => value + 1)
@@ -46,10 +72,15 @@ function StoreHistory({ auth, store }: { auth: string; store: Store }) {
           : history.map((analysis) => <article className="receipt form-stack" key={analysis.id}>
             <div className="section-top">
               <div>
-                <h3>{monthLabel(analysis.beforeMonth)} → {monthLabel(analysis.afterMonth)}</h3>
+                <h3>{analysis.name || '이름 없는 분석'}</h3>
+                <p>{monthLabel(analysis.beforeMonth)} → {monthLabel(analysis.afterMonth)}</p>
                 <small className="muted">저장일 · {new Date(analysis.createdAt).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' })}</small>
               </div>
-              <Link className="button secondary small" to={'/analysis?' + new URLSearchParams({ id: analysis.id })}>매출 분석 열기</Link>
+              <div className="actions">
+                <Link className="button secondary small" to={'/analysis?' + new URLSearchParams({ id: analysis.id })}>매출 분석 열기</Link>
+                <button type="button" className="text-button" disabled={Boolean(deleting)}
+                  onClick={() => void removeAnalysis(analysis)}>{deleting === analysis.id ? '삭제 중…' : '분석 삭제'}</button>
+              </div>
             </div>
             {analysis.concern && <p>{analysis.concern}</p>}
             {!analysis.plans.length ? <p className="muted">저장된 실행 계획이 없어요.</p> : <ul className="form-stack">
@@ -71,7 +102,7 @@ function StoreHistory({ auth, store }: { auth: string; store: Store }) {
   </section>
 }
 
-export function MyStores({ auth }: { auth: string }) {
+export function MyStores({ auth, onAnalysisDeleted }: { auth: string; onAnalysisDeleted: (id: string) => void }) {
   const [params, setParams] = useSearchParams()
   const [stores, setStores] = useState<Store[]>()
   const [error, setError] = useState('')
@@ -106,7 +137,7 @@ export function MyStores({ auth }: { auth: string }) {
               {!selected && <option value="" disabled>매장을 선택해 주세요</option>}
               {stores.map((store) => <option key={store.id} value={store.id}>{store.name} · {store.areaName}</option>)}
             </select></label>}
-      {selected && <StoreHistory key={selected.id} auth={auth} store={selected} />}
+      {selected && <StoreHistory key={selected.id} auth={auth} store={selected} onAnalysisDeleted={onAnalysisDeleted} />}
     </div>
   </>
 }

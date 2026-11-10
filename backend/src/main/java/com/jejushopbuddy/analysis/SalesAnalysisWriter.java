@@ -73,6 +73,42 @@ class SalesAnalysisWriter {
         return createdAt;
     }
 
+    enum DeleteStatus { DELETED, NOT_FOUND, PUBLICATION_PENDING }
+
+    @Transactional
+    public DeleteStatus delete(UUID id, String ownerEmail) {
+        var owned = lockOwnedAnalysis(id, ownerEmail);
+        if (owned.isEmpty()) {
+            return DeleteStatus.NOT_FOUND;
+        }
+
+        var publicationStates = jdbc.sql("""
+                SELECT COALESCE(instagram_publication->>'state', '')
+                FROM execution_plans
+                WHERE analysis_id = :id
+                ORDER BY id
+                FOR UPDATE
+                """).param("id", id).query(String.class).list();
+        if (publicationStates.stream().anyMatch(state ->
+                state.equals("SCHEDULED") || state.equals("PUBLISHING") || state.equals("VERIFY_REQUIRED"))) {
+            return DeleteStatus.PUBLICATION_PENDING;
+        }
+
+        jdbc.sql("""
+                DELETE FROM execution_checklist_items
+                WHERE plan_id IN (SELECT id FROM execution_plans WHERE analysis_id = :id)
+                """).param("id", id).update();
+        jdbc.sql("""
+                DELETE FROM execution_results
+                WHERE plan_id IN (SELECT id FROM execution_plans WHERE analysis_id = :id)
+                """).param("id", id).update();
+        jdbc.sql("DELETE FROM execution_plans WHERE analysis_id = :id").param("id", id).update();
+        jdbc.sql("DELETE FROM analysis_monthly_sales WHERE analysis_id = :id").param("id", id).update();
+        jdbc.sql("DELETE FROM analysis_time_series WHERE analysis_id = :id").param("id", id).update();
+        jdbc.sql("DELETE FROM sales_analyses WHERE id = :id").param("id", id).update();
+        return DeleteStatus.DELETED;
+    }
+
     public boolean attachHourlySales(UUID id, String ownerEmail, String hourlySales) {
         return jdbc.sql("""
                 UPDATE sales_analyses a
@@ -85,14 +121,7 @@ class SalesAnalysisWriter {
     @Transactional
     public Optional<TimeSeriesUpdate> replaceTimeSeries(UUID id, String ownerEmail, TimeSeries series) {
         // Serialize updates for this analysis, including requests that arrive before it has any time series.
-        var owned = jdbc.sql("""
-                SELECT a.id FROM sales_analyses a
-                JOIN stores s ON s.id = a.store_id
-                JOIN owners o ON o.id = s.owner_id
-                WHERE a.id = :id AND o.email = :ownerEmail
-                FOR UPDATE OF a FOR SHARE OF s, o
-                """)
-                .param("id", id).param("ownerEmail", ownerEmail).query(UUID.class).optional();
+        var owned = lockOwnedAnalysis(id, ownerEmail);
         if (owned.isEmpty()) {
             return Optional.empty();
         }
@@ -102,6 +131,17 @@ class SalesAnalysisWriter {
                 .param("id", id).update() == 0;
         insertTimeSeries(id, series);
         return Optional.of(new TimeSeriesUpdate(created, reader.find(id, ownerEmail).orElseThrow()));
+    }
+
+    private Optional<UUID> lockOwnedAnalysis(UUID id, String ownerEmail) {
+        return jdbc.sql("""
+                SELECT a.id FROM sales_analyses a
+                JOIN stores s ON s.id = a.store_id
+                JOIN owners o ON o.id = s.owner_id
+                WHERE a.id = :id AND o.email = :ownerEmail
+                FOR UPDATE OF a FOR SHARE OF s, o
+                """)
+                .param("id", id).param("ownerEmail", ownerEmail).query(UUID.class).optional();
     }
 
     private void insertTimeSeries(UUID id, TimeSeries series) {

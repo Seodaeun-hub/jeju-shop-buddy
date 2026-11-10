@@ -160,6 +160,16 @@ export function App() {
     navigate(typeof state?.returnTo === 'string' ? state.returnTo : '/sales', { replace: true })
   }
 
+  function forgetDeletedAnalysis(id: string) {
+    if (lastId !== id) return
+    setLastId(undefined)
+    setLoadedId(undefined)
+    setAnalysis(undefined)
+    setAnalysisError('')
+    setPlan(undefined)
+    setPlanError(undefined)
+  }
+
   function openSavedAnalysis(id: string) {
     setLastId(id)
     setLoadedId(undefined)
@@ -341,7 +351,7 @@ export function App() {
           <Route path="/my-page" element={account
             ? <MyPage key={account.email} account={account} onUpdate={session => setAccount({ ...session, auth: ownerSession })} />
             : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
-          <Route path="/stores" element={auth ? <MyStores key={account?.email} auth={auth} /> : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
+          <Route path="/stores" element={auth ? <MyStores key={account?.email} auth={auth} onAnalysisDeleted={forgetDeletedAnalysis} /> : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
           <Route path="/sales" element={auth
             ? salesStoreId ? <ExistingStoreIntake key={salesStoreId} auth={auth} storeId={salesStoreId} onAnalyze={openSavedAnalysis} />
               : <Intake auth={auth} onAnalyze={openSavedAnalysis} />
