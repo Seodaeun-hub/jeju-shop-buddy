@@ -64,14 +64,15 @@ export function ExecutionGuidePanel({ auth, analysisId, recommendationId, onView
 export function ExecutionGuideSteps({ guide }: { guide: ExecutionGuide }) {
   return <>
     {guide.message && <p role="status">{guide.message}</p>}
-    <ol>{guide.steps.map((step, index) => <li key={index}>
-      <div>{step.when && <strong>{step.when} </strong>}{step.text}</div>
-      {step.sourceIds.map((sourceId) => {
-        const source = guide.sources.find(({ id }) => id === sourceId)
-        return source && <a key={source.id} href={source.url} target="_blank" rel="noopener noreferrer">
-          {source.title} · {source.publisher}
-        </a>
-      })}
-    </li>)}</ol>
+    {guide.steps.length > 0 && <ol className="execution-guide-steps">{guide.steps.map((step, index) => <li key={index}>
+      <strong>{step.kind === 'STORE_CHECK' ? '매장에서 확인' : step.when ?? '안내 설정 확인'}</strong>
+      <p>{step.text}</p>
+    </li>)}</ol>}
+    {guide.sources.length > 0 && <details className="source-details">
+      <summary>공식 자료 출처 보기</summary>
+      <ul>{guide.sources.map((source) => <li key={source.id}>
+        <a href={source.url} target="_blank" rel="noopener noreferrer">{source.title} · {source.publisher}</a>
+      </li>)}</ul>
+    </details>}
   </>
 }

@@ -154,6 +154,7 @@ export const registerStore = (auth: string, input: StoreInput) => request<Store>
 export type ConcernCheck = {
   status: 'COMPARED' | 'MISSING_DATA' | 'CLARIFICATION_REQUIRED' | 'UNAVAILABLE'
   detail: string
+  answer?: string
   metric?: 'AMOUNT' | 'COUNT'
   startHour?: number
   endHour?: number

@@ -159,6 +159,35 @@ class ChartQuestionTest(unittest.TestCase):
         self.assertEqual(answer["planId"], "plan-1")
         self.assert_text(answer, "63.1", "337건", "+50.00%", "+33.33%")
 
+    def test_market_follow_up_compares_both_changes_even_if_classified_as_market_only(self):
+        payload = fixture()
+        payload["chart"] = "MARKET_CARD_SALES"
+        first = "같은 기간 상권 카드 이용액은 어떻게 달라졌나요?"
+        single = self.ask(payload, first, classified(["MARKET"]))
+        self.assertEqual([fact["id"] for fact in single["evidence"]], ["e3"])
+        payload["context"].update(recentQuestions=[first], focusedEvidenceIds=["e3"])
+        question = "우리 가게랑 비교했을 때 상권 카드 이용액은 어떻게 달라졌나요?"
+        answer = self.ask(payload, question, classified(["MARKET"]))
+        self.assert_text(answer, "-8.64%", "+7.34%", "15.98%p 낮았어요")
+        self.assertEqual(answer["sections"][-1]["evidenceIds"], ["e1", "e3"])
+        self.assertEqual([fact["id"] for fact in answer["evidence"]], ["e1", "e3"])
+
+        payload["availableEvidence"] = [fact for fact in payload["availableEvidence"] if fact["id"] != "e3"]
+        missing = self.ask(payload, question, classified(["MARKET"]))
+        self.assertEqual(missing["status"], "PARTIAL")
+        self.assertEqual([fact["id"] for fact in missing["evidence"]], ["e1"])
+        self.assertEqual(missing["missingInputs"][0]["code"], "MARKET_CARD_SALES")
+        self.assertNotIn("%p", " ".join(section["text"] for section in missing["sections"]))
+
+    def test_declining_time_question_reports_no_drop_when_all_slots_improved(self):
+        payload = fixture()
+        for fact in payload["availableEvidence"]:
+            if fact.get("metric") == "TIME_SERIES":
+                fact["after"] = fact["before"] + 1
+        answer = self.ask(payload, "결제가 줄어든 시간대가 있나요?", classified(["TIME_SLOT"], timeMetric="COUNT"))
+        self.assert_text(answer, "결제 건수가 줄어든 구간이 없어요")
+        self.assertTrue(answer["evidence"])
+
     def test_monthly_only_and_count_instead_of_amount(self):
         question = "몇 시에 매출이 가장 많이 줄었어요?"
         intent = classified(["TIME_SLOT"], timeMetric="KRW", largestTimeDrop=True)
