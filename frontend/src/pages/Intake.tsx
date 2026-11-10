@@ -6,7 +6,7 @@ import { industryOptions, listAreas, listStores, registerStore, saveAnalysis } f
 import type { Area, Store, StoreInput } from '../api/shop'
 import { AddressField } from '../components/AddressField'
 import { example, formatNumber, monthLabel, timeSlots, won } from '../data/shop'
-import { importPos } from '../data/pos'
+import { importPos, readProductSales } from '../data/pos'
 import type { PosImport } from '../data/pos'
 import type { MonthlySales, TimeSeries } from '../data/shop'
 
@@ -57,11 +57,13 @@ function PosUpload({ value, onChange, compareMonths, disabled }: {
   const [reading, setReading] = useState(false)
   const [error, setError] = useState('')
   const request = useRef(0)
+  const [productFilename, setProductFilename] = useState('')
   useEffect(() => () => { request.current++ }, [])
 
   async function selectFile(file: File) {
     const id = ++request.current
     onChange(undefined)
+    setProductFilename('')
     setError('')
     setReading(true)
     try {
@@ -69,6 +71,24 @@ function PosUpload({ value, onChange, compareMonths, disabled }: {
       if (id === request.current) onChange({ ...data, filename: file.name })
     } catch (error) {
       if (id === request.current) setError(error instanceof Error ? error.message : 'POS 파일을 읽을 수 없어요.')
+    } finally {
+      if (id === request.current) setReading(false)
+    }
+  }
+
+  async function selectProductFile(file: File, payment: ImportedFile) {
+    const id = ++request.current
+    setError('')
+    setReading(true)
+    try {
+      const productSales = await readProductSales(file, ...payment.months)
+      if (!productSales.length) throw new Error('비교 기간에 해당하는 상품 주문이 없어요.')
+      if (id === request.current) {
+        onChange({ ...payment, productSales, productWarning: undefined })
+        setProductFilename(file.name)
+      }
+    } catch {
+      if (id === request.current) setError('상품 주문 CSV의 형식과 비교 기간을 확인해 주세요.')
     } finally {
       if (id === request.current) setReading(false)
     }
@@ -84,6 +104,15 @@ function PosUpload({ value, onChange, compareMonths, disabled }: {
       if (file) void selectFile(file)
     }} /></label>
     <small role="status">{reading ? '결제 내역을 집계하는 중이에요.' : value ? `${value.filename} · 집계 완료` : '서로 다른 두 달 이상의 결제 내역을 올려 주세요.'}</small>
+    {!compareMonths && value && /\.csv$/i.test(value.filename) && <label className="file-picker">
+      {productFilename ? '상품 주문 CSV 교체' : '상품 주문 CSV 추가 (선택)'}
+      <input type="file" accept=".csv" disabled={disabled || reading} onChange={(event) => {
+        const file = event.target.files?.[0]
+        event.target.value = ''
+        if (file) void selectProductFile(file, value)
+      }} />
+    </label>}
+    {productFilename && <small>{productFilename} · 상품 주문 집계 완료</small>}
     {error && <p role="alert" className="error">{error}</p>}
   </div>
 }

@@ -1,4 +1,5 @@
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
+import { fetchPromotionDefaults, type PromotionDefaults } from '../api/shop'
 import type { FormEvent } from 'react'
 import { formatNumber, monthLabel, won } from '../data/shop'
 import type { Analysis, PromotionReview as SavedReview, PromotionReviewInput } from '../data/shop'
@@ -10,10 +11,12 @@ const moneyFields = [
   { key: 'budgetWon', label: '할인 예산 (원)', min: 0 },
 ] as const
 
-export function PromotionReview({ analysis, saved, initialBudget, onSave, readOnly = false }: {
+export function PromotionReview({ analysis, saved, initialBudget, onSave, readOnly = false, auth, planId }: {
   analysis: Analysis
   saved?: SavedReview
   initialBudget: number
+  auth?: string
+  planId?: string
   readOnly?: boolean
   onSave?: (input: PromotionReviewInput) => Promise<void>
 }) {
@@ -25,7 +28,26 @@ export function PromotionReview({ analysis, saved, initialBudget, onSave, readOn
     discountWon: saved ? String(saved.discountWon) : '',
     budgetWon: String(saved?.budgetWon ?? initialBudget),
   })
+  const [defaults, setDefaults] = useState<PromotionDefaults>()
+  const [loadingDefaults, setLoadingDefaults] = useState(Boolean(auth && planId && !saved))
+  const [defaultsError, setDefaultsError] = useState(false)
   const [saving, setSaving] = useState(false)
+  const hasSavedReview = Boolean(saved)
+
+  useEffect(() => {
+    if (!auth || !planId) return
+    const controller = new AbortController()
+    fetchPromotionDefaults(auth, planId, controller.signal).then((result) => {
+      if (controller.signal.aborted) return
+      setDefaults(result)
+      if (!hasSavedReview && result.budgetWon != null) setDraft(current => ({ ...current, budgetWon: String(result.budgetWon) }))
+    }).catch(() => {
+      if (!controller.signal.aborted) setDefaultsError(true)
+    }).finally(() => {
+      if (!controller.signal.aborted) setLoadingDefaults(false)
+    })
+    return () => controller.abort()
+  }, [auth, planId, hasSavedReview])
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [priceWon, costWon, discountWon, budgetWon] = moneyFields.map(({ key }) =>
@@ -33,6 +55,23 @@ export function PromotionReview({ analysis, saved, initialBudget, onSave, readOn
   const valid = [priceWon, costWon, discountWon, budgetWon].every(Number.isSafeInteger)
     && priceWon > 0 && discountWon > 0 && discountWon <= priceWon
   const margin = priceWon - discountWon - costWon
+
+  const selectedProduct = analysis.productSales?.find(product => product.productName === draft.productName.trim())
+  const posPrice = selectedProduct?.priceWon
+
+  function selectProduct(value: string) {
+    const name = value.trim()
+    const price = analysis.productSales?.find(product => product.productName === name)?.priceWon
+    const cost = saved?.productName === name ? saved.costWon
+      : defaults?.costs.find(product => product.productName === name)?.costWon
+    setDraft(current => current.productName.trim() === name ? { ...current, productName: value } : {
+      ...current, productName: value,
+      priceWon: price == null ? '' : String(price),
+      costWon: cost == null ? '' : String(cost),
+    })
+    setMessage('')
+    setError('')
+  }
 
   function update(key: keyof typeof draft, value: string) {
     setDraft((current) => ({ ...current, [key]: value }))
@@ -70,11 +109,14 @@ export function PromotionReview({ analysis, saved, initialBudget, onSave, readOn
       </table>
     </details> : <p className="muted">저장된 POS 품목별 판매량이 없어요. 품목명은 직접 입력할 수 있어요.</p>}
     <form className="receipt form-stack" onSubmit={submit}>
-      <fieldset disabled={readOnly || saving} className="form-stack">
+      {loadingDefaults && <p role="status">지난 행사 입력값을 불러오는 중이에요.</p>}
+      {defaultsError && <p role="status">지난 행사 입력값을 불러오지 못했어요. 직접 입력할 수 있어요.</p>}
+      <fieldset disabled={readOnly || saving || loadingDefaults} className="form-stack">
         <label>검토할 품목<input list={suggestions} maxLength={255} required value={draft.productName}
-          onChange={(event) => update('productName', event.target.value)} /></label>
+          onChange={(event) => selectProduct(event.target.value)} /></label>
         <datalist id={suggestions}>{analysis.productSales?.map(({ productName }) =>
           <option key={productName} value={productName} />)}</datalist>
+        {posPrice != null && draft.priceWon === String(posPrice) && <small className="muted">POS에 기록된 최근 판매가예요. 현재 판매가가 다르면 바꿔 주세요.</small>}
         {moneyFields.map(({ key, label, min }) => <label key={key}>{label}
           <input type="number" inputMode="numeric" min={min} max={key === 'discountWon' && priceWon > 0 ? priceWon : Number.MAX_SAFE_INTEGER}
             step="1" required value={draft[key]} onChange={(event) => update(key, event.target.value)} />
@@ -89,7 +131,7 @@ export function PromotionReview({ analysis, saved, initialBudget, onSave, readOn
         {margin < 0 && <p className="down">이 할인 조건에서는 판매할 때마다 원가를 회수하지 못해요.</p>}
       </div> : <p className="muted">판매가·원가·개당 할인액·예산을 입력해 주세요. 할인액은 판매가 이하여야 해요.</p>}
       <p className="muted">남는 금액은 할인 후 판매가에서 입력한 원가를 뺀 값이에요. 최대 수량은 할인 예산을 개당 할인액으로 나눈 몫이에요.</p>
-      {onSave && !readOnly && <button className="button primary small" disabled={saving || !valid || !draft.productName.trim()}>
+      {onSave && !readOnly && <button className="button primary small" disabled={saving || loadingDefaults || !valid || !draft.productName.trim()}>
         {saving ? '저장 중…' : '프로모션 검토 저장'}
       </button>}
       {message && <p role="status">{message}</p>}
