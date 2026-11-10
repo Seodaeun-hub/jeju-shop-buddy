@@ -36,6 +36,8 @@ class InstagramPublicationController {
     private static final Logger LOG = LoggerFactory.getLogger(InstagramPublicationController.class);
     private static final String GRAPH = "https://graph.facebook.com/v25.0/";
     private static final ZoneId KOREA = ZoneId.of("Asia/Seoul");
+    // Covers the bounded profile, container, status, publish and permalink requests.
+    private static final long PUBLISHING_TIMEOUT_SECONDS = Duration.ofMinutes(3).toSeconds();
     private static final String JPEG_PREFIX = "data:image/jpeg;base64,";
     private final JdbcClient jdbc;
     private final ObjectMapper json;
@@ -99,9 +101,10 @@ class InstagramPublicationController {
                 input.caption(), input.image(), due, null, accountId);
         int reserved = jdbc.sql("""
                 UPDATE execution_plans SET instagram_publication=CAST(:pending AS jsonb),
-                       instagram_scheduled_at=:due
+                       instagram_scheduled_at=:due,
+                       instagram_publication_started_at=CASE WHEN :immediate THEN CURRENT_TIMESTAMP END
                 WHERE id=:id AND instagram_publication IS NULL AND promotion_draft=CAST(:draft AS jsonb)
-                """).param("pending", json.writeValueAsString(pending)).param("due", due)
+                """).param("pending", json.writeValueAsString(pending)).param("due", due).param("immediate", due == null)
                 .param("id", planId).param("draft", plan.draft()).update();
         if (reserved == 0) return error(409, "INSTAGRAM_PUBLICATION_CHANGED", "게시 상태가 바뀌었어요. 새로고침해 확인해 주세요.");
         return due == null ? publishReserved(planId, pending, image) : ResponseEntity.accepted().body(pending);
@@ -125,6 +128,7 @@ class InstagramPublicationController {
 
     @Scheduled(fixedDelay = 1000)
     public void publishDue() {
+        recoverInterruptedPublications();
         if (!enabled) return;
         var job = jdbc.sql("""
                 SELECT p.id, p.end_date, p.instagram_publication FROM execution_plans p
@@ -142,7 +146,8 @@ class InstagramPublicationController {
         var pending = new Publication("PUBLISHING", username, null, null, previous.caption(), previous.imageDataUrl(),
                 previous.scheduledAt(), null, accountId);
         int claimed = jdbc.sql("""
-                UPDATE execution_plans SET instagram_publication=CAST(:pending AS jsonb), instagram_scheduled_at=NULL
+                UPDATE execution_plans SET instagram_publication=CAST(:pending AS jsonb), instagram_scheduled_at=NULL,
+                       instagram_publication_started_at=CURRENT_TIMESTAMP
                 WHERE id=:id AND instagram_scheduled_at<=CURRENT_TIMESTAMP
                   AND instagram_publication=CAST(:previous AS jsonb)
                 """).param("id", scheduled.id()).param("pending", json.writeValueAsString(pending))
@@ -159,6 +164,17 @@ class InstagramPublicationController {
             return;
         }
         publishReserved(scheduled.id(), pending, image);
+    }
+
+    private void recoverInterruptedPublications() {
+        // The external request may have succeeded before the process stopped. Never requeue it.
+        jdbc.sql("""
+                UPDATE execution_plans SET instagram_publication=jsonb_set(instagram_publication, '{state}', '"VERIFY_REQUIRED"'),
+                       instagram_publication_started_at=NULL
+                WHERE instagram_publication->>'state'='PUBLISHING'
+                  AND (instagram_publication_started_at IS NULL
+                       OR instagram_publication_started_at<=CURRENT_TIMESTAMP - make_interval(secs => :timeout))
+                """).param("timeout", PUBLISHING_TIMEOUT_SECONDS).update();
     }
 
     private ResponseEntity<?> publishReserved(UUID planId, Publication pending, byte[] image) {
@@ -300,8 +316,12 @@ class InstagramPublicationController {
     }
 
     private void save(UUID planId, Publication publication) {
-        jdbc.sql("UPDATE execution_plans SET instagram_publication=CAST(:value AS jsonb) WHERE id=:id")
-                .param("id", planId).param("value", publication == null ? null : json.writeValueAsString(publication)).update();
+        jdbc.sql("""
+                UPDATE execution_plans SET instagram_publication=CAST(:value AS jsonb), instagram_publication_started_at=NULL
+                WHERE id=:id AND (instagram_publication->>'state'='PUBLISHING'
+                       OR (:confirmed AND instagram_publication->>'state'='VERIFY_REQUIRED'))
+                """).param("id", planId).param("value", publication == null ? null : json.writeValueAsString(publication))
+                .param("confirmed", publication != null && "PUBLISHED".equals(publication.state())).update();
     }
 
     private static ResponseEntity<ApiError> error(int status, String code, String message) {

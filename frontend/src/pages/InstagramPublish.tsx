@@ -116,7 +116,7 @@ export function InstagramPublish({ auth, planId, caption, image, hasPhoto, endDa
     </>}
     {publicationState === 'PUBLISHING' && <p role="status">인스타그램에 게시 중이에요.</p>}
     {publicationState === 'VERIFY_REQUIRED' &&
-      <p role="status">게시 상태를 확인할 수 없어요. 인스타그램 피드를 확인해 주세요.</p>}
+      <p role="status"><strong>확인 필요</strong> · 인스타그램 피드에서 게시 여부를 확인해 주세요.</p>}
     {!preview && message && <p role="alert">{message}</p>}
     <dialog ref={dialog} className="instagram-preview" aria-labelledby="instagram-preview-title"
       onClose={() => { setPreview(undefined); setMessage('') }} onCancel={event => { if (busy) event.preventDefault() }}>
