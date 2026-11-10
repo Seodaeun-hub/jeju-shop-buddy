@@ -112,12 +112,17 @@ function Questions({ topic, period, onClose }: { topic: Topic; period: string; o
     <p className="badge">{topic.title} · {period}</p>
     <p className="muted">예시 질문으로 답변을 미리 볼 수 있어요.</p>
     {asked && <div className="chat-messages" aria-live="polite">
-      <p className="question-bubble">{asked}</p>
-      <div className="answer-bubble">
-        <strong>가게짝꿍 · 답변 예시</strong>
-        {showAnswer && topic.figure && <p className="dashboard-chat-figure">{topic.figure}</p>}
-        <p>{showAnswer ? topic.answer : '지금은 아래 예시 질문에 답할 수 있어요.'}</p>
-        {showAnswer && <small>근거 · {topic.source}</small>}
+      <div className="chat-turn">
+        <p className="question-bubble">{asked}</p>
+        <div className="chat-reply">
+          <Citrus />
+          <div className="answer-bubble chat-answer">
+            <strong className="chat-answer-name">가게짝꿍 · 답변 예시</strong>
+            {showAnswer && topic.figure && <p className="dashboard-chat-figure">{topic.figure}</p>}
+            <p>{showAnswer ? topic.answer : '지금은 아래 예시 질문에 답할 수 있어요.'}</p>
+            {showAnswer && <small>근거 · {topic.source}</small>}
+          </div>
+        </div>
       </div>
     </div>}
     {!showAnswer && <button type="button" className="chip" onClick={() => setAsked(topic.suggestion)}>{topic.suggestion}</button>}
@@ -452,6 +457,10 @@ export function Dashboard({ data, auth, analysisId, onChange, onPlan, onSaveTime
     {timeOpen && <TimeDialog monthly={data.monthly} initial={series} onClose={() => setTimeOpen(false)} onSave={async (value) => {
       await onSaveTimeSeries(value)
       setTimeOpen(false)
+      if (!saved && question?.chart === 'TIME_SERIES') {
+        setQuestion(undefined)
+        if (chatOpen) closeTopic()
+      }
     }} />}
   </>
 }

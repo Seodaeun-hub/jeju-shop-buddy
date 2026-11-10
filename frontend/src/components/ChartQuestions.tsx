@@ -157,18 +157,21 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
       <p className="badge">{title} · {period}</p>
       {loading && <p role="status">대화를 불러오는 중이에요.</p>}
       <div className="chat-messages chart-question-history" ref={thread} aria-live="polite">
-        {turns.map((turn) => <div key={turn.turnId}>
+        {turns.map((turn) => <div key={turn.turnId} className="chat-turn">
           <p className="question-bubble">{turn.question}</p>
-          <div className="answer-bubble chat-answer">
-            <strong className="chat-answer-name">가게짝꿍</strong>
-            <AnswerSummary answer={turn.answer} />
-            <div className="chart-question-actions">{turn.answer.actions
-              .filter((action, index, all) => action.type !== 'OPEN_EXECUTION_GUIDE' || !all.slice(0, index).some(({ type }) => type === 'OPEN_STRATEGY' || type === 'OPEN_EXECUTION_GUIDE'))
-              .map((action) => actionButton(action, turn))}</div>
-            {turn.answer.evidence.length > 0 && <details className="chart-question-evidence">
-              <summary>근거와 출처 보기 ({turn.answer.evidence.length})</summary>
-              <ul>{turn.answer.evidence.map((item) => <Evidence key={item.id} item={item} />)}</ul>
-            </details>}
+          <div className="chat-reply">
+            <Citrus />
+            <div className="answer-bubble chat-answer">
+              <strong className="chat-answer-name">가게짝꿍</strong>
+              <AnswerSummary answer={turn.answer} />
+              <div className="chart-question-actions">{turn.answer.actions
+                .filter((action, index, all) => action.type !== 'OPEN_EXECUTION_GUIDE' || !all.slice(0, index).some(({ type }) => type === 'OPEN_STRATEGY' || type === 'OPEN_EXECUTION_GUIDE'))
+                .map((action) => actionButton(action, turn))}</div>
+              {turn.answer.evidence.length > 0 && <details className="chart-question-evidence">
+                <summary>근거와 출처 보기 ({turn.answer.evidence.length})</summary>
+                <ul>{turn.answer.evidence.map((item) => <Evidence key={item.id} item={item} />)}</ul>
+              </details>}
+            </div>
           </div>
         </div>)}
         {pending && <p role="status">자료를 확인하고 있어요.</p>}
