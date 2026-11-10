@@ -91,6 +91,11 @@ final class StrategyAgentClient {
                 : post("/internal/chart-questions", payload, tools.jackson.databind.JsonNode.class);
     }
 
+    Optional<tools.jackson.databind.JsonNode> concernCheck(Object payload) {
+        return baseUrl.isEmpty() ? Optional.empty()
+                : post("/internal/concern-check", payload, tools.jackson.databind.JsonNode.class);
+    }
+
     Optional<String> nextPromotionExplanation(PromotionImpactController.ExplanationInput input) {
         if (baseUrl.isEmpty()) return Optional.empty();
         return post("/internal/next-promotion-explanation", input, NextPromotionResponse.class)

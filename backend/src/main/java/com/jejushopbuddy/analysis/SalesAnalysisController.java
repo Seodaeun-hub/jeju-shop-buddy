@@ -415,6 +415,22 @@ class SalesAnalysisController {
         return new ExecutionPlanWriter.Conditions(weeks.intValue(), budgetWon, channel.stringValue());
     }
 
+    @PutMapping(path = "/api/analyses/{analysisId}/hourly-sales", consumes = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<?> attachHourlySales(@PathVariable String analysisId, @RequestBody JsonNode body, Principal owner) {
+        UUID id = reviewAnalysisId(analysisId);
+        var analysis = reader.find(id, owner.getName());
+        if (analysis.isEmpty()) return ResponseEntity.notFound().build();
+
+        if (!body.isObject() || body.isEmpty()) {
+            throw invalid("INVALID_REQUEST", "POS에서 집계한 시간대별 자료가 필요해요.", "hourlySales");
+        }
+        var coveredMonths = analysis.get().monthlySales().stream()
+                .filter(month -> body.has(month.month())).toList();
+        var hourlySales = readHourlySales(body, coveredMonths);
+        return writer.attachHourlySales(id, owner.getName(), hourlySales.toString())
+                ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
+    }
+
     @PutMapping(path = "/api/analyses/{analysisId}/time-series", consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<?> putTimeSeries(@PathVariable String analysisId, @RequestBody JsonNode body, Principal owner) {
@@ -458,7 +474,7 @@ class SalesAnalysisController {
     }
 
     private static AnalysisInput readInput(JsonNode body) {
-        fields(body, Set.of("concern", "monthlySales", "timeSeries", "productSales"), null);
+        fields(body, Set.of("concern", "monthlySales", "timeSeries", "productSales", "hourlySales"), null);
         var concern = body.get("concern");
         if (concern != null && (!concern.isString() || concern.stringValue().indexOf(0) >= 0)) {
             throw invalid("INVALID_REQUEST", "고민은 글로 입력해 주세요.", "concern");
@@ -485,7 +501,36 @@ class SalesAnalysisController {
         var timeSeries = body.get("timeSeries");
         return new AnalysisInput(concern == null ? null : concern.stringValue(), ordered,
                 timeSeries == null ? null : readTimeSeries(timeSeries, "timeSeries."),
-                readProductSales(body.get("productSales")));
+                readProductSales(body.get("productSales")), readHourlySales(body.get("hourlySales"), ordered));
+    }
+
+    private static JsonNode readHourlySales(JsonNode node, List<MonthlySale> monthly) {
+        if (node == null) return null;
+        String field = "hourlySales";
+        String code = "INVALID_REQUEST";
+        if (!node.isObject() || node.size() != monthly.size()) {
+            throw invalid(code, "시간대별 집계와 월별 매출의 기간이 일치해야 해요.", field);
+        }
+        for (var month : monthly) {
+            var hours = node.get(month.month());
+            if (hours == null || !hours.isArray() || hours.size() != 24) {
+                throw invalid(code, "각 월의 24시간 집계를 확인해 주세요.", field);
+            }
+            long total = 0;
+            for (var hour : hours) {
+                fields(hour, Set.of("amount", "count"), field);
+                long amount = number(hour.get("amount"), field, code);
+                number(hour.get("count"), field, code);
+                if (amount > month.amount() - total) {
+                    throw invalid(code, "시간대별 매출 합계가 월별 매출과 달라요.", field);
+                }
+                total += amount;
+            }
+            if (total != month.amount()) {
+                throw invalid(code, "시간대별 매출 합계가 월별 매출과 달라요.", field);
+            }
+        }
+        return node;
     }
 
     private static List<ProductSale> readProductSales(JsonNode node) {
@@ -585,7 +630,8 @@ class SalesAnalysisController {
         }
     }
 
-    record AnalysisInput(String concern, List<MonthlySale> monthlySales, TimeSeries timeSeries, List<ProductSale> productSales) {
+    record AnalysisInput(String concern, List<MonthlySale> monthlySales, TimeSeries timeSeries,
+                         List<ProductSale> productSales, JsonNode hourlySales) {
         String beforeMonth() {
             return monthlySales.get(monthlySales.size() - 2).month();
         }

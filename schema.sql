@@ -67,6 +67,7 @@ CREATE TABLE sales_analyses (
     id UUID PRIMARY KEY,
     store_id UUID NOT NULL,
     concern TEXT,
+    hourly_sales JSONB,
     before_month DATE NOT NULL,
     after_month DATE NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,

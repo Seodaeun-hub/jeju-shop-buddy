@@ -300,7 +300,7 @@ export function Intake({ auth, onAnalyze, existingStore }: { auth: string; onAna
       const storeId = existingStore?.id ?? await saveNewStore()
       const timeSeries = mode === 'upload' ? pos?.timeSeries : extra?.period === period ? extra?.value : undefined
       const saved = await saveAnalysis(auth, storeId, monthly, concern.trim(), timeSeries,
-        mode === 'upload' ? pos?.productSales : undefined)
+        mode === 'upload' ? pos?.productSales : undefined, mode === 'upload' ? pos?.hourlySales : undefined)
       onAnalyze(saved.id)
     } catch (error) {
       setError(error instanceof Error ? error.message : '매출을 저장할 수 없어요.')
@@ -332,6 +332,7 @@ export function Intake({ auth, onAnalyze, existingStore }: { auth: string; onAna
     setAreaCode('JEJU_AEWOL')
     setIndustry('KOREAN_RESTAURANT')
     setConcern(example.concern)
+    setSelectedConcern('')
     setRows(example.monthly.map(({ month, amount }) => ({ id: nextId.current++, month, amount: String(amount) })))
     setExtra(undefined)
     setError('')
@@ -381,7 +382,15 @@ export function Intake({ auth, onAnalyze, existingStore }: { auth: string; onAna
           }}>다시 불러오기</button></div>}
           </>}
           <label>요즘 어떤 점이 고민인가요? <span className="muted">선택</span><textarea rows={3} value={concern} onChange={(event) => setConcern(event.target.value)} /></label>
-          <div className="chips">{concerns.map(([label, value]) => <button className="chip" key={label} type="button" aria-pressed={selectedConcern === label} onClick={() => { setSelectedConcern(label); setConcern(value) }}>{label}</button>)}</div>
+          <div className="chips">{concerns.map(([label, value]) => <button className="chip" key={label} type="button" aria-pressed={selectedConcern === label} onClick={() => {
+            if (selectedConcern === label) {
+              setSelectedConcern('')
+              if (concern === value) setConcern('')
+              return
+            }
+            setSelectedConcern(label)
+            setConcern(value)
+          }}>{label}</button>)}</div>
         </section>
         <section className="form-stack">
           <div className="section-top ruled"><h2>02 매출 입력</h2></div>
