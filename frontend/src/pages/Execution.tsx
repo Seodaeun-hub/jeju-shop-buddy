@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { Citrus, PageTitle } from '../components/ui'
 import { ExecutionGuideSteps } from '../components/ExecutionGuidePanel'
+import { drawPromotionCard } from '../data/promotionCard'
 import { formatNumber, won } from '../data/shop'
 import type { Analysis, InventoryItem, Plan, PromotionDraftInput, PromotionReviewInput } from '../data/shop'
 import { InventoryReview } from './InventoryReview'
 import { PromotionReview } from './PromotionReview'
+import { InstagramPublish } from './InstagramPublish'
 import { PromotionDraftForm } from './PromotionDraftForm'
 import '../styles/execution.css'
 
@@ -39,19 +41,35 @@ function getDraft(plan: Plan) {
   return { headline, feature, detail, caption }
 }
 
-function PromoDraft({ plan }: { plan: Plan }) {
+function PromoDraft({ plan, auth }: { plan: Plan; auth?: string }) {
   const saved = plan.promotionDraft
   const { headline, feature, detail, caption } = saved ?? getDraft(plan)
   const store = saved?.storeName ?? plan.store
   const canvas = useRef<HTMLCanvasElement>(null)
   const [status, setStatus] = useState('')
-  const [drawnPhoto, setDrawnPhoto] = useState<string | null>()
+  const [rendered, setRendered] = useState<{ photo: string | null; draft: typeof saved }>()
   const photoUrl = saved?.photoDataUrl ?? null
   const instagram = Boolean(saved) || plan.channel === '인스타그램'
+  const ready = rendered?.photo === photoUrl && rendered.draft === saved
 
   useEffect(() => {
     const context = canvas.current?.getContext('2d')
     if (!context) return
+    if (saved && saved.templateVersion >= 2) {
+      drawPromotionCard(context, saved)
+      if (!photoUrl) {
+        setRendered({ photo: null, draft: saved })
+        return
+      }
+      const photo = new Image()
+      photo.onload = () => {
+        drawPromotionCard(context, saved, photo)
+        setRendered({ photo: photoUrl, draft: saved })
+      }
+      photo.onerror = () => setStatus('저장된 사진을 표시하지 못했어요.')
+      photo.src = photoUrl
+      return () => { photo.onload = null; photo.onerror = null }
+    }
     const font = '"Malgun Gothic", "Apple SD Gothic Neo", sans-serif'
     context.fillStyle = '#fff3db'
     context.fillRect(0, 0, 1080, 1080)
@@ -90,7 +108,7 @@ function PromoDraft({ plan }: { plan: Plan }) {
       context.beginPath()
       context.ellipse(578, 737, 53, 21, -.43, 0, 2 * Math.PI)
       context.fill()
-      setDrawnPhoto(null)
+      setRendered({ photo: null, draft: saved })
       return
     }
     const image = new Image()
@@ -99,7 +117,7 @@ function PromoDraft({ plan }: { plan: Plan }) {
       const width = image.width * scale
       const height = image.height * scale
       context.drawImage(image, (1080 - width) / 2, 695 + (245 - height) / 2, width, height)
-      setDrawnPhoto(photoUrl)
+      setRendered({ photo: photoUrl, draft: saved })
     }
     image.onerror = () => setStatus('저장된 사진을 표시하지 못했어요.')
     image.src = photoUrl
@@ -134,15 +152,18 @@ function PromoDraft({ plan }: { plan: Plan }) {
   return <section className="execution-material">
     <div className="ruled"><h2>{saved ? '인스타그램' : plan.channel} 홍보 초안</h2></div>
     <div className="receipt promo-draft">
-      <canvas ref={canvas} width="1080" height="1080" role="img" aria-label={`${store} 홍보 이미지 · ${feature} · ${detail}`} />
+      <canvas ref={canvas} width="1080" height="1080" role="img" aria-label={`${store} 홍보 이미지 · ${headline}${saved ? ` · ${saved.discountedPrice}` : ""} · ${feature} · ${detail}`} />
       <div className="promo-copy">
-        <span className="badge">{saved ? saved.copySource === 'GPT' ? 'GPT 문구' : '기본 문구' : '초안'}</span>
+        <span className="badge">{saved?.copySource === 'EDITED' ? '직접 작성' : saved?.copySource === 'GPT' ? 'GPT 문구' : saved ? '기본 문구' : '초안'}</span>
         {saved && <p><strong>게시 예정</strong> · {saved.publishDate} {saved.publishTime.slice(0, 5)} 한국 시간</p>}
         <p>{caption}</p>
         <div className="promo-actions">
-          <button type="button" className="button secondary small" disabled={drawnPhoto !== photoUrl} onClick={saveImage}>이미지 저장</button>
+          <button type="button" className="button secondary small" disabled={!ready} onClick={saveImage}>이미지 저장</button>
           <button type="button" className="button secondary small" onClick={copyCaption}>문구 복사</button>
         </div>
+        {saved && plan.id && auth && ready &&
+          <InstagramPublish key={plan.id} auth={auth} planId={plan.id} caption={caption} hasPhoto={Boolean(photoUrl)}
+            image={() => canvas.current?.toDataURL('image/jpeg', 0.88)} />}
         {instagram && <a href="https://www.instagram.com/" target="_blank" rel="noreferrer">인스타그램 열기 ↗</a>}
         <small className="muted">게시 전 날짜와 안내 내용을 확인해 주세요.</small>
         <small role="status">{status}</small>
@@ -238,7 +259,7 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
           initialBudget={plan.budget} onSave={onSavePromotion} />}
         {plan.strategy === 'promotion' && auth && onSavePromotionDraft && <>
           <PromotionDraftForm key={plan.promotionReview?.productName} plan={plan} auth={auth} onSave={onSavePromotionDraft} />
-          {plan.promotionDraft && <PromoDraft plan={plan} />}
+          {plan.promotionDraft && <PromoDraft plan={plan} auth={auth} />}
         </>}
         {inventory ? <InventoryReview
           items={plan.inventoryItems ?? []}

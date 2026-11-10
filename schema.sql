@@ -149,6 +149,7 @@ CREATE TABLE execution_plans (
     strategy_snapshot JSONB NOT NULL,
     inventory_review JSONB CHECK (inventory_review IS NULL OR (strategy_code = 'INVENTORY' AND jsonb_typeof(inventory_review) = 'array')),
     promotion_review JSONB CHECK (promotion_review IS NULL OR (strategy_code = 'PROMOTION' AND jsonb_typeof(promotion_review) = 'object')),
+    instagram_publication JSONB CHECK (instagram_publication IS NULL OR (strategy_code = 'PROMOTION' AND jsonb_typeof(instagram_publication) = 'object')),
     promotion_draft JSONB CHECK (promotion_draft IS NULL OR (strategy_code = 'PROMOTION' AND jsonb_typeof(promotion_draft) = 'object')),
     duration_weeks SMALLINT NOT NULL,
     budget_won BIGINT,
