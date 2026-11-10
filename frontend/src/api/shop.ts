@@ -24,11 +24,11 @@ type SavedAnalysis = {
 async function send(path: string, authorization?: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<Response> {
   const headers = new Headers({ Accept: 'application/json' })
   if (authorization) {
-    headers.set('Authorization', authorization)
+    if (authorization !== ownerSession) headers.set('Authorization', authorization)
     headers.set('X-Requested-With', 'XMLHttpRequest')
   }
   if (body !== undefined) headers.set('Content-Type', 'application/json')
-  const response = await fetch(path, { method, headers, body: JSON.stringify(body), signal, cache: 'no-store', credentials: 'omit' })
+  const response = await fetch(path, { method, headers, body: JSON.stringify(body), signal, cache: 'no-store', credentials: authorization ? 'same-origin' : 'omit' })
     .catch((error: unknown) => {
       if (signal?.aborted) throw error
       throw new Error('서버에 연결할 수 없어요. 잠시 후 다시 시도해 주세요.')
@@ -45,12 +45,54 @@ async function request<T>(...args: Parameters<typeof send>): Promise<T> {
   return (await send(...args)).json()
 }
 
-export function basicAuthorization(email: string, password: string) {
+function basicAuthorization(email: string, password: string) {
   const bytes = new TextEncoder().encode(email.trim() + ':' + password)
   return 'Basic ' + btoa(String.fromCharCode(...bytes))
 }
 
+export const ownerSession = 'session'
+export const loginOwner = (email: string, password: string) =>
+  request<{ email: string }>('/api/session', basicAuthorization(email, password), 'POST')
+export const fetchOwnerSession = (signal: AbortSignal) =>
+  request<{ email: string }>('/api/session', ownerSession, 'GET', undefined, signal)
+export const logoutOwner = () => send('/api/session', ownerSession, 'DELETE')
+
 export const listStores = (auth: string, signal?: AbortSignal) => request<Store[]>('/api/stores', auth, 'GET', undefined, signal)
+
+export type QuestionChart = 'MONTHLY_SALES' | 'MARKET_CARD_SALES' | 'JEJU_BSI' | 'TIME_SERIES'
+type QuestionSource = { label: string; url?: string }
+type QuestionPeriod = { start: string; end: string; businessDays: number }
+type DailyQuestionMetric = { before: number; after: number; unit: 'KRW' | 'COUNT'; changePercent?: number }
+type QuestionEvidenceBase = { id: string; label?: string; source?: QuestionSource }
+export type QuestionEvidence = QuestionEvidenceBase & (
+  | { kind: 'METRIC'; before: number; after: number; unit: 'KRW' | 'COUNT' | 'INDEX' | 'QUANTITY'; scope?: string; period?: { before: string; after: string } }
+  | { kind: 'STRATEGY'; reason?: string }
+  | { kind: 'GUIDE'; when?: string }
+  | { kind: 'REVIEW'; date: string; excerpt: string }
+  | { kind: 'PLAN'; completed: number; total: number; startDate?: string; endDate?: string }
+  | { kind: 'RESULT'; scope: string; before: QuestionPeriod; after: QuestionPeriod; dailyAverageSales?: DailyQuestionMetric; dailyAveragePayments?: DailyQuestionMetric }
+)
+export type QuestionAction = { type: 'ADD_TIME_SERIES' | 'OPEN_REVIEWS' | 'OPEN_STRATEGY' | 'OPEN_EXECUTION_GUIDE' | 'OPEN_PLAN_RESULTS' | 'SELECT_PLAN'; targetId: string }
+export type QuestionTurn = {
+  conversationId: string
+  turnId: string
+  question: string
+  chart: QuestionChart
+  answer: {
+    status: string
+    sections: { kind: 'OBSERVATION' | 'HYPOTHESIS' | 'ACTION'; text: string; evidenceIds: string[] }[]
+    evidence: QuestionEvidence[]
+    missingInputs: { code: string; label: string }[]
+    actions: QuestionAction[]
+  }
+}
+export type QuestionInput = { clientMessageId: string; conversationId?: string; chart: QuestionChart; question: string; planId?: string }
+export function fetchQuestions(auth: string, id: string, signal: AbortSignal) {
+  return request<{ conversationId: string | null; turns: QuestionTurn[] }>(`/api/analyses/${encodeURIComponent(id)}/questions`, auth, 'GET', undefined, signal)
+}
+export function sendQuestion(auth: string, id: string, input: QuestionInput) {
+  return request<QuestionTurn>(`/api/analyses/${encodeURIComponent(id)}/questions`, auth, 'POST', input)
+}
 export const listAreas = (signal: AbortSignal) => request<Area[]>('/api/areas', undefined, 'GET', undefined, signal)
 export const registerStore = (auth: string, input: StoreInput) => request<Store>('/api/stores', auth, 'POST', input)
 

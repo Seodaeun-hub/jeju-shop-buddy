@@ -1,4 +1,5 @@
 import { ReviewInsights, SavedReviewInsights } from '../components/ReviewInsights'
+import { ChartQuestions } from '../components/ChartQuestions'
 import type { Plan } from '../data/shop'
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
@@ -7,7 +8,7 @@ import { Citrus, PageTitle } from '../components/ui'
 import { changeRate, example, formatNumber, formatRate, monthLabel, won } from '../data/shop'
 import type { Analysis, TimeSeries } from '../data/shop'
 import { fetchMarketContext } from '../api/shop'
-import type { MarketContext } from '../api/shop'
+import type { MarketContext, QuestionChart } from '../api/shop'
 import { bsiSource, marketSource } from '../data/marketSources'
 import { TimeDialog } from './Intake'
 import '../styles/dashboard.css'
@@ -15,6 +16,7 @@ import '../styles/dashboard.css'
 const bsiFormat = new Intl.NumberFormat('ko-KR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format
 
 type Topic = {
+  chart: QuestionChart
   title: string
   suggestion: string
   answer: string
@@ -177,6 +179,7 @@ export function Dashboard({ data, auth, analysisId, onChange, onPlan, onSaveTime
     : `시간대별 ${series ? unit : '매출 분석'}`
   const formatTime = series?.metric === 'count' ? (value: number) => `${formatNumber(value)}건` : won
   const monthlyTopic: Topic = {
+    chart: 'MONTHLY_SALES',
     title: '월별 매출',
     suggestion: '매출이 얼마나 달라졌나요?',
     answer: summary,
@@ -184,6 +187,7 @@ export function Dashboard({ data, auth, analysisId, onChange, onPlan, onSaveTime
     source: data.demo ? '가상 매장 POS 시연 자료' : '저장된 매장 월별 매출',
   }
   const comparisonTopic: Topic = {
+    chart: 'MARKET_CARD_SALES',
     title: '상권 비교',
     suggestion: '같은 기간 상권 카드 이용액은 어떻게 달라졌나요?',
     answer: market ? `${summary} 같은 기간 ${data.area} ${data.industry} 카드 이용액은 ${formatRate(market.rate)}로 표시돼요. 변화의 원인을 알려면 영업일과 시간대별 실적을 함께 살펴봐요.` : '',
@@ -191,12 +195,23 @@ export function Dashboard({ data, auth, analysisId, onChange, onPlan, onSaveTime
     source: '저장된 매장 매출 · 제주데이터허브',
   }
   const timeTopic: Topic = {
+    chart: 'TIME_SERIES',
     title: timeTitle,
     suggestion: biggestDrop ? `왜 ${biggestDrop.label} 구간을 먼저 봐야 하나요?` : '어느 시간대가 달라졌나요?',
     answer: biggestDrop ? '비교한 시간대 중 감소 폭이 가장 컸어요. 영업일 수나 영업시간이 달랐는지도 확인해 보세요.' : '비교한 구간에서 감소한 시간대는 없어요.',
     figure: biggestDrop ? `${formatTime(biggestDrop.before)} → ${formatTime(biggestDrop.after)} · ${formatTime(biggestDrop.before - biggestDrop.after)} 감소` : undefined,
     source: series === example.timeSeries ? '가상 매장 POS 결제 자료' : '저장된 시간대별 자료',
   }
+  const bsiTopic: Topic = {
+    chart: 'JEJU_BSI',
+    title: '제주 경기동향',
+    suggestion: '같은 기간 제주 경기동향은 어땠나요?',
+    answer: bsi ? '제주 전체 소상공인의 경기 체감 지표예요.' : '비교 기간의 제주 체감 BSI 자료가 없어요.',
+    figure: bsi ? `${bsi.before} → ${bsi.after}` : undefined,
+    source: '소상공인시장진흥공단',
+  }
+  const topics = [monthlyTopic, comparisonTopic, timeTopic, bsiTopic]
+  const saved = Boolean(auth && analysisId)
   const suggestedTopic = series ? timeTopic : market ? comparisonTopic : monthlyTopic
 
   function openTopic(value: Topic, button: HTMLButtonElement, showExample = false) {
@@ -226,7 +241,7 @@ export function Dashboard({ data, auth, analysisId, onChange, onPlan, onSaveTime
         <section className="ruled-block">
           <div className="section-top">
             <h2>우리 가게와 상권 비교</h2>
-            {market && <AskButton label="상권 비교 차트 질문" onClick={(button) => openTopic(comparisonTopic, button)} />}
+            {(market || saved) && <AskButton label="상권 비교 차트 질문" onClick={(button) => openTopic(comparisonTopic, button)} />}
           </div>
           {market ? <>
             <MarketChart storeRate={delta} marketRate={market.rate} />
@@ -245,7 +260,7 @@ export function Dashboard({ data, auth, analysisId, onChange, onPlan, onSaveTime
           </ul>
         </section>
         <section className="ruled-block">
-          <div className="section-top"><h2>{timeTitle}</h2>{series && <AskButton label="시간대 차트 질문" onClick={(button) => openTopic(timeTopic, button)} />}</div>
+          <div className="section-top"><h2>{timeTitle}</h2>{(series || saved) && <AskButton label="시간대 차트 질문" onClick={(button) => openTopic(timeTopic, button)} />}</div>
           {series ? <>
             <TimeChart series={series} labels={[monthLabel(before.month), monthLabel(after.month)]} format={formatTime} highlight={biggestDrop} />
             <button type="button" className="button secondary small" onClick={() => setTimeOpen(true)}>시간대별 자료 수정</button>
@@ -257,7 +272,19 @@ export function Dashboard({ data, auth, analysisId, onChange, onPlan, onSaveTime
         </section>
       </div>
       <aside tabIndex={-1} ref={panel} className="dashboard-aside form-stack">
-        {question ? <Questions key={question.topic.title} topic={question.topic} showExample={question.showExample} period={period} onClose={closeTopic} /> : <>
+        {auth && analysisId && <ChartQuestions auth={auth} analysisId={analysisId}
+          chart={question?.topic.chart} title={question?.topic.title} suggestion={question?.topic.suggestion}
+          period={period} strategyTo={strategyTo} onClose={closeTopic} onTime={() => setTimeOpen(true)}
+          onReviews={() => {
+            setQuestion(undefined)
+            requestAnimationFrame(() => document.getElementById('review-heading')?.scrollIntoView({ block: 'center' }))
+          }}
+          onRestore={(chart) => {
+            const topic = topics.find((item) => item.chart === chart) ?? monthlyTopic
+            setQuestion((current) => current ?? { topic, showExample: false })
+          }} />}
+        {question && !saved && <Questions key={question.topic.title} topic={question.topic} showExample={question.showExample} period={period} onClose={closeTopic} />}
+        {!question && <>
           <section className="receipt dashboard-receipt">
             <div className="section-top"><h2>짝꿍의 한눈 요약</h2><Citrus stamp /></div>
             <p className="dashboard-summary">{biggestDrop
@@ -273,7 +300,7 @@ export function Dashboard({ data, auth, analysisId, onChange, onPlan, onSaveTime
           />}
           {auth && analysisId && <SavedReviewInsights auth={auth} analysisId={analysisId} store={data.store} onPlan={onPlan} />}
           <section className="ruled-block dashboard-bsi">
-            <h2>제주 경기동향</h2>
+            <div className="section-top"><h2>제주 경기동향</h2><AskButton label="제주 경기동향 차트 질문" onClick={(button) => openTopic(bsiTopic, button)} /></div>
             {bsi
               ? <BsiChart months={[before.month, after.month]} values={[bsi.before, bsi.after]} />
               : <p className="muted">{missingContext ?? '비교한 두 달의 제주 체감 BSI 자료가 없어요.'}</p>}
@@ -289,7 +316,7 @@ export function Dashboard({ data, auth, analysisId, onChange, onPlan, onSaveTime
     {timeOpen && <TimeDialog monthly={data.monthly} initial={series} onClose={() => setTimeOpen(false)} onSave={async (value) => {
       await onSaveTimeSeries(value)
       setTimeOpen(false)
-      setQuestion(undefined)
+      if (!saved) setQuestion(undefined)
     }} />}
   </>
 }

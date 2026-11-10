@@ -86,6 +86,11 @@ final class StrategyAgentClient {
         return post("/internal/execution-guide", request, GuideResponse.class).filter(StrategyAgentClient::validGuide);
     }
 
+    Optional<tools.jackson.databind.JsonNode> chartQuestion(Object payload) {
+        return baseUrl.isEmpty() ? Optional.empty()
+                : post("/internal/chart-questions", payload, tools.jackson.databind.JsonNode.class);
+    }
+
     private <T> Optional<T> post(String path, Object payload, Class<T> type) {
         try {
             var request = HttpRequest.newBuilder(URI.create(baseUrl + path)).timeout(Duration.ofSeconds(13))

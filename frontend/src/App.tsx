@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
-import { basicAuthorization, fetchAnalysis, fetchPlan, listStores, saveTimeSeries, toPlan, updateChecklistItem } from './api/shop'
+import { fetchAnalysis, fetchOwnerSession, fetchPlan, loginOwner, logoutOwner, ownerSession, saveTimeSeries, toPlan, updateChecklistItem } from './api/shop'
 import { Dashboard } from './pages/Dashboard'
 import { Intake } from './pages/Intake'
 import { Execution } from './pages/Execution'
@@ -49,7 +49,7 @@ function Home({ onDemo }: { onDemo: () => void }) {
   )
 }
 
-function Account({ signup, onLogin }: { signup: boolean; onLogin: (auth: string, email: string) => void }) {
+function Account({ signup, onLogin }: { signup: boolean; onLogin: (email: string) => void }) {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
 
@@ -61,9 +61,8 @@ function Account({ signup, onLogin }: { signup: boolean; onLogin: (auth: string,
     setPending(true)
     setError('')
     try {
-      const auth = basicAuthorization(email, String(fields.get('password')))
-      await listStores(auth)
-      onLogin(auth, email)
+      const session = await loginOwner(email, String(fields.get('password')))
+      onLogin(session.email)
     } catch (error) {
       setError(error instanceof Error ? error.message : '로그인할 수 없어요.')
     } finally {
@@ -95,6 +94,8 @@ export function App() {
   const navigate = useNavigate()
   const { pathname, search, state } = useLocation()
   const [account, setAccount] = useState<{ auth: string; email: string }>()
+  const [sessionPending, setSessionPending] = useState(true)
+  const [logoutError, setLogoutError] = useState('')
   const [lastId, setLastId] = useState<string>()
   const [loadedId, setLoadedId] = useState<string>()
   const [analysisError, setAnalysisError] = useState('')
@@ -119,6 +120,16 @@ export function App() {
   }, [pathname])
 
   useEffect(() => {
+    const controller = new AbortController()
+    fetchOwnerSession(controller.signal).then(({ email }) => {
+      if (!controller.signal.aborted) setAccount({ auth: ownerSession, email })
+    }).catch(() => undefined).finally(() => {
+      if (!controller.signal.aborted) setSessionPending(false)
+    })
+    return () => controller.abort()
+  }, [])
+
+  useEffect(() => {
     if (!auth || !analysisId) return
     const controller = new AbortController()
     fetchAnalysis(auth, analysisId, controller.signal).then((value) => {
@@ -133,8 +144,8 @@ export function App() {
     return () => controller.abort()
   }, [auth, analysisId, retry])
 
-  function login(auth: string, email: string) {
-    setAccount({ auth, email })
+  function login(email: string) {
+    setAccount({ auth: ownerSession, email })
     navigate(typeof state?.returnTo === 'string' ? state.returnTo : '/sales', { replace: true })
   }
 
@@ -162,7 +173,16 @@ export function App() {
     navigate(planPath('/execution', value))
   }
 
-  function leavePreview() {
+  async function leavePreview() {
+    setLogoutError('')
+    if (account) {
+      try {
+        await logoutOwner()
+      } catch (failure) {
+        setLogoutError(failure instanceof Error ? failure.message : '로그아웃하지 못했어요.')
+        return
+      }
+    }
     setAccount(undefined)
     setPlanError(undefined)
     setLastId(undefined)
@@ -259,7 +279,8 @@ export function App() {
         </div>
       </header>
       <main id="main-content" className="shell content">
-        <Routes>
+        {logoutError && <p role="alert" className="error">{logoutError}</p>}
+        {sessionPending && !publicPage ? <p role="status">로그인 상태를 확인하고 있어요.</p> : <Routes>
           <Route path="/" element={<Home onDemo={() => openAnalysis(example)} />} />
           <Route path="/login" element={<Account key="login" signup={false} onLogin={login} />} />
           <Route path="/signup" element={<Account key="signup" signup onLogin={login} />} />
@@ -269,7 +290,7 @@ export function App() {
           <Route path="/execution" element={planPage} />
           <Route path="/results" element={planPage} />
           <Route path="*" element={<Placeholder to="/" action="메인으로">요청한 화면을 찾을 수 없어요.</Placeholder>} />
-        </Routes>
+        </Routes>}
       </main>
     </>
   )

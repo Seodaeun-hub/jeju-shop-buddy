@@ -11,6 +11,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -18,6 +19,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import tools.jackson.databind.ObjectMapper;
 
 @Configuration(proxyBeanMethods = false)
@@ -26,10 +28,12 @@ class StoreSecurityConfiguration {
             "AUTH_REQUIRED", "로그인 후 매장을 등록해 주세요.", null);
 
     @Bean
-    SecurityFilterChain storeSecurity(HttpSecurity http, ObjectMapper json) throws Exception {
+    SecurityFilterChain storeSecurity(HttpSecurity http, ObjectMapper json, HttpSessionSecurityContextRepository sessions) throws Exception {
         AuthenticationEntryPoint unauthorized = (request, response, failure) -> {
             response.setStatus(HttpStatus.UNAUTHORIZED.value());
-            response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Basic realm=\"Shop Buddy\"");
+            if (!"XMLHttpRequest".equals(request.getHeader("X-Requested-With"))) {
+                response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Basic realm=\"Shop Buddy\"");
+            }
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
             response.setCharacterEncoding(StandardCharsets.UTF_8.name());
             String path = request.getRequestURI().substring(request.getContextPath().length());
@@ -59,18 +63,37 @@ class StoreSecurityConfiguration {
             }
             response.getWriter().write(json.writeValueAsString(error));
         };
-        return http.securityMatcher("/api/stores", "/api/stores/{storeId}/analyses",
+        return http.securityMatcher("/api/session", "/api/stores", "/api/stores/{storeId}/analyses",
                         "/api/analyses/{analysisId}", "/api/analyses/{analysisId}/time-series", "/api/analyses/{analysisId}/strategies", "/api/analyses/{analysisId}/plans",
                         "/api/analyses/{analysisId}/recommendations", "/api/analyses/{analysisId}/execution-guide",
                         "/api/analyses/{analysisId}/reviews", "/api/analyses/{analysisId}/review-plans",
+                        "/api/analyses/{analysisId}/questions",
                         "/api/plans/{planId}", "/api/plans/{planId}/checklist/{itemId}", "/api/plans/{planId}/results",
                         "/api/plans/{planId}/results/{resultId}")
-                .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth.anyRequest().access((authentication, context) -> {
+                    var request = context.getRequest();
+                    boolean read = request.getMethod().equals("GET") || request.getMethod().equals("HEAD");
+                    boolean appRequest = "XMLHttpRequest".equals(request.getHeader("X-Requested-With"));
+                    String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
+                    boolean basic = authorization != null && authorization.regionMatches(true, 0, "Basic ", 0, 6);
+                    boolean sessionEndpoint = request.getServletPath().equals("/api/session");
+                    var user = authentication.get();
+                    return new AuthorizationDecision(user != null && user.isAuthenticated()
+                            && !(user instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)
+                            && (read || appRequest || (!sessionEndpoint && basic)));
+                }))
+                .securityContext(security -> security.securityContextRepository(sessions).requireExplicitSave(true))
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+                .requestCache(cache -> cache.disable())
                 .csrf(AbstractHttpConfigurer::disable)
                 .exceptionHandling(errors -> errors.authenticationEntryPoint(unauthorized))
                 .httpBasic(basic -> basic.authenticationEntryPoint(unauthorized))
                 .build();
+    }
+
+    @Bean
+    HttpSessionSecurityContextRepository ownerSessions() {
+        return new HttpSessionSecurityContextRepository();
     }
 
     @Bean

@@ -21,14 +21,7 @@ class StoreReviewService {
     }
 
     Insight insight(UUID storeId) {
-        var reviews = jdbc.sql("""
-                SELECT id, reviewed_on, body, model_topics FROM store_reviews WHERE store_id = :storeId
-                ORDER BY reviewed_on DESC, id
-                """)
-                .param("storeId", storeId)
-                .query((rs, row) -> new ClassifiedReview(new Review(rs.getObject("id", UUID.class),
-                        rs.getObject("reviewed_on", LocalDate.class), rs.getString("body")), rs.getString("model_topics")))
-                .list();
+        var reviews = classified(storeId);
         var grouped = new EnumMap<ReviewTopic, List<Review>>(ReviewTopic.class);
         for (var entry : reviews) {
             for (var topic : entry.topics()) {
@@ -39,6 +32,17 @@ class StoreReviewService {
         var topics = grouped.entrySet().stream().filter(entry -> entry.getValue().size() >= 2)
                 .map(entry -> TopicInsight.from(entry.getKey(), entry.getValue())).toList();
         return new Insight(reviews.size(), afternoon, afternoon.size() >= 2, topics);
+    }
+
+    List<ClassifiedReview> classified(UUID storeId) {
+        return jdbc.sql("""
+                SELECT id, reviewed_on, body, model_topics FROM store_reviews WHERE store_id = :storeId
+                ORDER BY reviewed_on DESC, id
+                """)
+                .param("storeId", storeId)
+                .query((rs, row) -> new ClassifiedReview(new Review(rs.getObject("id", UUID.class),
+                        rs.getObject("reviewed_on", LocalDate.class), rs.getString("body")), rs.getString("model_topics")))
+                .list();
     }
 
     Review add(UUID storeId, LocalDate date, String text) {
@@ -58,7 +62,7 @@ class StoreReviewService {
         return review;
     }
 
-    private record ClassifiedReview(Review review, String modelTopics) {
+    record ClassifiedReview(Review review, String modelTopics) {
         List<ReviewTopic> topics() {
             if (modelTopics == null) {
                 return Arrays.stream(ReviewTopic.values()).filter(topic -> topic.matches(review.text())).toList();
