@@ -677,35 +677,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [schemaVersion, status, steps, sources]
-                properties:
-                  schemaVersion: { type: string, enum: ['1.0'] }
-                  status: { type: string, enum: [OK, NO_RELEVANT_GUIDE, CURATED_FALLBACK] }
-                  message: { type: [string, 'null'] }
-                  steps:
-                    type: array
-                    items:
-                      type: object
-                      required: [kind, text, sourceIds]
-                      properties:
-                        kind: { type: string, enum: [STORE_CHECK, OFFICIAL_GUIDE] }
-                        text: { type: string }
-                        when: { type: [string, 'null'] }
-                        sourceIds:
-                          type: array
-                          items: { type: string }
-                  sources:
-                    type: array
-                    items:
-                      type: object
-                      required: [id, title, publisher, url, revision]
-                      properties:
-                        id: { type: string }
-                        title: { type: string }
-                        publisher: { type: string }
-                        url: { type: string, format: uri }
-                        revision: { type: integer }
+                $ref: '#/components/schemas/ExecutionGuideSnapshot'
         '400':
           description: 잘못된 분석 ID, 추천 ID, 전략 또는 채널
         '401':
@@ -823,7 +795,7 @@ paths:
                 code: ANALYSIS_NOT_FOUND
                 message: 매출 분석을 찾을 수 없어요.
         '409':
-          description: 추천 ID가 이 분석에 속하지 않거나 추천을 받은 뒤 분석 입력이 바뀜
+          description: 추천 또는 실행 가이드가 이 분석과 전략에 속하지 않거나 분석 입력이 바뀜
           content:
             application/json:
               schema:
@@ -1585,6 +1557,38 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/StrategySuggestion'
+    ExecutionGuideSnapshot:
+      type: object
+      required: [schemaVersion, status, steps, sources, guideId, channel]
+      properties:
+        guideId: { type: string, format: uuid }
+        channel: { type: string, enum: [NAVER, IN_STORE] }
+        schemaVersion: { type: string, enum: ['1.0'] }
+        status: { type: string, enum: [OK, NO_RELEVANT_GUIDE, CURATED_FALLBACK] }
+        message: { type: [string, 'null'] }
+        steps:
+          type: array
+          items:
+            type: object
+            required: [kind, text, sourceIds]
+            properties:
+              kind: { type: string, enum: [STORE_CHECK, OFFICIAL_GUIDE] }
+              text: { type: string }
+              when: { type: [string, 'null'] }
+              sourceIds:
+                type: array
+                items: { type: string }
+        sources:
+          type: array
+          items:
+            type: object
+            required: [id, title, publisher, url, revision]
+            properties:
+              id: { type: string }
+              title: { type: string }
+              publisher: { type: string }
+              url: { type: string, format: uri }
+              revision: { type: integer }
     StrategySuggestion:
       type: object
       required: [code, title, status, reason, evidence, missingInputs, followUp]
@@ -1600,6 +1604,8 @@ components:
         reason:
           type: string
           description: 확인한 근거를 바탕으로 해당 행동을 제안하거나 보류한 이유
+        executionGuide:
+          $ref: '#/components/schemas/ExecutionGuideSnapshot'
         nextAction:
           type: string
           description: AI 추천에서 먼저 확인하거나 입력할 내용
@@ -1673,6 +1679,10 @@ components:
       additionalProperties: false
       required: [strategyCode, conditions]
       properties:
+        executionGuideId:
+          type: string
+          format: uuid
+          description: 주문 안내 카드에서 마지막으로 확인한 실행 가이드 ID
         recommendationId:
           type: string
           format: uuid

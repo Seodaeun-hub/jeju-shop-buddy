@@ -111,21 +111,27 @@ final class SalesStrategies {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record Suggestion(String code, String title, String status, String reason, List<Evidence> evidence,
                       List<String> missingInputs, String followUp, List<StoreReviewService.Review> reviewEvidence,
-                      ReviewTopic reviewTopic, String nextAction, RecommendationContext recommendation) {
+                      ReviewTopic reviewTopic, String nextAction, RecommendationContext recommendation,
+                      StrategyAgentClient.GuideResponse executionGuide) {
         Suggestion(String code, String title, String status, String reason, List<Evidence> evidence,
                    List<String> missingInputs, String followUp) {
-            this(code, title, status, reason, evidence, missingInputs, followUp, null, null, null, null);
+            this(code, title, status, reason, evidence, missingInputs, followUp, null, null, null, null, null);
         }
 
         Suggestion(String code, String title, String status, String reason, List<Evidence> evidence,
                    List<String> missingInputs, String followUp, List<StoreReviewService.Review> reviewEvidence,
                    ReviewTopic reviewTopic) {
-            this(code, title, status, reason, evidence, missingInputs, followUp, reviewEvidence, reviewTopic, null, null);
+            this(code, title, status, reason, evidence, missingInputs, followUp, reviewEvidence, reviewTopic, null, null, null);
         }
 
         Suggestion withRecommendation(RecommendationContext context) {
             return new Suggestion(code, title, status, reason, evidence, missingInputs, followUp,
-                    reviewEvidence, reviewTopic, nextAction, context);
+                    reviewEvidence, reviewTopic, nextAction, context, executionGuide);
+        }
+
+        Suggestion withExecutionGuide(StrategyAgentClient.GuideResponse guide) {
+            return new Suggestion(code, title, status, reason, evidence, missingInputs, followUp,
+                    reviewEvidence, reviewTopic, nextAction, recommendation, guide);
         }
     }
 

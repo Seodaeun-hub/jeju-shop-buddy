@@ -24,20 +24,22 @@ class ExecutionPlanWriter {
     private final SalesAnalysisReader reader;
     private final SalesStrategies salesStrategies;
     private final StrategyRecommendations recommendations;
+    private final ExecutionGuideSnapshots guideSnapshots;
     private final ObjectMapper json;
 
     ExecutionPlanWriter(JdbcClient jdbc, SalesAnalysisReader reader, ObjectMapper json, SalesStrategies salesStrategies,
-                        StrategyRecommendations recommendations) {
+                        StrategyRecommendations recommendations, ExecutionGuideSnapshots guideSnapshots) {
         this.jdbc = jdbc;
         this.reader = reader;
         this.salesStrategies = salesStrategies;
         this.recommendations = recommendations;
+        this.guideSnapshots = guideSnapshots;
         this.json = json;
     }
 
     @Transactional(isolation = Isolation.REPEATABLE_READ)
     public Optional<Plan> create(UUID analysisId, String ownerEmail, String strategyCode, Conditions conditions,
-                                 UUID recommendationId) {
+                                 UUID recommendationId, UUID guideId) {
         var analysis = reader.find(analysisId, ownerEmail);
         if (analysis.isEmpty()) {
             return Optional.empty();
@@ -46,6 +48,9 @@ class ExecutionPlanWriter {
                 ? salesStrategies.from(analysis.get()).strategies().stream()
                     .filter(candidate -> candidate.code().equals(strategyCode)).findFirst().orElseThrow()
                 : recommendations.select(analysis.get(), recommendationId, strategyCode);
+        if (guideId != null) {
+            strategy = strategy.withExecutionGuide(guideSnapshots.select(analysis.get(), recommendationId, strategyCode, guideId));
+        }
         return Optional.of(persist(analysisId, strategy, conditions));
     }
 

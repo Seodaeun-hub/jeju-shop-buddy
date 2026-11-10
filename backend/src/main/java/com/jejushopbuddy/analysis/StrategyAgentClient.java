@@ -210,7 +210,7 @@ final class StrategyAgentClient {
             }).toList();
             suggestions.add(new Suggestion(candidate.code(), TITLES.get(candidate.code()), card.status(), card.reason(),
                     evidence, candidate.missingInputs().stream().map(INPUT_LABELS::get).toList(),
-                    card.followUp(), null, null, card.nextAction(), null));
+                    card.followUp(), null, null, card.nextAction(), null, null));
         }
         return new Response(analysis.id(), analysis.beforeMonth(), analysis.afterMonth(), List.copyOf(suggestions),
                 "AGENT", contextIds.stream().map(id -> facts.get(id).toEvidence()).toList());
@@ -279,7 +279,12 @@ final class StrategyAgentClient {
     private record GuideRequest(String schemaVersion, String strategyCode, String industryCode, String channel,
                                 @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.ALWAYS)
                                 GuideFocus focus, String naverReservationOrOrder) {}
-    record GuideResponse(String schemaVersion, String status, String message, List<GuideStep> steps, List<GuideSource> sources) {}
+    record GuideResponse(String schemaVersion, String status, String message, List<GuideStep> steps,
+                         List<GuideSource> sources, UUID guideId, String channel) {
+        GuideResponse withSnapshot(UUID id, String channel) {
+            return new GuideResponse(schemaVersion, status, message, steps, sources, id, channel);
+        }
+    }
     record GuideStep(String kind, String text, String when, List<String> sourceIds) {}
     record GuideSource(String id, String title, String publisher, String url, int revision) {}
 }

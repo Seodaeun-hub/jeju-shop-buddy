@@ -44,7 +44,8 @@ export function SavedStrategyPage({ auth, analysisId, data, backTo, onPlan }: {
     return () => controller.abort()
   }, [auth, analysisId, retry])
 
-  if (response?.strategies.length) return <Strategy data={data} backTo={backTo} onPlan={onPlan} saved={{ auth, analysisId, response }} />
+  if (response?.strategies.length) return <Strategy key={response.recommendationId ?? analysisId}
+    data={data} backTo={backTo} onPlan={onPlan} saved={{ auth, analysisId, response }} />
 
   return <>
     <PageTitle title="대응 전략 선택" detail="우리 가게에 맞는 방법을 골라보세요." />
@@ -144,6 +145,7 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
     : strategies.map(({ id }) => ({ id, card: demo!.cards[id] }))
   const recommendation = recommended ? strategyIds[recommended.code] : demo?.recommendation
   const [choice, setChoice] = useState<StrategyId>(recommendation ?? cards[0].id)
+  const [viewedGuideId, setViewedGuideId] = useState<string>()
   const [budget, setBudget] = useState('50000')
   const [channel, setChannel] = useState('인스타그램')
   const [saving, setSaving] = useState(false)
@@ -176,7 +178,7 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
         const plan = await createPlan(saved.auth, saved.analysisId, selectedStrategy.code, choice === 'inventory'
           ? { durationWeeks }
           : { durationWeeks, budgetWon: Number(budget), channel: channel === '인스타그램' ? 'INSTAGRAM' : 'STORE_NOTICE' },
-          saved.response.recommendationId)
+          saved.response.recommendationId, choice === 'outreach' ? viewedGuideId : undefined)
         if (mounted.current) onPlan(toPlan(plan, data.store))
       } catch (error) {
         if (mounted.current) setError(error instanceof Error ? error.message : '실행 계획을 저장할 수 없어요.')
@@ -256,7 +258,8 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
             </dl>
             {saved && id === 'outreach' && <ExecutionGuidePanel
               key={saved.response.recommendationId ?? saved.analysisId}
-              auth={saved.auth} analysisId={saved.analysisId} recommendationId={saved.response.recommendationId} />}
+              auth={saved.auth} analysisId={saved.analysisId} recommendationId={saved.response.recommendationId}
+              onView={setViewedGuideId} />}
           </div>
         })}
         <Link className="strategy-back" to={backTo}>← 매출 분석 다시 보기</Link>
