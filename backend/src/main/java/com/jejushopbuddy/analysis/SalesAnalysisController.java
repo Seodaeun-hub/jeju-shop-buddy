@@ -74,6 +74,19 @@ class SalesAnalysisController {
         return ResponseEntity.ok(analysis.get());
     }
 
+    @DeleteMapping("/api/analyses/{analysisId}")
+    ResponseEntity<?> delete(@PathVariable String analysisId, Principal owner) {
+        UUID id = parseId(analysisId, "INVALID_ANALYSIS_ID", "분석 ID 형식을 확인해 주세요.", "analysisId");
+        return switch (writer.delete(id, owner.getName())) {
+            case DELETED -> ResponseEntity.noContent().build();
+            case NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new ApiError("ANALYSIS_NOT_FOUND", "매출 분석을 찾을 수 없어요.", null));
+            case PUBLICATION_PENDING -> ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(new ApiError("ANALYSIS_PUBLICATION_PENDING",
+                            "인스타그램 게시가 예약되어 있거나 확인이 필요해요. 실행 관리에서 게시 상태를 먼저 확인해 주세요.", null));
+        };
+    }
+
     @GetMapping(path = "/api/analyses/{analysisId}/strategies", produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<?> strategies(@PathVariable String analysisId, Principal owner) {
         return strategyResponse(analysisId, owner, false);

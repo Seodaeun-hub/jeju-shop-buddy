@@ -108,6 +108,9 @@ export type StoreAnalysisSummary = {
   createdAt: string
   plans: { id: string; title?: string | null; startDate: string; endDate: string; hasResult: boolean }[]
 }
+export const deleteAnalysis = (auth: string, id: string) =>
+  send(`/api/analyses/${encodeURIComponent(id)}`, auth, 'DELETE')
+
 export const listStoreAnalyses = (auth: string, storeId: string, signal: AbortSignal) =>
   request<StoreAnalysisSummary[]>(`/api/stores/${encodeURIComponent(storeId)}/analyses`, auth, 'GET', undefined, signal)
 

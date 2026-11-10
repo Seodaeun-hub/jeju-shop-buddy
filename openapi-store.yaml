@@ -462,6 +462,36 @@ paths:
               example:
                 code: ANALYSIS_NOT_FOUND
                 message: 매출 분석을 찾을 수 없어요.
+    delete:
+      operationId: deleteAnalysis
+      tags: [매출 분석]
+      summary: 저장한 매출 분석 삭제
+      description: 연결된 실행 계획, 점검표, 결과도 함께 삭제합니다. 이미 게시된 인스타그램 게시물은 인스타그램에 남습니다.
+      parameters:
+        - name: analysisId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: 삭제 완료
+        '400':
+          description: 잘못된 분석 ID
+        '401':
+          description: 로그인이 필요한 요청
+        '404':
+          description: 분석이 없거나 로그인한 사업주가 소유한 매장의 분석이 아님
+        '409':
+          description: 인스타그램 게시 예약 또는 게시 상태 확인이 필요함
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: ANALYSIS_PUBLICATION_PENDING
+                message: 인스타그램 게시가 예약되어 있거나 확인이 필요해요. 실행 관리에서 게시 상태를 먼저 확인해 주세요.
   /api/analyses/{analysisId}/time-series:
     put:
       operationId: putAnalysisTimeSeries
