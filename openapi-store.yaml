@@ -937,6 +937,35 @@ paths:
               example:
                 code: PLAN_NOT_FOUND
                 message: 실행 계획을 찾을 수 없어요.
+  /api/plans/{planId}/promotion-review/defaults:
+    get:
+      summary: 같은 매장의 이전 프로모션 검토 입력값 조회
+      operationId: getPromotionReviewDefaults
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: 최근 할인 예산과 품목별 최근 원가
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [budgetWon, costs]
+                properties:
+                  budgetWon: { type: integer, format: int64, nullable: true }
+                  costs:
+                    type: array
+                    items:
+                      type: object
+                      required: [productName, costWon]
+                      properties:
+                        productName: { type: string }
+                        costWon: { type: integer, format: int64 }
+        '404':
+          description: 현재 사업주의 프로모션 계획을 찾을 수 없음
   /api/plans/{planId}/promotion-review:
     put:
       operationId: savePromotionReview
@@ -2072,6 +2101,12 @@ components:
           productName: { type: string, minLength: 1, maxLength: 255 }
           before: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
           after: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
+          priceWon:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 9007199254740991
+            description: 상품 주문에서 해당 품목의 가장 최근 가격 기록일에 확인된 단일 상품가격
     AnalysisTimeSeries:
       type: object
       additionalProperties: false

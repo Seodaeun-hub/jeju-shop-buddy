@@ -236,7 +236,7 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
     <section className="receipt summary-strip execution-summary" aria-label="선택한 실행 계획">
       <Citrus stamp />
       <strong>{plan.title}</strong>
-      <span className="execution-period">{dateRange} · {plan.duration}{!inventory && ` · 예산 한도 ${won(plan.budget)}`}</span>
+      <span className="execution-period">{dateRange} · {plan.duration}{plan.strategy === 'outreach' && ` · 예산 한도 ${won(plan.budget)}`}</span>
       <span className="badge">{next === -1 ? '완료' : '진행 중'}</span>
     </section>
     {plan.recommendation && <section className="receipt ruled-block" aria-label="저장된 AI 추천">
@@ -288,7 +288,7 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
       </section>
       <div className="form-stack execution-aside">
         {plan.strategy === 'promotion' && <PromotionReview key={locked ? 'locked' : 'editable'} analysis={analysis}
-          saved={plan.promotionReview} initialBudget={plan.budget} readOnly={locked || loadingInstagram} onSave={onSavePromotion} />}
+          saved={plan.promotionReview} initialBudget={plan.budget} auth={auth} planId={plan.id} readOnly={locked || loadingInstagram} onSave={onSavePromotion} />}
         {plan.strategy === 'promotion' && auth && onSavePromotionDraft && <>
           {locked && <p className="muted">인스타그램 게시를 예약했거나 시작한 계획의 할인 조건과 홍보물은 수정할 수 없어요.</p>}
           {!locked && !loadingInstagram &&

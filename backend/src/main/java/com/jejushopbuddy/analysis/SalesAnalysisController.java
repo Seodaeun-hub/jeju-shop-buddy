@@ -558,7 +558,7 @@ class SalesAnalysisController {
         var names = new HashSet<String>();
         var products = new ArrayList<ProductSale>();
         for (var row : node) {
-            fields(row, Set.of("productName", "before", "after"), "productSales");
+            fields(row, Set.of("productName", "before", "after", "priceWon"), "productSales");
             var name = row.path("productName");
             String productName = name.isString() ? name.stringValue().strip() : "";
             if (productName.isEmpty() || productName.length() > 255 || productName.indexOf(0) >= 0) {
@@ -567,8 +567,12 @@ class SalesAnalysisController {
             if (!names.add(productName)) {
                 throw invalid(code, "같은 품목은 한 번만 입력해 주세요.", "productSales.productName");
             }
+            Long price = row.has("priceWon") ? number(row.get("priceWon"), "productSales.priceWon", code) : null;
+            if (price != null && price == 0) {
+                throw invalid(code, "판매가는 1원 이상이어야 해요.", "productSales.priceWon");
+            }
             products.add(new ProductSale(productName, number(row.get("before"), "productSales.before", code),
-                    number(row.get("after"), "productSales.after", code)));
+                    number(row.get("after"), "productSales.after", code), price));
         }
         products.sort(java.util.Comparator.comparingLong(ProductSale::after).reversed()
                 .thenComparing(java.util.Comparator.comparingLong(ProductSale::before).reversed())
@@ -662,7 +666,8 @@ class SalesAnalysisController {
     record MonthlySale(String month, long amount) {}
     record TimeSeries(String metric, List<TimeSlot> rows) {}
     record TimeSlot(String label, long before, long after) {}
-    record ProductSale(String productName, long before, long after) {}
+    record ProductSale(String productName, long before, long after,
+                       @JsonInclude(JsonInclude.Include.NON_NULL) Long priceWon) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record AnalysisResponse(UUID id, UUID storeId, String concern, String beforeMonth, String afterMonth,

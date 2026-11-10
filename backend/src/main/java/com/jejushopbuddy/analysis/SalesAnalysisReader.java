@@ -52,12 +52,12 @@ class SalesAnalysisReader {
                 .query((rs, row) -> new MonthlySale(month(rs, "sales_month"), rs.getLong("amount")))
                 .list();
         var products = jdbc.sql("""
-                SELECT product_name, before_quantity, after_quantity FROM analysis_product_sales
+                SELECT product_name, before_quantity, after_quantity, price_won FROM analysis_product_sales
                 WHERE analysis_id = :id ORDER BY after_quantity DESC, before_quantity DESC, product_name COLLATE "C"
                 """)
                 .param("id", id)
                 .query((rs, row) -> new ProductSale(rs.getString("product_name"),
-                        rs.getLong("before_quantity"), rs.getLong("after_quantity")))
+                        rs.getLong("before_quantity"), rs.getLong("after_quantity"), rs.getObject("price_won", Long.class)))
                 .list();
         var saved = analysis.get();
         return Optional.of(new AnalysisResponse(id, saved.storeId(), saved.concern(), saved.beforeMonth(),

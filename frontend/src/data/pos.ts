@@ -73,22 +73,26 @@ async function readPosCsv(file: File) {
   return parseCsv(text)
 }
 
-async function readProductSales(file: File, beforeMonth: string, afterMonth: string): Promise<ProductSale[]> {
-  const { readSheet } = await import('read-excel-file/browser')
-  const rows = await readSheet(file, '상품 주문')
+export async function readProductSales(file: File, beforeMonth: string, afterMonth: string): Promise<ProductSale[]> {
+  if (file.size > maxFileSize) throw new Error('10MB 이하의 상품 주문 CSV를 선택해 주세요.')
+  const rows = /\.csv$/i.test(file.name) ? await readPosCsv(file)
+    : await (await import('read-excel-file/browser')).readSheet(file, '상품 주문')
   const headerIndex = rows.findIndex((row) => row.some((cell) => String(cell ?? '').trim()))
   const header = rows[headerIndex]?.map((value) => String(value ?? '').replace(/\s/g, ''))
   const indices = productColumns.map((column) => header?.indexOf(column) ?? -1)
   if (indices.includes(-1)) throw new Error('Invalid product order columns')
 
+  const priceIndex = header.indexOf('상품가격')
   const products = new Map<string, ProductSale>()
+  const prices = new Map<string, { date: string; values: Set<number> }>()
   for (const row of rows.slice(headerIndex + 1)) {
     if (row.every((cell) => !String(cell ?? '').trim())) continue
     const [date, state, name, quantity] = indices.map((index) => row[index])
     const status = String(state ?? '').trim()
     if (status === '취소' || status === '결제취소') continue
-    const month = readMonth(date)
-    if (!month) throw new Error('Invalid product order date')
+    const orderDate = readDate(date)
+    if (!orderDate) throw new Error('Invalid product order date')
+    const month = orderDate.slice(0, 7)
     if (month !== beforeMonth && month !== afterMonth) continue
     const productName = typeof name === 'string' ? name.trim() : ''
     const count = readTotal(quantity)
@@ -101,6 +105,15 @@ async function readProductSales(file: File, beforeMonth: string, afterMonth: str
     totals[period] += count
     if (!Number.isSafeInteger(totals[period])) throw new Error('Product quantity total overflow')
     products.set(productName, totals)
+    const price = readTotal(row[priceIndex])
+    if (price && count > 0) {
+      const latest = prices.get(productName)
+      if (!latest || orderDate > latest.date) prices.set(productName, { date: orderDate, values: new Set([price]) })
+      else if (orderDate === latest.date) latest.values.add(price)
+    }
+  }
+  for (const [name, { values }] of prices) {
+    if (values.size === 1) products.get(name)!.priceWon = [...values][0]
   }
   return [...products.values()].sort((a, b) => b.after - a.after || b.before - a.before
     || a.productName.localeCompare(b.productName, 'ko'))

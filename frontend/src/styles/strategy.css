@@ -10,6 +10,8 @@
 .strategy-summary-detail { flex: 1 1 18rem; font-weight: 700; }
 .strategy-summary .strategy-summary-change { color: var(--orange); font-size: clamp(1.35rem, 3vw, 2.1rem); }
 
+.strategy-market-context { margin-bottom: 1.5rem; }
+
 .strategy-options > legend {
   width: 100%;
   padding-bottom: .7rem;
@@ -21,6 +23,10 @@
 .strategy-option label strong { font-size: clamp(1.12rem, 2vw, 1.45rem); overflow-wrap: anywhere; }
 .strategy-layout .strategy-option input { accent-color: var(--orange); }
 .strategy-recommended { color: var(--orange); background: var(--sheet); border: 1px solid var(--orange); }
+.strategy-layout .strategy-card-fact { margin: .5rem 0; color: var(--green); font-weight: 700; }
+.strategy-quick-actions { margin: .6rem 0; padding: .65rem .8rem; border: 1px solid var(--line); border-radius: 6px; background: var(--sheet); }
+.strategy-quick-actions ol { display: grid; gap: .3rem; margin: .35rem 0 0; padding-left: 1.25rem; }
+.strategy-rationale .strategy-evidence { color: var(--ink); }
 .strategy-evidence { font-size: .9rem; line-height: 1.55; }
 .strategy-evidence dd { min-width: 0; overflow-wrap: anywhere; }
 .strategy-back { display: inline-block; margin-top: 1rem; font-weight: 750; }
@@ -30,6 +36,7 @@
   grid-template-columns: minmax(7rem, 1fr) minmax(0, 2.5fr);
   align-items: center;
 }
+.strategy-layout .strategy-settings .customer-concern-field { grid-template-columns: minmax(0, 1fr); }
 .strategy-selected { padding: .55rem .7rem; border: 1px solid var(--green); border-radius: 6px; color: var(--green); background: var(--pale-green); font-size: 1.25rem; }
 .strategy-output { display: flex; gap: .3rem .8rem; flex-wrap: wrap; padding-block: .75rem; border-block: 1px solid var(--rule); }
 .strategy-submit { min-height: 3.2rem; }

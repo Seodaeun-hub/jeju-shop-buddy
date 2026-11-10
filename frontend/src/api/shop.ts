@@ -297,6 +297,12 @@ export function saveInventoryReview(auth: string, id: string, items: InventoryIt
     items.map(({ shortage: _shortage, ...input }) => input))
 }
 
+export type PromotionDefaults = { budgetWon: number | null; costs: { productName: string; costWon: number }[] }
+
+export function fetchPromotionDefaults(auth: string, id: string, signal: AbortSignal) {
+  return request<PromotionDefaults>(`/api/plans/${encodeURIComponent(id)}/promotion-review/defaults`, auth, 'GET', undefined, signal)
+}
+
 export function savePromotionReview(auth: string, id: string, input: PromotionReviewInput) {
   return request<PromotionReview>(`/api/plans/${encodeURIComponent(id)}/promotion-review`, auth, 'PUT', input)
 }

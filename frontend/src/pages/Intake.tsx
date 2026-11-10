@@ -6,7 +6,7 @@ import { industryOptions, listAreas, listStores, registerStore, saveAnalysis } f
 import type { Area, Store, StoreInput } from '../api/shop'
 import { AddressField } from '../components/AddressField'
 import { example, formatNumber, monthLabel, timeSlots, won } from '../data/shop'
-import { importPos } from '../data/pos'
+import { importPos, readProductSales } from '../data/pos'
 import type { PosImport } from '../data/pos'
 import type { MonthlySales, TimeSeries } from '../data/shop'
 
@@ -48,20 +48,23 @@ function InputTabs({ mode, onChange, manualLabel }: {
 
 type ImportedFile = PosImport & { filename: string }
 
-function PosUpload({ value, onChange, compareMonths, disabled }: {
+function PosUpload({ value, onChange, compareMonths, disabled, onProductReadingChange }: {
   value?: ImportedFile
   onChange: (value: ImportedFile | undefined) => void
   compareMonths?: [string, string]
   disabled?: boolean
+  onProductReadingChange?: (reading: boolean) => void
 }) {
   const [reading, setReading] = useState(false)
   const [error, setError] = useState('')
   const request = useRef(0)
+  const [productFilename, setProductFilename] = useState('')
   useEffect(() => () => { request.current++ }, [])
 
   async function selectFile(file: File) {
     const id = ++request.current
     onChange(undefined)
+    setProductFilename('')
     setError('')
     setReading(true)
     try {
@@ -71,6 +74,28 @@ function PosUpload({ value, onChange, compareMonths, disabled }: {
       if (id === request.current) setError(error instanceof Error ? error.message : 'POS 파일을 읽을 수 없어요.')
     } finally {
       if (id === request.current) setReading(false)
+    }
+  }
+
+  async function selectProductFile(file: File, payment: ImportedFile) {
+    const id = ++request.current
+    setError('')
+    setReading(true)
+    onProductReadingChange?.(true)
+    try {
+      const productSales = await readProductSales(file, ...payment.months)
+      if (!productSales.length) throw new Error('비교 기간에 해당하는 상품 주문이 없어요.')
+      if (id === request.current) {
+        onChange({ ...payment, productSales, productWarning: undefined })
+        setProductFilename(file.name)
+      }
+    } catch {
+      if (id === request.current) setError('상품 주문 CSV의 형식과 비교 기간을 확인해 주세요.')
+    } finally {
+      if (id === request.current) {
+        setReading(false)
+        onProductReadingChange?.(false)
+      }
     }
   }
 
@@ -84,6 +109,15 @@ function PosUpload({ value, onChange, compareMonths, disabled }: {
       if (file) void selectFile(file)
     }} /></label>
     <small role="status">{reading ? '결제 내역을 집계하는 중이에요.' : value ? `${value.filename} · 집계 완료` : '서로 다른 두 달 이상의 결제 내역을 올려 주세요.'}</small>
+    {!compareMonths && value && /\.csv$/i.test(value.filename) && <label className="file-picker">
+      {productFilename ? '상품 주문 CSV 교체' : '상품 주문 CSV 추가 (선택)'}
+      <input type="file" accept=".csv" disabled={disabled || reading} onChange={(event) => {
+        const file = event.target.files?.[0]
+        event.target.value = ''
+        if (file) void selectProductFile(file, value)
+      }} />
+    </label>}
+    {productFilename && <small>{productFilename} · 상품 주문 집계 완료</small>}
     {error && <p role="alert" className="error">{error}</p>}
   </div>
 }
@@ -272,6 +306,7 @@ export function Intake({ auth, onAnalyze, existingStore }: { auth: string; onAna
   const [timeOpen, setTimeOpen] = useState(false)
   const [extra, setExtra] = useState<{ value: TimeSeries; period: string }>()
   const [pos, setPos] = useState<ImportedFile>()
+  const [productReading, setProductReading] = useState(false)
   const monthly = mode === 'upload' ? pos?.monthly : monthlyValues(rows)
   const period = monthly?.slice(-2).map(({ month }) => month).join('/')
 
@@ -286,7 +321,7 @@ export function Intake({ auth, onAnalyze, existingStore }: { auth: string; onAna
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (submitting.current) return
+    if (submitting.current || productReading) return
     if (!monthly || (!existingStore && (!store.trim() || !address.trim() || !resolvedAreaCode || !industry
         || (industry === 'OTHER' && !customIndustry.trim())))) {
       setError(existingStore ? '서로 다른 두 달 이상의 매출을 확인해 주세요.'
@@ -355,7 +390,7 @@ export function Intake({ auth, onAnalyze, existingStore }: { auth: string; onAna
             </div>
             <div className="receipt"><strong>{existingStore.name}</strong><p className="muted">{existingStore.areaName} · {existingStore.address}</p></div>
           </> : <>
-          <div className="section-top ruled"><h2>01 가게 정보</h2><button type="button" className="text-button" onClick={loadExample}>예시값 채우기</button></div>
+          <div className="section-top ruled"><h2>01 가게 정보</h2><button type="button" className="text-button" disabled={productReading} onClick={loadExample}>예시값 채우기</button></div>
           <Link to="/stores">이미 등록한 매장에서 분석하기</Link>
           <label>가게 이름<input required maxLength={100} value={store} onChange={(event) => setStore(event.target.value)} placeholder="가게 이름을 입력하세요" /></label>
           <label>업종<select required value={industry} onChange={(event) => setIndustry(event.target.value)}>
@@ -394,9 +429,9 @@ export function Intake({ auth, onAnalyze, existingStore }: { auth: string; onAna
         </section>
         <section className="form-stack">
           <div className="section-top ruled"><h2>02 매출 입력</h2></div>
-          <InputTabs mode={mode} onChange={(next) => { if (!saving) { setError(''); setMode(next) } }} manualLabel="월별 매출 직접 입력" />
+          <InputTabs mode={mode} onChange={(next) => { if (!saving && !productReading) { setError(''); setMode(next) } }} manualLabel="월별 매출 직접 입력" />
           {mode === 'upload' ? <>
-            <PosUpload value={pos} onChange={setPos} disabled={saving} />
+            <PosUpload value={pos} onChange={setPos} disabled={saving} onProductReadingChange={setProductReading} />
             {pos && <>
               <table className="input-table" aria-label="월별 매출 미리보기">
                 <thead><tr><th scope="col">연도와 월</th><th scope="col">결제 완료 매출</th></tr></thead>
@@ -426,7 +461,7 @@ export function Intake({ auth, onAnalyze, existingStore }: { auth: string; onAna
       </div>
       <div className="form-footer">
         <span role="alert" className="error">{error}</span>
-        <button className="button primary" disabled={saving || (!existingStore && !areas?.length) || (mode === 'upload' && !pos)}>{saving ? '저장 중…' : '분석 시작'} <span aria-hidden="true">→</span></button>
+        <button className="button primary" disabled={saving || productReading || (!existingStore && !areas?.length) || (mode === 'upload' && !pos)}>{saving ? '저장 중…' : '분석 시작'} <span aria-hidden="true">→</span></button>
       </div>
     </form>
     {timeOpen && mode === 'manual' && monthly && period && <TimeDialog monthly={monthly} initial={extra?.period === period ? extra.value : undefined} onClose={() => setTimeOpen(false)} onSave={(value) => { setExtra({ value, period }); setTimeOpen(false) }} />}

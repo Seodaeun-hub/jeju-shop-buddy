@@ -2,10 +2,12 @@ package com.jejushopbuddy.analysis;
 
 import com.jejushopbuddy.analysis.SalesAnalysisController.ApiError;
 import java.security.Principal;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -23,6 +25,38 @@ class PromotionReviewController {
         this.jdbc = jdbc;
         this.json = json;
     }
+
+    @GetMapping("/api/plans/{planId}/promotion-review/defaults")
+    ResponseEntity<?> defaults(@PathVariable UUID planId, Principal owner) {
+        var storeId = jdbc.sql("""
+                SELECT a.store_id FROM execution_plans p JOIN sales_analyses a ON a.id = p.analysis_id
+                JOIN stores s ON s.id = a.store_id JOIN owners o ON o.id = s.owner_id
+                WHERE p.id = :id AND p.strategy_code = 'PROMOTION' AND o.email = :email
+                """).param("id", planId).param("email", owner.getName()).query(UUID.class).optional();
+        if (storeId.isEmpty()) return ResponseEntity.notFound().build();
+        var history = jdbc.sql("""
+                SELECT product_name, cost_won, budget_won
+                FROM (
+                    SELECT DISTINCT ON (p.promotion_review ->> 'productName')
+                        p.promotion_review ->> 'productName' AS product_name,
+                        (p.promotion_review ->> 'costWon')::bigint AS cost_won,
+                        (p.promotion_review ->> 'budgetWon')::bigint AS budget_won,
+                        COALESCE(p.promotion_review_saved_at, p.created_at) AS saved_at, p.id
+                    FROM execution_plans p JOIN sales_analyses a ON a.id = p.analysis_id
+                    WHERE a.store_id = :storeId AND p.id <> :id AND p.promotion_review IS NOT NULL
+                    ORDER BY p.promotion_review ->> 'productName', saved_at DESC, p.id DESC
+                ) latest ORDER BY saved_at DESC, id DESC
+                """).param("storeId", storeId.get()).param("id", planId)
+                .query((rs, row) -> new DefaultsRow(rs.getString("product_name"),
+                        rs.getLong("cost_won"), rs.getLong("budget_won"))).list();
+        Long budget = history.isEmpty() ? null : history.getFirst().budgetWon();
+        var costs = history.stream().map(row -> new ProductCost(row.productName(), row.costWon())).toList();
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(new Defaults(budget, costs));
+    }
+
+    private record DefaultsRow(String productName, long costWon, long budgetWon) {}
+    record ProductCost(String productName, long costWon) {}
+    record Defaults(Long budgetWon, List<ProductCost> costs) {}
 
     @PutMapping("/api/plans/{planId}/promotion-review")
     ResponseEntity<?> save(@PathVariable UUID planId, @RequestBody JsonNode input, Principal owner) {
@@ -47,6 +81,7 @@ class PromotionReviewController {
                 discountedPrice - cost, budget / discount);
         int updated = jdbc.sql("""
                 UPDATE execution_plans p SET promotion_review = CAST(:review AS jsonb),
+                    promotion_review_saved_at = clock_timestamp(),
                     promotion_draft = CASE WHEN p.promotion_review = CAST(:review AS jsonb)
                                           THEN p.promotion_draft ELSE NULL END
                 FROM sales_analyses a, stores s, owners o
