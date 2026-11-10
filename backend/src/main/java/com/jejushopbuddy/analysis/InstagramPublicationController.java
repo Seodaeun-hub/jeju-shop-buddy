@@ -11,6 +11,10 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.Principal;
 import java.time.Duration;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -22,6 +26,7 @@ import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.bind.annotation.*;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -30,6 +35,9 @@ import tools.jackson.databind.ObjectMapper;
 class InstagramPublicationController {
     private static final Logger LOG = LoggerFactory.getLogger(InstagramPublicationController.class);
     private static final String GRAPH = "https://graph.facebook.com/v25.0/";
+    private static final ZoneId KOREA = ZoneId.of("Asia/Seoul");
+    // Covers the bounded profile, container, status, publish and permalink requests.
+    private static final long PUBLISHING_TIMEOUT_SECONDS = Duration.ofMinutes(3).toSeconds();
     private static final String JPEG_PREFIX = "data:image/jpeg;base64,";
     private final JdbcClient jdbc;
     private final ObjectMapper json;
@@ -76,20 +84,100 @@ class InstagramPublicationController {
             return error(409, "INSTAGRAM_NOT_CONNECTED", "이 매장에 테스트용 인스타그램 계정이 연결되어 있지 않아요.");
         }
         if (plan.publication() != null) return ResponseEntity.ok(plan.publication());
-        if (plan.draft() == null || !json.readTree(plan.draft()).path("caption").asText().equals(input.caption())
-                || !username.equals(input.username())) {
+        var draft = plan.draft() == null ? null : json.readValue(plan.draft(), PromotionDraftController.Draft.class);
+        if (draft == null || !draft.caption().equals(input.caption()) || !username.equals(input.username())) {
             return error(409, "INSTAGRAM_DRAFT_CHANGED", "초안이나 게시 계정이 바뀌었어요. 다시 열어 확인해 주세요.");
         }
+        if (draft.photoDataUrl() == null) return error(400, "INSTAGRAM_PHOTO_REQUIRED", "게시하려면 메뉴 사진을 등록해 주세요.");
         byte[] image = decodeImage(input.image());
         if (image == null) return error(400, "INVALID_INSTAGRAM_IMAGE", "게시할 홍보 이미지를 다시 만들어 주세요.");
+        var due = input.scheduledAt();
+        if (due != null && (!due.isAfter(OffsetDateTime.now())
+                || due.atZoneSameInstant(KOREA).toLocalDate().isAfter(plan.endDate()))) {
+            return error(400, "INVALID_INSTAGRAM_SCHEDULE", "예약 시간은 현재 이후부터 행사 종료일까지 선택해 주세요.");
+        }
 
-        var pending = new Publication("PUBLISHING", username, null, null, input.caption(), input.image());
+        var pending = new Publication(due == null ? "PUBLISHING" : "SCHEDULED", username, null, null,
+                input.caption(), input.image(), due, null, accountId);
         int reserved = jdbc.sql("""
-                UPDATE execution_plans SET instagram_publication=CAST(:pending AS jsonb)
+                UPDATE execution_plans SET instagram_publication=CAST(:pending AS jsonb),
+                       instagram_scheduled_at=:due,
+                       instagram_publication_started_at=CASE WHEN :immediate THEN CURRENT_TIMESTAMP END
                 WHERE id=:id AND instagram_publication IS NULL AND promotion_draft=CAST(:draft AS jsonb)
-                """).param("pending", json.writeValueAsString(pending)).param("id", planId).param("draft", plan.draft()).update();
+                """).param("pending", json.writeValueAsString(pending)).param("due", due).param("immediate", due == null)
+                .param("id", planId).param("draft", plan.draft()).update();
         if (reserved == 0) return error(409, "INSTAGRAM_PUBLICATION_CHANGED", "게시 상태가 바뀌었어요. 새로고침해 확인해 주세요.");
+        return due == null ? publishReserved(planId, pending, image) : ResponseEntity.accepted().body(pending);
+    }
 
+    @DeleteMapping("/api/plans/{planId}/instagram-publication")
+    ResponseEntity<?> cancel(@PathVariable UUID planId, Principal owner) {
+        var plan = find(planId, owner.getName());
+        if (plan == null) return error(404, "PROMOTION_PLAN_NOT_FOUND", "홍보 초안을 찾을 수 없어요.");
+        if (plan.publication() != null) {
+            int cancelled = jdbc.sql("""
+                    UPDATE execution_plans SET instagram_publication=NULL, instagram_scheduled_at=NULL
+                    WHERE id=:id AND instagram_publication=CAST(:previous AS jsonb)
+                      AND instagram_publication->>'state' IN ('SCHEDULED','FAILED')
+                    """).param("id", planId).param("previous", plan.publicationSnapshot()).update();
+            if (cancelled == 0) return error(409, "INSTAGRAM_PUBLICATION_CHANGED", "게시가 시작됐어요. 새로고침해 상태를 확인해 주세요.");
+        }
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(new Status(
+                enabled && plan.storeId().equals(storeId), username, null));
+    }
+
+    @Scheduled(fixedDelay = 1000)
+    public void publishDue() {
+        recoverInterruptedPublications();
+        if (!enabled) return;
+        var job = jdbc.sql("""
+                SELECT p.id, p.end_date, p.instagram_publication FROM execution_plans p
+                JOIN sales_analyses a ON a.id=p.analysis_id
+                WHERE p.instagram_scheduled_at<=CURRENT_TIMESTAMP AND a.store_id=:store
+                  AND p.instagram_publication->>'state'='SCHEDULED'
+                  AND p.instagram_publication->>'accountId'=:account AND p.instagram_publication->>'username'=:username
+                ORDER BY p.instagram_scheduled_at, p.id LIMIT 1
+                """).param("store", storeId).param("account", accountId).param("username", username)
+                .query((rs, row) -> new Job(rs.getObject("id", UUID.class), rs.getObject("end_date", LocalDate.class), rs.getString("instagram_publication")))
+                .optional();
+        if (job.isEmpty()) return;
+        var scheduled = job.get();
+        var previous = json.readValue(scheduled.snapshot(), Publication.class);
+        var pending = new Publication("PUBLISHING", username, null, null, previous.caption(), previous.imageDataUrl(),
+                previous.scheduledAt(), null, accountId);
+        int claimed = jdbc.sql("""
+                UPDATE execution_plans SET instagram_publication=CAST(:pending AS jsonb), instagram_scheduled_at=NULL,
+                       instagram_publication_started_at=CURRENT_TIMESTAMP
+                WHERE id=:id AND instagram_scheduled_at<=CURRENT_TIMESTAMP
+                  AND instagram_publication=CAST(:previous AS jsonb)
+                """).param("id", scheduled.id()).param("pending", json.writeValueAsString(pending))
+                .param("previous", scheduled.snapshot()).update();
+        if (claimed == 0) return;
+
+        if (LocalDate.now(KOREA).isAfter(scheduled.endDate())) {
+            failed(scheduled.id(), pending, false, new IOException("Instagram promotion period has ended"));
+            return;
+        }
+        byte[] image = decodeImage(pending.imageDataUrl());
+        if (image == null) {
+            failed(scheduled.id(), pending, false, new IOException("Invalid scheduled Instagram image"));
+            return;
+        }
+        publishReserved(scheduled.id(), pending, image);
+    }
+
+    private void recoverInterruptedPublications() {
+        // The external request may have succeeded before the process stopped. Never requeue it.
+        jdbc.sql("""
+                UPDATE execution_plans SET instagram_publication=jsonb_set(instagram_publication, '{state}', '"VERIFY_REQUIRED"'),
+                       instagram_publication_started_at=NULL
+                WHERE instagram_publication->>'state'='PUBLISHING'
+                  AND (instagram_publication_started_at IS NULL
+                       OR instagram_publication_started_at<=CURRENT_TIMESTAMP - make_interval(secs => :timeout))
+                """).param("timeout", PUBLISHING_TIMEOUT_SECONDS).update();
+    }
+
+    private ResponseEntity<?> publishReserved(UUID planId, Publication pending, byte[] image) {
         UUID imageKey = UUID.randomUUID();
         images.put(imageKey, image);
         boolean publishRequested = false;
@@ -97,13 +185,14 @@ class InstagramPublicationController {
             String profile = get(accountId + "?fields=username").path("username").asText();
             if (!username.equals(profile)) throw new IOException("Instagram account does not match");
             String container = post(accountId + "/media", "image_url=" + encode(imageBase + "/instagram-media/" + imageKey + ".jpg")
-                    + "&caption=" + encode(input.caption())).path("id").asText();
+                    + "&caption=" + encode(pending.caption())).path("id").asText();
             if (!container.matches("[0-9]+")) throw new IOException("Missing Instagram container ID");
             awaitReady(container);
             publishRequested = true;
             String mediaId = post(accountId + "/media_publish", "creation_id=" + encode(container)).path("id").asText();
             if (!mediaId.matches("[0-9]+")) throw new IOException("Missing Instagram media ID");
-            var published = new Publication("PUBLISHED", username, mediaId, permalink(mediaId), pending.caption(), pending.imageDataUrl());
+            var published = new Publication("PUBLISHED", username, mediaId, permalink(mediaId), pending.caption(), pending.imageDataUrl(),
+                    pending.scheduledAt(), OffsetDateTime.now(ZoneOffset.UTC), accountId);
             save(planId, published);
             return ResponseEntity.ok(published);
         } catch (InterruptedException failure) {
@@ -126,10 +215,13 @@ class InstagramPublicationController {
     private ResponseEntity<?> failed(UUID planId, Publication pending, boolean publishRequested, Exception failure) {
         LOG.warn("Instagram publication for {}: {}", planId, failure.getMessage());
         if (publishRequested) {
-            save(planId, new Publication("VERIFY_REQUIRED", username, null, null, pending.caption(), pending.imageDataUrl()));
+            save(planId, new Publication("VERIFY_REQUIRED", username, null, null, pending.caption(), pending.imageDataUrl(),
+                    pending.scheduledAt(), null, accountId));
             return error(502, "INSTAGRAM_VERIFY_REQUIRED", "게시 결과를 확인하지 못했어요. 중복 게시를 막기 위해 인스타그램 피드를 먼저 확인해 주세요.");
         }
-        save(planId, null);
+        save(planId, pending.scheduledAt() == null ? null
+                : new Publication("FAILED", username, null, null, pending.caption(), pending.imageDataUrl(),
+                        pending.scheduledAt(), null, accountId));
         return error(502, "INSTAGRAM_PUBLISH_FAILED", "인스타그램에 게시를 요청하기 전에 연결에 실패했어요. 잠시 후 다시 시도해 주세요.");
     }
 
@@ -211,33 +303,39 @@ class InstagramPublicationController {
 
     private Plan find(UUID planId, String email) {
         return jdbc.sql("""
-                SELECT s.id AS store_id, p.promotion_draft, p.instagram_publication
+                SELECT s.id AS store_id, p.end_date, p.promotion_draft, p.instagram_publication
                 FROM execution_plans p JOIN sales_analyses a ON a.id=p.analysis_id
                 JOIN stores s ON s.id=a.store_id JOIN owners o ON o.id=s.owner_id
                 WHERE p.id=:id AND p.strategy_code='PROMOTION' AND o.email=:email
                 """).param("id", planId).param("email", email)
                 .query((rs, row) -> {
                     String publication = rs.getString("instagram_publication");
-                    return new Plan(rs.getObject("store_id", UUID.class), rs.getString("promotion_draft"),
-                            publication == null ? null : json.readValue(publication, Publication.class));
+                    return new Plan(rs.getObject("store_id", UUID.class), rs.getObject("end_date", LocalDate.class), rs.getString("promotion_draft"),
+                            publication == null ? null : json.readValue(publication, Publication.class), publication);
                 }).optional().orElse(null);
     }
 
     private void save(UUID planId, Publication publication) {
-        jdbc.sql("UPDATE execution_plans SET instagram_publication=CAST(:value AS jsonb) WHERE id=:id")
-                .param("id", planId).param("value", publication == null ? null : json.writeValueAsString(publication)).update();
+        jdbc.sql("""
+                UPDATE execution_plans SET instagram_publication=CAST(:value AS jsonb), instagram_publication_started_at=NULL
+                WHERE id=:id AND (instagram_publication->>'state'='PUBLISHING'
+                       OR (:confirmed AND instagram_publication->>'state'='VERIFY_REQUIRED'))
+                """).param("id", planId).param("value", publication == null ? null : json.writeValueAsString(publication))
+                .param("confirmed", publication != null && "PUBLISHED".equals(publication.state())).update();
     }
 
     private static ResponseEntity<ApiError> error(int status, String code, String message) {
         return ResponseEntity.status(status).body(new ApiError(code, message, null));
     }
 
-    record Input(String username, String caption, String image) {}
+    record Input(String username, String caption, String image, OffsetDateTime scheduledAt) {}
     static ResponseEntity<ApiError> locked() {
-        return error(409, "INSTAGRAM_PUBLICATION_LOCKED", "인스타그램 게시가 시작된 계획의 할인 조건과 홍보물은 수정할 수 없어요.");
+        return error(409, "INSTAGRAM_PUBLICATION_LOCKED", "인스타그램 게시를 예약했거나 시작한 계획의 할인 조건과 홍보물은 수정할 수 없어요.");
     }
 
-    record Publication(String state, String username, String mediaId, String permalink, String caption, String imageDataUrl) {}
+    record Publication(String state, String username, String mediaId, String permalink, String caption, String imageDataUrl,
+                       OffsetDateTime scheduledAt, OffsetDateTime publishedAt, String accountId) {}
     record Status(boolean available, String username, Publication publication) {}
-    private record Plan(UUID storeId, String draft, Publication publication) {}
+    private record Plan(UUID storeId, LocalDate endDate, String draft, Publication publication, String publicationSnapshot) {}
+    private record Job(UUID id, LocalDate endDate, String snapshot) {}
 }

@@ -165,7 +165,7 @@ function PromoDraft({ plan, auth, instagramStatus, onInstagramStatus }: {
       <canvas hidden={Boolean(postedImage)} ref={canvas} width="1080" height="1080" role="img" aria-label={`${store} 홍보 이미지 · ${headline}${saved ? ` · ${saved.discountedPrice}` : ""} · ${feature} · ${detail}`} />
       <div className="promo-copy">
         <span className="badge">{saved?.copySource === 'EDITED' ? '직접 작성' : saved?.copySource === 'GPT' ? 'GPT 문구' : saved ? '기본 문구' : '초안'}</span>
-        {saved && publication?.state !== 'PUBLISHED' && <p><strong>게시 예정</strong> · {saved.publishDate} {saved.publishTime.slice(0, 5)} 한국 시간</p>}
+        {saved && !publication && <p><strong>초안 게시 예정</strong> · {saved.publishDate} {saved.publishTime.slice(0, 5)} 한국 시간</p>}
         <p>{caption}</p>
         <div className="promo-actions">
           {postedImage ? <a className="button secondary small" href={postedImage} download="가게짝꿍-게시한-홍보물.jpg">이미지 저장</a>
@@ -173,7 +173,7 @@ function PromoDraft({ plan, auth, instagramStatus, onInstagramStatus }: {
           <button type="button" className="button secondary small" onClick={copyCaption}>문구 복사</button>
         </div>
         {saved && plan.id && auth && onInstagramStatus && (ready || postedImage) &&
-          <InstagramPublish key={plan.id} auth={auth} planId={plan.id} caption={caption} hasPhoto={Boolean(photoUrl)}
+          <InstagramPublish key={plan.id} auth={auth} planId={plan.id} caption={caption} hasPhoto={Boolean(photoUrl)} endDate={plan.endDate}
             image={() => postedImage ?? canvas.current?.toDataURL('image/jpeg', 0.88)} state={instagramStatus}
             onStatus={onInstagramStatus} />}
         {instagram && <a href="https://www.instagram.com/" target="_blank" rel="noreferrer">인스타그램 열기 ↗</a>}
@@ -283,7 +283,7 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
         {plan.strategy === 'promotion' && <PromotionReview key={locked ? 'locked' : 'editable'} analysis={analysis}
           saved={plan.promotionReview} initialBudget={plan.budget} readOnly={locked || loadingInstagram} onSave={onSavePromotion} />}
         {plan.strategy === 'promotion' && auth && onSavePromotionDraft && <>
-          {locked && <p className="muted">인스타그램 게시가 시작된 계획의 할인 조건과 홍보물은 수정할 수 없어요.</p>}
+          {locked && <p className="muted">인스타그램 게시를 예약했거나 시작한 계획의 할인 조건과 홍보물은 수정할 수 없어요.</p>}
           {!locked && !loadingInstagram &&
             <PromotionDraftForm key={plan.promotionReview?.productName} plan={plan} auth={auth} onSave={onSavePromotionDraft} />}
           {plan.promotionDraft && <PromoDraft plan={plan} auth={auth} instagramStatus={instagramStatus}

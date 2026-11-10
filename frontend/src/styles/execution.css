@@ -105,6 +105,7 @@
 .instagram-preview-body img { display: block; width: 100%; height: auto; border-radius: 8px; }
 .instagram-preview-caption { margin-top: .65rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .instagram-preview > .promo-actions { justify-content: flex-end; margin-top: .8rem; }
+.instagram-schedule { margin-top: .8rem; }
 @media (max-width: 560px) {
   .instagram-preview-body { grid-template-columns: minmax(0, 1fr); }
 }
