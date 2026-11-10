@@ -5,6 +5,7 @@ import java.util.Locale;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -63,7 +64,7 @@ class StoreSecurityConfiguration {
             }
             response.getWriter().write(json.writeValueAsString(error));
         };
-        return http.securityMatcher("/api/session", "/api/stores", "/api/stores/{storeId}/analyses",
+        return http.securityMatcher("/api/session", "/api/session/signup", "/api/session/profile", "/api/session/password", "/api/stores", "/api/stores/{storeId}/analyses",
                         "/api/stores/{storeId}/menu-photos", "/api/stores/{storeId}/promotion-tone",
                         "/api/analyses/{analysisId}", "/api/analyses/{analysisId}/time-series", "/api/analyses/{analysisId}/strategies", "/api/analyses/{analysisId}/plans",
                         "/api/analyses/{analysisId}/recommendations", "/api/analyses/{analysisId}/execution-guide",
@@ -75,13 +76,17 @@ class StoreSecurityConfiguration {
                         "/api/plans/{planId}/promotion-photo", "/api/plans/{planId}/instagram-publication", "/api/plans/{planId}/promotion-impact",
                         "/api/plans/{planId}/promotion-impact/next-checklist", "/api/plans/{planId}/promotion-impact/next-explanation",
                         "/api/plans/{planId}/promotion-impact/actuals", "/api/plans/{planId}/promotion-impact/next-plan/{requestId}")
-                .authorizeHttpRequests(auth -> auth.anyRequest().access((authentication, context) -> {
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.POST, "/api/session/signup")
+                        .access((authentication, context) -> new AuthorizationDecision(
+                                "XMLHttpRequest".equals(context.getRequest().getHeader("X-Requested-With"))))
+                        .anyRequest().access((authentication, context) -> {
                     var request = context.getRequest();
                     boolean read = request.getMethod().equals("GET") || request.getMethod().equals("HEAD");
                     boolean appRequest = "XMLHttpRequest".equals(request.getHeader("X-Requested-With"));
                     String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
                     boolean basic = authorization != null && authorization.regionMatches(true, 0, "Basic ", 0, 6);
-                    boolean sessionEndpoint = request.getServletPath().equals("/api/session");
+                    boolean sessionEndpoint = request.getServletPath().startsWith("/api/session");
                     var user = authentication.get();
                     return new AuthorizationDecision(user != null && user.isAuthenticated()
                             && !(user instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)

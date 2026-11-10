@@ -55,6 +55,7 @@ input[type="checkbox"], input[type="radio"] { width: 1.18rem; min-height: 0; hei
 .header-inner { min-height: 72px; gap: 1.25rem; justify-content: space-between; }
 .header-actions, .main-nav { gap: clamp(.55rem, 2.25vw, 1.65rem); }
 .header-actions { font-size: .9rem; font-weight: 700; }
+.account-greeting { max-width: 15rem; overflow-wrap: anywhere; }
 .wordmark { flex: none; gap: .7rem; color: var(--ink); text-decoration: none; font-size: 1.43rem; font-weight: 900; letter-spacing: -.055em; }
 .main-nav a { color: var(--ink); border-bottom: 3px solid transparent; text-decoration: none; font-weight: 750; white-space: nowrap; padding: .65rem .12rem .47rem; }
 .main-nav a.active { color: var(--orange); border-color: var(--orange); }
