@@ -3,7 +3,8 @@ import type { FormEvent, ReactNode } from 'react'
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
 import { fetchAnalysis, fetchOwnerSession, fetchPlan, loginOwner, logoutOwner, ownerSession, saveTimeSeries, toPlan, updateChecklistItem } from './api/shop'
 import { Dashboard } from './pages/Dashboard'
-import { Intake } from './pages/Intake'
+import { ExistingStoreIntake, Intake } from './pages/Intake'
+import { MyStores } from './pages/MyStores'
 import { Execution } from './pages/Execution'
 import { Results } from './pages/Results'
 import { SavedStrategyPage, Strategy } from './pages/Strategy'
@@ -12,6 +13,7 @@ import type { Analysis, Plan, TimeSeries } from './data/shop'
 import { Citrus } from './components/ui'
 
 const navigation = [
+  { to: '/stores', label: '내 매장' },
   { to: '/sales', label: '매출 입력' },
   { to: '/analysis', label: '매출 분석' },
   { to: '/strategy', label: '대응 전략' },
@@ -101,6 +103,7 @@ export function App() {
   const [analysisError, setAnalysisError] = useState('')
   const [retry, setRetry] = useState(0)
   const params = new URLSearchParams(search)
+  const salesStoreId = params.get('storeId')
   const planRoute = pathname === '/execution' || pathname === '/results'
   const requestedId = pathname === '/analysis' || pathname === '/strategy' ? params.get('id')
     : planRoute ? params.get('analysisId') : null
@@ -284,7 +287,11 @@ export function App() {
           <Route path="/" element={<Home onDemo={() => openAnalysis(example)} />} />
           <Route path="/login" element={<Account key="login" signup={false} onLogin={login} />} />
           <Route path="/signup" element={<Account key="signup" signup onLogin={login} />} />
-          <Route path="/sales" element={auth ? <Intake auth={auth} onAnalyze={openSavedAnalysis} /> : <Navigate to="/login" state={{ returnTo: '/sales' }} replace />} />
+          <Route path="/stores" element={auth ? <MyStores key={account?.email} auth={auth} /> : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
+          <Route path="/sales" element={auth
+            ? salesStoreId ? <ExistingStoreIntake key={salesStoreId} auth={auth} storeId={salesStoreId} onAnalyze={openSavedAnalysis} />
+              : <Intake auth={auth} onAnalyze={openSavedAnalysis} />
+            : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
           <Route path="/analysis" element={dashboard} />
           <Route path="/strategy" element={strategyPage} />
           <Route path="/execution" element={planPage} />

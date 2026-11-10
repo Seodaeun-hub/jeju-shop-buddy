@@ -11,7 +11,7 @@ export type StoreInput = {
   industryCode: string
   customIndustryName?: string
 }
-type Store = StoreInput & { id: string; areaName: string }
+export type Store = StoreInput & { id: string; areaName: string }
 type ApiTimeSeries = { metric: 'COUNT' | 'AMOUNT'; rows: TimeSeries['rows'] }
 type SavedAnalysis = {
   id: string
@@ -58,6 +58,16 @@ export const fetchOwnerSession = (signal: AbortSignal) =>
 export const logoutOwner = () => send('/api/session', ownerSession, 'DELETE')
 
 export const listStores = (auth: string, signal?: AbortSignal) => request<Store[]>('/api/stores', auth, 'GET', undefined, signal)
+export type StoreAnalysisSummary = {
+  id: string
+  beforeMonth: string
+  afterMonth: string
+  concern?: string | null
+  createdAt: string
+  plans: { id: string; title?: string | null; startDate: string; endDate: string; hasResult: boolean }[]
+}
+export const listStoreAnalyses = (auth: string, storeId: string, signal: AbortSignal) =>
+  request<StoreAnalysisSummary[]>(`/api/stores/${encodeURIComponent(storeId)}/analyses`, auth, 'GET', undefined, signal)
 
 export type QuestionChart = 'MONTHLY_SALES' | 'MARKET_CARD_SALES' | 'JEJU_BSI' | 'TIME_SERIES'
 type QuestionSource = { label: string; url?: string }

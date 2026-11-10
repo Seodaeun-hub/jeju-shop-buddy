@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
+import { Link } from 'react-router'
 import { Citrus, PageTitle } from '../components/ui'
-import { industryOptions, listAreas, registerStore, saveAnalysis } from '../api/shop'
-import type { Area, StoreInput } from '../api/shop'
+import { industryOptions, listAreas, listStores, registerStore, saveAnalysis } from '../api/shop'
+import type { Area, Store, StoreInput } from '../api/shop'
 import { AddressField } from '../components/AddressField'
 import { example, formatNumber, monthLabel, timeSlots, won } from '../data/shop'
 import { importPos } from '../data/pos'
@@ -211,7 +212,38 @@ export function TimeDialog({ monthly, initial, onClose, onSave }: {
   </dialog>
 }
 
-export function Intake({ auth, onAnalyze }: { auth: string; onAnalyze: (id: string) => void }) {
+export function ExistingStoreIntake({ auth, storeId, onAnalyze }: { auth: string; storeId: string; onAnalyze: (id: string) => void }) {
+  const [store, setStore] = useState<Store>()
+  const [error, setError] = useState('')
+  const [retry, setRetry] = useState(0)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    listStores(auth, controller.signal).then((stores) => {
+      if (controller.signal.aborted) return
+      const match = stores.find(({ id }) => id === storeId)
+      if (match) setStore(match)
+      else setError('내 매장 목록에서 이 매장을 찾을 수 없어요.')
+    }).catch((failure: Error) => {
+      if (!controller.signal.aborted) setError(failure.message)
+    })
+    return () => controller.abort()
+  }, [auth, storeId, retry])
+
+  if (store) return <Intake auth={auth} existingStore={store} onAnalyze={onAnalyze} />
+  return <section className="empty-state">
+    {error ? <>
+      <p role="alert" className="error">{error}</p>
+      <button type="button" className="button secondary" onClick={() => {
+        setError('')
+        setRetry((value) => value + 1)
+      }}>다시 불러오기</button>
+      <Link to="/stores">내 매장으로 돌아가기</Link>
+    </> : <p role="status">선택한 매장을 불러오는 중이에요.</p>}
+  </section>
+}
+
+export function Intake({ auth, onAnalyze, existingStore }: { auth: string; onAnalyze: (id: string) => void; existingStore?: Store }) {
   const registeredStores = useRef(new Map<string, string>())
   const submitting = useRef(false)
   const [saving, setSaving] = useState(false)
@@ -230,7 +262,7 @@ export function Intake({ auth, onAnalyze }: { auth: string; onAnalyze: (id: stri
   const [customIndustry, setCustomIndustry] = useState('')
   const [concern, setConcern] = useState('')
   const [selectedConcern, setSelectedConcern] = useState('')
-  const [mode, setMode] = useState<InputMode>('manual')
+  const [mode, setMode] = useState<InputMode>(existingStore ? 'upload' : 'manual')
   const [error, setError] = useState('')
   const [timeOpen, setTimeOpen] = useState(false)
   const [extra, setExtra] = useState<{ value: TimeSeries; period: string }>()
@@ -239,37 +271,28 @@ export function Intake({ auth, onAnalyze }: { auth: string; onAnalyze: (id: stri
   const period = monthly?.slice(-2).map(({ month }) => month).join('/')
 
   useEffect(() => {
+    if (existingStore) return
     const controller = new AbortController()
     listAreas(controller.signal).then(setAreas).catch((error: Error) => {
       if (!controller.signal.aborted) setAreaError(error.message)
     })
     return () => controller.abort()
-  }, [areaRetry])
+  }, [areaRetry, existingStore])
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (submitting.current) return
-    if (!store.trim() || !address.trim() || !resolvedAreaCode || !industry
-        || (industry === 'OTHER' && !customIndustry.trim()) || !monthly) {
-      setError('가게 정보, 제주 읍·면·동, 서로 다른 두 달 이상의 매출을 확인해 주세요.')
+    if (!monthly || (!existingStore && (!store.trim() || !address.trim() || !resolvedAreaCode || !industry
+        || (industry === 'OTHER' && !customIndustry.trim())))) {
+      setError(existingStore ? '서로 다른 두 달 이상의 매출을 확인해 주세요.'
+        : '가게 정보, 제주 읍·면·동, 서로 다른 두 달 이상의 매출을 확인해 주세요.')
       return
     }
-    const input: StoreInput = {
-      name: store.trim(), address: address.trim(), areaCode: resolvedAreaCode,
-      addressSource: searchedArea && searchedArea === resolvedArea ? 'SEARCH' : 'MANUAL',
-      industryCode: industry,
-      customIndustryName: industry === 'OTHER' ? customIndustry.trim() : undefined,
-    }
-    const storeKey = JSON.stringify(input)
     submitting.current = true
     setSaving(true)
     setError('')
     try {
-      let storeId = registeredStores.current.get(storeKey)
-      if (!storeId) {
-        storeId = (await registerStore(auth, input)).id
-        registeredStores.current.set(storeKey, storeId)
-      }
+      const storeId = existingStore?.id ?? await saveNewStore()
       const timeSeries = mode === 'upload' ? pos?.timeSeries : extra?.period === period ? extra?.value : undefined
       const saved = await saveAnalysis(auth, storeId, monthly, concern.trim(), timeSeries)
       onAnalyze(saved.id)
@@ -279,6 +302,21 @@ export function Intake({ auth, onAnalyze }: { auth: string; onAnalyze: (id: stri
       submitting.current = false
       setSaving(false)
     }
+  }
+
+  async function saveNewStore() {
+    const input: StoreInput = {
+      name: store.trim(), address: address.trim(), areaCode: resolvedAreaCode,
+      addressSource: searchedArea && searchedArea === resolvedArea ? 'SEARCH' : 'MANUAL',
+      industryCode: industry,
+      customIndustryName: industry === 'OTHER' ? customIndustry.trim() : undefined,
+    }
+    const key = JSON.stringify(input)
+    const registered = registeredStores.current.get(key)
+    if (registered) return registered
+    const { id } = await registerStore(auth, input)
+    registeredStores.current.set(key, id)
+    return id
   }
 
   function loadExample() {
@@ -299,11 +337,19 @@ export function Intake({ auth, onAnalyze }: { auth: string; onAnalyze: (id: stri
   }
 
   return <>
-    <PageTitle title="매장 등록 · 매출 입력" detail="가게 정보와 매출을 입력하면 짝꿍이 분석해드려요." />
+    <PageTitle title={existingStore ? '새 매출 분석' : '매장 등록 · 매출 입력'} detail={existingStore
+      ? '선택한 매장에 새 매출 분석을 추가해요.' : '가게 정보와 매출을 입력하면 짝꿍이 분석해드려요.'} />
     <form onSubmit={submit}>
       <div className="split">
         <section className="form-stack">
+          {existingStore ? <>
+            <div className="section-top ruled"><h2>01 선택한 매장</h2>
+              <Link to={'/stores?' + new URLSearchParams({ storeId: existingStore.id })}>분석 이력 보기</Link>
+            </div>
+            <div className="receipt"><strong>{existingStore.name}</strong><p className="muted">{existingStore.areaName} · {existingStore.address}</p></div>
+          </> : <>
           <div className="section-top ruled"><h2>01 가게 정보</h2><button type="button" className="text-button" onClick={loadExample}>예시값 채우기</button></div>
+          <Link to="/stores">이미 등록한 매장에서 분석하기</Link>
           <label>가게 이름<input required maxLength={100} value={store} onChange={(event) => setStore(event.target.value)} placeholder="가게 이름을 입력하세요" /></label>
           <label>업종<select required value={industry} onChange={(event) => setIndustry(event.target.value)}>
             <option value="">업종을 선택해 주세요</option>
@@ -327,6 +373,7 @@ export function Intake({ auth, onAnalyze }: { auth: string; onAnalyze: (id: stri
             setAreaError('')
             setAreaRetry((value) => value + 1)
           }}>다시 불러오기</button></div>}
+          </>}
           <label>요즘 어떤 점이 고민인가요? <span className="muted">선택</span><textarea rows={3} value={concern} onChange={(event) => setConcern(event.target.value)} /></label>
           <div className="chips">{concerns.map(([label, value]) => <button className="chip" key={label} type="button" aria-pressed={selectedConcern === label} onClick={() => { setSelectedConcern(label); setConcern(value) }}>{label}</button>)}</div>
         </section>
@@ -363,7 +410,7 @@ export function Intake({ auth, onAnalyze }: { auth: string; onAnalyze: (id: stri
       </div>
       <div className="form-footer">
         <span role="alert" className="error">{error}</span>
-        <button className="button primary" disabled={saving || !areas?.length || (mode === 'upload' && !pos)}>{saving ? '저장 중…' : '분석 시작'} <span aria-hidden="true">→</span></button>
+        <button className="button primary" disabled={saving || (!existingStore && !areas?.length) || (mode === 'upload' && !pos)}>{saving ? '저장 중…' : '분석 시작'} <span aria-hidden="true">→</span></button>
       </div>
     </form>
     {timeOpen && mode === 'manual' && monthly && period && <TimeDialog monthly={monthly} initial={extra?.period === period ? extra.value : undefined} onClose={() => setTimeOpen(false)} onSave={(value) => { setExtra({ value, period }); setTimeOpen(false) }} />}
