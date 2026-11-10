@@ -31,6 +31,10 @@ GUIDE는 구체적 실행 방법이나 공식 안내를 묻는 의도입니다.
 REVIEWS는 리뷰 및 반복 불편입니다. 특정 주제를 물으면 reviewTopic을 지정하세요.
 리뷰 기간을 따로 물으면 reviewPeriod에 ISO YYYY-MM 또는 YYYY-MM-DD로 양쪽 경계를 반환하세요.
 별도 기간이 없으면 null입니다. PLAN은 점검표 진행 상태, RESULT는 실행 전후 변화입니다.
+PLAN과 RESULT는 현재 질문에서 계획·점검표·실행 성과를 묻거나 앞서 확인한 계획·결과를
+이어 물을 때만 선택하세요. 단순 매출·경기·시간대 변화에는 추가하지 마세요.
+예를 들어 '제주 경기는 어땠고, 우리 가게는 언제 많이 줄었어요?'에는
+BSI와 TIME_SLOT만 선택하고 timeMetric은 null, largestTimeDrop은 true입니다.
 '그 계획 실행 뒤 좋아졌나요'에는 PLAN과 RESULT를 선택하세요.
 resultMetric은 매출액/결제 건수 중 하나를 명시했을 때만 설정하세요.
 ITEM_SALES는 품목 판매량, COST는 원가 또는 구체적인 할인율, STOCK은 재고 또는 발주량입니다.
@@ -57,6 +61,15 @@ TIME_DROP_QUESTION = re.compile(
     r"(?P<largest>(?:가장|제일)\s*(?:많이|크게)?\s*)?"
     r"(?:줄었|줄어들었|감소했|떨어졌)(?:나요|어요|습니까|어)?[?.]?"
 )
+ECONOMY_AND_TIME_DROP = re.compile(
+    r"제주\s*(?:경기(?:\s*동향)?|BSI)(?:는|가)?\s*"
+    r"(?:어땠고|어떻게\s*(?:변했|바뀌었)고)\s*,?\s*"
+    r"(?:우리\s*가게|우리\s*매장|매장)(?:는|은|에서)?\s*"
+    r"언제\s*(?:(?:가장|제일)\s*)?(?:많이\s*)?"
+    r"(?:줄었|줄어들었|감소했)(?:나요|어요|습니까|어)?[?.]?",
+    re.IGNORECASE,
+)
+EXECUTION_REFERENCE = re.compile(r"계획|실행|점검|체크\s*리스트|진행\s*상태|성과")
 
 
 class QuestionState(TypedDict, total=False):
@@ -347,14 +360,21 @@ class Answer:
 
     def assemble(self):
         intents = list(dict.fromkeys(self.intent.intents)) or ["OUT_OF_SCOPE"]
+        question = self.request.question.strip()
         # A single question about when a metric fell cannot be answered by a monthly total.
-        time_question = TIME_DROP_QUESTION.fullmatch(self.request.question.strip())
+        time_question = TIME_DROP_QUESTION.fullmatch(question)
         if time_question:
-            unit = "COUNT" if re.search(r"결제(?!\s*금액)", self.request.question) else "KRW"
+            unit = "COUNT" if re.search(r"결제(?!\s*금액)", question) else "KRW"
             self.intent = self.intent.model_copy(update={
                 "timeMetric": unit, "largestTimeDrop": bool(time_question["largest"]),
             })
             intents = ["TIME_SLOT"]
+        elif ECONOMY_AND_TIME_DROP.fullmatch(question):
+            # The comparison asks for a time slot and leaves the time metric unspecified.
+            self.intent = self.intent.model_copy(update={"timeMetric": None, "largestTimeDrop": True})
+            intents = ["BSI", "TIME_SLOT"]
+        elif {"BSI", "TIME_SLOT"}.issubset(intents) and not EXECUTION_REFERENCE.search(question):
+            intents = [intent for intent in intents if intent not in {"PLAN", "RESULT"}]
         intents = [intent for intent in intents if intent != "OUT_OF_SCOPE"] or ["OUT_OF_SCOPE"]
         for intent in intents:
             if intent in METRICS:

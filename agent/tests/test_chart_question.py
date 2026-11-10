@@ -135,6 +135,30 @@ class ChartQuestionTest(unittest.TestCase):
     def test_aewol_conversation(self):
         self.aewol_conversation(live=False)
 
+    def assert_economy_and_time_answer(self, answer):
+        self.assertEqual(answer["status"], "ANSWERED", answer)
+        self.assertEqual(answer["intents"], ["BSI", "TIME_SLOT"])
+        self.assertEqual([fact["id"] for fact in answer["evidence"]], ["e4", "e2"])
+        self.assertEqual(answer["missingInputs"], [])
+        self.assertEqual(answer["actions"], [])
+        self.assertIsNone(answer["planId"])
+        self.assert_text(answer, "63.1", "64.4", "오후 2~5시 결제 건수", "337건", "189건")
+
+    def test_economy_and_time_does_not_pick_up_execution_intents(self):
+        payload = fixture()
+        payload["context"].update(recentQuestions=[QUESTIONS[0][0]], focusedEvidenceIds=["e1", "e3"])
+        wrong_intent = classified(["BSI", "TIME_SLOT", "PLAN", "RESULT"], timeMetric="KRW")
+        self.assert_economy_and_time_answer(self.ask(payload, QUESTIONS[1][0], wrong_intent))
+        payload["availableEvidence"] = [fact for fact in payload["availableEvidence"] if fact["kind"] not in {"PLAN", "RESULT"}]
+        self.assert_economy_and_time_answer(self.ask(payload, QUESTIONS[1][0], wrong_intent))
+
+    def test_combined_question_can_explicitly_ask_for_execution_results(self):
+        answer = self.ask(fixture(), "제주 BSI와 결제가 줄어든 시간대, 실행 결과도 알려주세요.",
+                          classified(["BSI", "TIME_SLOT", "RESULT"], timeMetric="COUNT"))
+        self.assertEqual(answer["status"], "ANSWERED")
+        self.assertEqual(answer["planId"], "plan-1")
+        self.assert_text(answer, "63.1", "337건", "+50.00%", "+33.33%")
+
     def test_monthly_only_and_count_instead_of_amount(self):
         question = "몇 시에 매출이 가장 많이 줄었어요?"
         intent = classified(["TIME_SLOT"], timeMetric="KRW", largestTimeDrop=True)
@@ -219,3 +243,18 @@ class ChartQuestionTest(unittest.TestCase):
             self.assertEqual(answer["status"], "MISSING_DATA")
             self.assertEqual(answer["evidence"], [])
             self.assertEqual(answer["missingInputs"][0]["code"], "TIME_SERIES_AMOUNT")
+
+    @unittest.skipUnless(os.getenv("RUN_LIVE_CHART_QA") == "1", "Live OpenAI verification is opt-in")
+    def test_live_economy_time_and_execution_questions(self):
+        payload = fixture()
+        payload["context"].update(recentQuestions=[QUESTIONS[0][0]], focusedEvidenceIds=["e1", "e3"])
+        without_plan = {**payload, "availableEvidence": [
+            fact for fact in payload["availableEvidence"] if fact["kind"] not in {"PLAN", "RESULT"}
+        ]}
+        for scenario in [without_plan, payload, without_plan, payload, without_plan]:
+            self.assert_economy_and_time_answer(self.ask(scenario, QUESTIONS[1][0]))
+        for _ in range(2):
+            result = self.ask(payload, QUESTIONS[-1][0])
+            self.assertEqual(result["status"], "ANSWERED", result)
+            self.assertEqual(result["planId"], "plan-1")
+            self.assert_text(result, "4개 중 1개", "100,000원", "150,000원", "+50.00%", "6건", "8건", "+33.33%")
