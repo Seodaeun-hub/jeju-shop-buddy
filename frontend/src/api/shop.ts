@@ -325,6 +325,12 @@ function resultsPath(planId: string, resultId?: string) {
 
 export type PromotionImpactPeriod = { start: string; end: string }
 export type PromotionImpactTotals = { quantity: number; amount: number; recordedDays: number }
+export type NextPromotionChecklistItem = 'DISCOUNT_QUANTITY' | 'ACTUAL_COST' | 'UPLOAD_POS'
+export type PromotionImpactAdvice = {
+  action: 'RETEST' | 'REVIEW_TERMS' | 'CHECK_DATA'
+  beforeAveragePrice: number | null
+  afterAveragePrice: number | null
+}
 export type PromotionImpact = {
   productName: string | null
   before: PromotionImpactPeriod | null
@@ -333,6 +339,8 @@ export type PromotionImpact = {
   afterTotals: PromotionImpactTotals | null
   afterReady: boolean
   message: string | null
+  advice: PromotionImpactAdvice | null
+  nextChecklist: Partial<Record<NextPromotionChecklistItem, boolean>> | null
 }
 const promotionImpactPath = (planId: string) => `/api/plans/${encodeURIComponent(planId)}/promotion-impact`
 export const fetchPromotionImpact = (auth: string, planId: string, signal: AbortSignal) =>
@@ -340,6 +348,10 @@ export const fetchPromotionImpact = (auth: string, planId: string, signal: Abort
 export const savePromotionImpact = (auth: string, planId: string,
   input: PromotionImpactPeriod & PromotionImpactTotals & {phase: 'BEFORE' | 'AFTER'}) =>
   request<PromotionImpact>(promotionImpactPath(planId), auth, 'PUT', input)
+
+export const saveNextPromotionChecklist = (auth: string, planId: string,
+  update: { item: NextPromotionChecklistItem; completed: boolean } | Record<string, never>) =>
+  request<PromotionImpact>(promotionImpactPath(planId) + '/next-checklist', auth, 'PUT', update)
 
 export async function fetchSalesResult(auth: string, planId: string, signal: AbortSignal): Promise<SavedSalesResult | null> {
   const response = await send(resultsPath(planId), auth, 'GET', undefined, signal)

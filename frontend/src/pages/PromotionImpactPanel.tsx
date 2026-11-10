@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { fetchPromotionImpact, savePromotionImpact, type PromotionImpact, type PromotionImpactPeriod, type PromotionImpactTotals } from '../api/shop'
+import { fetchPromotionImpact, saveNextPromotionChecklist, savePromotionImpact, type NextPromotionChecklistItem, type PromotionImpact, type PromotionImpactPeriod, type PromotionImpactTotals } from '../api/shop'
+import { NextPromotionCard } from './NextPromotionCard'
 import { importPromotionProduct } from '../data/pos'
 import { changeRate, formatNumber, formatRate, won } from '../data/shop'
 
@@ -51,6 +52,21 @@ export function PromotionImpactPanel({ auth, planId }: { auth: string; planId: s
     }
   }
 
+  async function saveChecklist(update?: { item: NextPromotionChecklistItem; completed: boolean }) {
+    if (pending) return
+    setPending(true)
+    setError('')
+    setNotice('')
+    try {
+      setResult(await saveNextPromotionChecklist(auth, planId, update ?? {}))
+      if (!update) setNotice('다음 행사 점검표를 만들었어요.')
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : '다음 행사 점검표를 저장하지 못했어요.')
+    } finally {
+      setPending(false)
+    }
+  }
+
   function periodForm(phase: 'BEFORE' | 'AFTER', period: PromotionImpactPeriod, totals: PromotionImpactTotals | null) {
     const before = phase === 'BEFORE'
     const label = before ? '행사 전' : '홍보 게시 후'
@@ -87,6 +103,11 @@ export function PromotionImpactPanel({ auth, planId }: { auth: string; planId: s
       {result.beforeTotals && result.afterTotals && result.beforeTotals.recordedDays !== result.afterTotals.recordedDays &&
         <p className="muted">두 파일의 주문 기록일 수가 달라요. 합계를 해석하기 전에 영업일과 내보낸 기간을 확인해 주세요.</p>}
       <p className="muted">결제 완료된 주문의 수량과 실판매금액을 합산해요. 기간 중 관측된 변화를 보여줘요.</p>
+      {result.beforeTotals && result.afterTotals && result.advice &&
+        <NextPromotionCard before={result.beforeTotals} after={result.afterTotals}
+          advice={result.advice} checklist={result.nextChecklist} pending={pending}
+          onCreate={() => void saveChecklist()}
+          onToggle={(item, completed) => void saveChecklist({ item, completed })} />}
     </>}
     {notice && <p role="status">{notice}</p>}
     {error && <p role="alert" className="error">{error}</p>}
