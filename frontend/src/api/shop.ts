@@ -363,6 +363,12 @@ export const fetchNextPromotionExplanation = (auth: string, planId: string, sign
 export const savePromotionActuals = (auth: string, planId: string, actuals: PromotionActuals) =>
   request<PromotionImpact>(promotionImpactPath(planId) + '/actuals', auth, 'PUT', actuals)
 
+export function createNextPromotionPlan(auth: string, planId: string, requestId: string, input: {
+  action: 'KEEP_TERMS' | 'REVIEW_TERMS'; startDate: string; discountWon: number; maxDiscountQuantity: number
+}) {
+  return request<SavedPlan>(promotionImpactPath(planId) + '/next-plan/' + encodeURIComponent(requestId), auth, 'PUT', input)
+}
+
 export const saveNextPromotionChecklist = (auth: string, planId: string,
   update: { item: NextPromotionChecklistItem; completed: boolean } | Record<string, never>) =>
   request<PromotionImpact>(promotionImpactPath(planId) + '/next-checklist', auth, 'PUT', update)

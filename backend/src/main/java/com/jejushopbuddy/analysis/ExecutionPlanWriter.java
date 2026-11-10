@@ -2,6 +2,7 @@ package com.jejushopbuddy.analysis;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.jejushopbuddy.analysis.SalesStrategies.Suggestion;
+import java.sql.Types;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -22,15 +23,17 @@ class ExecutionPlanWriter {
 
     private final JdbcClient jdbc;
     private final SalesAnalysisReader reader;
+    private final ExecutionPlanReader plans;
     private final SalesStrategies salesStrategies;
     private final StrategyRecommendations recommendations;
     private final ExecutionGuideSnapshots guideSnapshots;
     private final ObjectMapper json;
 
     ExecutionPlanWriter(JdbcClient jdbc, SalesAnalysisReader reader, ObjectMapper json, SalesStrategies salesStrategies,
-                        StrategyRecommendations recommendations, ExecutionGuideSnapshots guideSnapshots) {
+                        StrategyRecommendations recommendations, ExecutionGuideSnapshots guideSnapshots, ExecutionPlanReader plans) {
         this.jdbc = jdbc;
         this.reader = reader;
+        this.plans = plans;
         this.salesStrategies = salesStrategies;
         this.recommendations = recommendations;
         this.guideSnapshots = guideSnapshots;
@@ -63,9 +66,20 @@ class ExecutionPlanWriter {
         return persist(analysisId, strategy, new Conditions(1, 0L, "STORE_NOTICE"));
     }
 
+    @Transactional
+    public Plan createNextPromotion(UUID id, Plan source, String ownerEmail, LocalDate start,
+                                    Suggestion strategy, PromotionReviewController.Review review) {
+        var conditions = new Conditions(source.conditions().durationWeeks(), review.budgetWon(), source.conditions().channel());
+        return persist(id, source.analysisId(), strategy, conditions, start, review)
+                .orElseGet(() -> plans.find(id, ownerEmail).orElseThrow());
+    }
+
     private Plan persist(UUID analysisId, Suggestion strategy, Conditions conditions) {
-        UUID id = UUID.randomUUID();
-        LocalDate start = LocalDate.now(SEOUL);
+        return persist(UUID.randomUUID(), analysisId, strategy, conditions, LocalDate.now(SEOUL), null).orElseThrow();
+    }
+
+    private Optional<Plan> persist(UUID id, UUID analysisId, Suggestion strategy, Conditions conditions, LocalDate start,
+                                   PromotionReviewController.Review review) {
         LocalDate end = start.plusWeeks(conditions.durationWeeks()).minusDays(1);
         ObjectNode snapshot = json.valueToTree(strategy);
         snapshot.remove("code");
@@ -73,9 +87,10 @@ class ExecutionPlanWriter {
         var createdAt = jdbc.sql("""
                 INSERT INTO execution_plans
                     (id, analysis_id, strategy_code, strategy_snapshot, duration_weeks,
-                     budget_won, channel, start_date, end_date)
+                     budget_won, channel, start_date, end_date, promotion_review)
                 VALUES (:id, :analysisId, :strategyCode, CAST(:snapshot AS jsonb), :weeks,
-                        :budget, :channel, :startDate, :endDate)
+                        :budget, :channel, :startDate, :endDate, CAST(:review AS jsonb))
+                ON CONFLICT (id) DO NOTHING
                 RETURNING created_at
                 """)
                 .param("id", id)
@@ -87,10 +102,16 @@ class ExecutionPlanWriter {
                 .param("channel", conditions.channel())
                 .param("startDate", start)
                 .param("endDate", end)
+                .param("review", review == null ? null : json.writeValueAsString(review), Types.VARCHAR)
                 .query((rs, row) -> rs.getObject("created_at", OffsetDateTime.class))
-                .single();
+                .optional();
+        if (createdAt.isEmpty()) return Optional.empty();
 
-        var checklist = checklistFor(strategy, conditions, start, end);
+        var checklist = review == null ? checklistFor(strategy, conditions, start, end) : List.of(
+                item("할인 조건과 적용 수량 한도 확인하기", start),
+                item("홍보물 미리보기와 게시 일정 확인하기", start),
+                item("실제 할인 적용 수량과 원가 기록하기", end),
+                item("행사 종료 후 상품 주문 POS 올리기", end));
         int order = 1;
         for (var item : checklist) {
             jdbc.sql("""
@@ -105,7 +126,7 @@ class ExecutionPlanWriter {
                     .param("completed", item.completed())
                     .update();
         }
-        return new Plan(id, analysisId, strategy, conditions, start, end, checklist, createdAt, null, null, null);
+        return Optional.of(new Plan(id, analysisId, strategy, conditions, start, end, checklist, createdAt.get(), null, review, null));
     }
 
     @Transactional
