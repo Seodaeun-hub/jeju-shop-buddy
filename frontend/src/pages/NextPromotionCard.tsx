@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react'
-import { fetchNextPromotionExplanation, type NextPromotionChecklistItem, type NextPromotionExplanation, type PromotionImpact, type PromotionImpactAdvice, type PromotionImpactTotals } from '../api/shop'
+import { fetchNextPromotionExplanation, type NextPromotionChecklistItem, type NextPromotionExplanation, type PromotionActuals, type PromotionProfit, type PromotionImpact, type PromotionImpactAdvice, type PromotionImpactTotals } from '../api/shop'
 import { changeRate, formatNumber, formatRate, won } from '../data/shop'
 
 const messages: Record<PromotionImpactAdvice['action'], { title: string; detail: string }> = {
   RETEST: {
     title: '현재 할인 조건으로 한 번 더 시험해 보세요.',
     detail: '판매량과 실판매금액이 모두 늘었어요. 실제 할인 적용 수량과 원가를 확인할 자료가 없어, 다음 행사에서 함께 기록해 보세요.',
+  },
+  KEEP_TERMS: {
+    title: '현재 할인 조건 유지를 검토해 보세요.',
+    detail: '실제 할인 적용 기록이 있고, 비교 기간에 품목 매출총이익이 늘었어요.',
   },
   REVIEW_TERMS: {
     title: '할인 조건을 다시 검토해 보세요.',
@@ -37,12 +41,14 @@ function sameTotals(left: PromotionImpactTotals, right: PromotionImpactTotals) {
   return left.quantity === right.quantity && left.amount === right.amount && left.recordedDays === right.recordedDays
 }
 
-export function NextPromotionCard({ auth, planId, before, after, advice, checklist, pending, onCreate, onToggle }: {
+export function NextPromotionCard({ auth, planId, before, after, advice, actuals, profit, checklist, pending, onCreate, onToggle }: {
   auth: string
   planId: string
   before: PromotionImpactTotals
   after: PromotionImpactTotals
   advice: PromotionImpactAdvice
+  actuals: PromotionActuals | null
+  profit: PromotionProfit | null
   checklist: PromotionImpact['nextChecklist']
   pending: boolean
   onCreate: () => void
@@ -50,7 +56,7 @@ export function NextPromotionCard({ auth, planId, before, after, advice, checkli
 }) {
   const [open, setOpen] = useState(false)
   const [loaded, setLoaded] = useState<{ key: string; response: NextPromotionExplanation | null }>()
-  const key = JSON.stringify([planId, before, after, advice])
+  const key = JSON.stringify([planId, before, after, advice, actuals, profit])
 
   useEffect(() => {
     if (!open) return
@@ -68,12 +74,19 @@ export function NextPromotionCard({ auth, planId, before, after, advice, checkli
   const current = loaded?.key === key ? loaded : undefined
   const response = current?.response
   const explanation = response && sameTotals(response.input.before, before) && sameTotals(response.input.after, after)
-    && response.input.advice.action === advice.action ? response.explanation : null
+    && response.input.advice.action === advice.action
+    && response.input.actuals?.discountedQuantity === actuals?.discountedQuantity
+    && response.input.actuals?.beforeUnitCost === actuals?.beforeUnitCost
+    && response.input.actuals?.afterUnitCost === actuals?.afterUnitCost ? response.explanation : null
   const message = messages[advice.action]
   return <section className="receipt form-stack" aria-labelledby="next-promotion-title">
     <h3 id="next-promotion-title">다음 행사에서 해볼 일</h3>
     <p><strong>{message.title}</strong></p>
-    <p>{message.detail}</p>
+    <p>{advice.action === 'REVIEW_TERMS' && actuals && profit
+      ? actuals.discountedQuantity === 0
+        ? '실제 할인 적용 수량이 0개라 현재 할인 조건을 평가하기 어려워요.'
+        : '품목 매출총이익이 늘지 않았어요. 할인액이나 할인 수량 중 하나를 조정해 비교해 보세요.'
+      : message.detail}</p>
     <details onToggle={event => setOpen(event.currentTarget.open)}>
       <summary>왜 이렇게 제안했나요?</summary>
       {open && !current && <p className="muted" role="status">AI 설명을 불러오는 중이에요.</p>}
@@ -88,7 +101,10 @@ export function NextPromotionCard({ auth, planId, before, after, advice, checkli
             format={value => (Number.isInteger(value) ? '' : '약 ') + won(Math.round(value))} />
         </tbody>
       </table>
-      <p className="muted">개당 평균 실판매금액은 실판매금액을 판매량으로 나눴어요. POS에서 관측된 판매 변화이며, 할인 적용 수량과 실제 이익은 별도 자료가 필요해요.</p>
+      {actuals && profit && <p>직접 입력한 실제 할인 적용 수량 {formatNumber(actuals.discountedQuantity)}개 · 품목 매출총이익 {won(profit.beforeWon)} → {won(profit.afterWon)}</p>}
+      <p className="muted">개당 평균 실판매금액은 실판매금액을 판매량으로 나눴어요. {profit
+        ? '비교 기간에 관측된 변화이며, 할인으로 인한 변화인지 판단하려면 추가 비교가 필요해요.'
+        : 'POS에서 관측된 판매 변화이며, 할인 적용 수량과 실제 이익은 별도 자료가 필요해요.'}</p>
     </details>
     {checklist === null
       ? <button type="button" className="button secondary small" disabled={pending} onClick={onCreate}>다음 행사 점검표 만들기</button>

@@ -36,6 +36,26 @@ class NextPromotionTests(unittest.TestCase):
                     ):
                         self.assertIn(expected, explanation)
 
+    def test_saved_actuals_explain_profit_without_attributing_it_to_discount(self):
+        with TestClient(api.app) as client, patch("strategy_agent.next_promotion.structured_model") as model:
+            model.return_value.invoke.return_value = ExplanationFocus(lead="SALES_AMOUNT")
+            for action, discounted, after_cost, after_profit, expected in (
+                ("KEEP_TERMS", 28, 3700, 1064000, "품목 매출총이익은 늘었어요."),
+                ("REVIEW_TERMS", 28, 4000, 980000, "품목 매출총이익은 줄었어요."),
+                ("REVIEW_TERMS", 0, 3700, 1064000, "현재 할인 조건을 평가하기 어려워요."),
+            ):
+                with self.subTest(action=action, discounted=discounted, after_cost=after_cost):
+                    response = client.post(ENDPOINT, json={
+                        **AEWOL_POS,
+                        "advice": {**AEWOL_POS["advice"], "action": action},
+                        "actuals": {"discountedQuantity": discounted, "beforeUnitCost": 4000, "afterUnitCost": after_cost},
+                        "profit": {"beforeWon": 997500, "afterWon": after_profit, "changeWon": after_profit - 997500},
+                    })
+                    self.assertEqual(response.status_code, 200)
+                    explanation = response.json()["explanation"]
+                    self.assertIn(expected, explanation)
+                    self.assertIn("변화가 할인으로 인한 것인지는 판단할 수 없어요.", explanation)
+
     def test_unsupported_discount_claim_from_model_is_rejected(self):
         with TestClient(api.app) as client, patch("strategy_agent.next_promotion.structured_model") as model:
             model.return_value.invoke.return_value = {

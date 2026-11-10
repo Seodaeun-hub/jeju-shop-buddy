@@ -14,15 +14,29 @@ class PeriodTotals(Contract):
 
 
 class Advice(Contract):
-    action: Literal["RETEST", "REVIEW_TERMS", "CHECK_DATA"]
+    action: Literal["RETEST", "KEEP_TERMS", "REVIEW_TERMS", "CHECK_DATA"]
     beforeAveragePrice: float | None
     afterAveragePrice: float | None
+
+
+class Actuals(Contract):
+    discountedQuantity: int
+    beforeUnitCost: int
+    afterUnitCost: int
+
+
+class Profit(Contract):
+    beforeWon: int
+    afterWon: int
+    changeWon: int
 
 
 class NextPromotionRequest(Contract):
     before: PeriodTotals
     after: PeriodTotals
     advice: Advice
+    actuals: Actuals | None = None
+    profit: Profit | None = None
 
 
 class NextPromotionExplanation(Contract):
@@ -56,7 +70,13 @@ def change_sentence(label: str, before: int | float | None, after: int | float |
 def next_step(request: NextPromotionRequest) -> str:
     if request.advice.action == "RETEST":
         return "같은 할인 조건으로 한 번 더 시험하면서 실제 할인 적용 수량과 원가를 기록해 보세요."
+    if request.advice.action == "KEEP_TERMS":
+        return "할인 적용 기록과 늘어난 품목 매출총이익을 참고해 현재 할인 조건 유지를 검토해 보세요."
     if request.advice.action == "REVIEW_TERMS":
+        if request.actuals is not None and request.profit is not None:
+            if request.actuals.discountedQuantity == 0:
+                return "입력한 할인 적용 수량이 없어 현재 할인 조건을 평가하기 어려워요."
+            return "품목 매출총이익이 늘지 않아 할인액이나 할인 수량 중 하나를 조정해 비교해 보세요."
         return "실제 할인 적용 수량과 원가를 확인한 뒤 할인 조건을 검토해 보세요."
 
     gaps = []
@@ -83,9 +103,16 @@ def build_next_promotion_graph():
             ),
         }
         lead = metrics.pop(focus.lead)
+        limits = "이 POS 집계만으로는 실제 할인 적용 여부나 실제 이익을 판단할 수 없어요."
+        if request.actuals is not None and request.profit is not None:
+            discount = ("할인 적용 수량이 기록됐어요." if request.actuals.discountedQuantity > 0
+                        else "입력한 할인 적용 수량은 없어요.")
+            limits = " ".join([
+                change_sentence("입력한 원가를 반영한 품목 매출총이익은", request.profit.beforeWon, request.profit.afterWon),
+                discount, "운영비는 포함되지 않고, 변화가 할인으로 인한 것인지는 판단할 수 없어요.",
+            ])
         explanation = " ".join([
-            lead, *metrics.values(),
-            "이 POS 집계만으로는 실제 할인 적용 여부나 실제 이익을 판단할 수 없어요.",
+            lead, *metrics.values(), limits,
             next_step(request),
         ])
         return {"result": NextPromotionExplanation(explanation=explanation)}
