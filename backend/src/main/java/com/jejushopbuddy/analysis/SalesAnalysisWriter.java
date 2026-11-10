@@ -24,8 +24,8 @@ class SalesAnalysisWriter {
     @Transactional
     public Optional<OffsetDateTime> save(UUID id, UUID storeId, String ownerEmail, AnalysisInput input) {
         var createdAt = jdbc.sql("""
-                INSERT INTO sales_analyses (id, store_id, concern, before_month, after_month)
-                SELECT :id, s.id, :concern, :beforeMonth, :afterMonth
+                INSERT INTO sales_analyses (id, store_id, concern, before_month, after_month, hourly_sales)
+                SELECT :id, s.id, :concern, :beforeMonth, :afterMonth, CAST(:hourlySales AS jsonb)
                 FROM stores s JOIN owners o ON o.id = s.owner_id
                 WHERE s.id = :storeId AND o.email = :ownerEmail
                 FOR SHARE OF s, o
@@ -35,6 +35,7 @@ class SalesAnalysisWriter {
                 .param("storeId", storeId)
                 .param("ownerEmail", ownerEmail)
                 .param("concern", input.concern())
+                .param("hourlySales", input.hourlySales() == null ? null : input.hourlySales().toString())
                 .param("beforeMonth", YearMonth.parse(input.beforeMonth()).atDay(1))
                 .param("afterMonth", YearMonth.parse(input.afterMonth()).atDay(1))
                 .query((rs, row) -> rs.getObject("created_at", OffsetDateTime.class))
@@ -68,6 +69,15 @@ class SalesAnalysisWriter {
                     .update();
         }
         return createdAt;
+    }
+
+    public boolean attachHourlySales(UUID id, String ownerEmail, String hourlySales) {
+        return jdbc.sql("""
+                UPDATE sales_analyses a
+                SET hourly_sales = COALESCE(a.hourly_sales, '{}'::jsonb) || CAST(:hourlySales AS jsonb)
+                FROM stores s JOIN owners o ON o.id = s.owner_id
+                WHERE a.id = :id AND a.store_id = s.id AND o.email = :email
+                """).param("id", id).param("email", ownerEmail).param("hourlySales", hourlySales).update() == 1;
     }
 
     @Transactional

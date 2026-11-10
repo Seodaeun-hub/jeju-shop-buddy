@@ -5,6 +5,7 @@ from openai import OpenAIError
 
 from .chart_question import build_question_graph
 from .chart_question_schemas import ChartQuestionRequest, ChartQuestionResponse
+from .concern_check import ConcernRequest, compare_concern, extract_intent
 from .execution_guide import GuideRequest, GuideResponse, build_guide_graph, load_catalog
 from .graph import build_graph
 from .model import structured_model
@@ -34,6 +35,14 @@ def chart_question(request: ChartQuestionRequest) -> ChartQuestionResponse:
         return question_graph.invoke({"request": request})["result"]
     except (OpenAIError, OutputParserException, ValueError, TimeoutError):
         raise HTTPException(status_code=503, detail={"code": "QA_UNAVAILABLE"}) from None
+
+
+@app.post("/internal/concern-check")
+def concern_check(request: ConcernRequest) -> dict:
+    try:
+        return compare_concern(request, extract_intent(request))
+    except (OpenAIError, OutputParserException, ValueError, TimeoutError):
+        raise HTTPException(status_code=503, detail={"code": "CONCERN_CHECK_UNAVAILABLE"}) from None
 
 
 @app.post("/internal/next-promotion-explanation", response_model=NextPromotionExplanation)

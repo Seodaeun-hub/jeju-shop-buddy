@@ -7,9 +7,10 @@ import { Link } from 'react-router'
 import { Citrus, PageTitle } from '../components/ui'
 import { changeRate, example, formatNumber, formatRate, monthLabel, won } from '../data/shop'
 import type { Analysis, TimeSeries } from '../data/shop'
-import { fetchMarketContext } from '../api/shop'
-import type { MarketContext, QuestionChart } from '../api/shop'
+import { attachHourlySales, checkConcern, fetchMarketContext } from '../api/shop'
+import type { ConcernCheck, MarketContext, QuestionChart } from '../api/shop'
 import { bsiSource, marketSource } from '../data/marketSources'
+import { importPos } from '../data/pos'
 import { TimeDialog } from './Intake'
 import '../styles/dashboard.css'
 
@@ -131,6 +132,37 @@ function AskButton({ onClick, label }: { onClick: (button: HTMLButtonElement) =>
   return <button type="button" className="button small dashboard-ask" aria-label={label} onClick={(event) => onClick(event.currentTarget)}>이 차트 질문</button>
 }
 
+function reviewExampleConcern(concern: string, before: Analysis['monthly'][number], after: Analysis['monthly'][number], series?: TimeSeries) {
+  const text = concern.trim().replace(/[.!?。]+$/, '')
+  if (/^(지난달보다 )?매출(이|은) (줄었어요|감소했어요)$/.test(text)) {
+    const monthIndex = (month: string) => Number(month.slice(0, 4)) * 12 + Number(month.slice(5))
+    if (text.startsWith('지난달보다') && monthIndex(after.month) - monthIndex(before.month) !== 1) {
+      return { status: '자료 부족', detail: '지난달과 비교하려면 연속된 두 달의 매출이 필요해요.' }
+    }
+    return {
+      status: after.amount < before.amount ? '매출 감소 확인' : '매출 감소 없음',
+      detail: `${monthLabel(before.month)} ${won(before.amount)} → ${monthLabel(after.month)} ${won(after.amount)}`,
+    }
+  }
+
+  if (text === '평일 오후에 손님이 줄었어요') {
+    const afternoon = series?.metric === 'count' && series.rows.find(({ label }) => label === '오후 2~5시')
+    if (afternoon) {
+      return {
+        status: '참고 지표 · 오후 결제 건수',
+        detail: `오후 2~5시 전체 결제 건수는 ${formatNumber(afternoon.before)}건 → ${formatNumber(afternoon.after)}건이에요. 평일 방문객 수를 확인하려면 요일별 방문 자료가 필요해요.`,
+      }
+    }
+    return { status: '자료 부족', detail: '평일 오후 방문객 수를 비교할 자료가 필요해요.' }
+  }
+
+  if (text === '잘 팔리지 않는 품목의 재고가 남아요' || text === '재고가 남아요') {
+    return { status: '자료 부족', detail: '판매 자료와 함께 품목별 현재 재고를 확인해야 해요.' }
+  }
+
+  return { status: '추가 확인 필요', detail: '현재 매출 자료만으로 이 고민을 판단하기 어려워요.' }
+}
+
 export function Dashboard({ data, auth, analysisId, onChange, onPlan, onSaveTimeSeries, strategyTo }: {
   data: Analysis
   auth?: string
@@ -169,6 +201,42 @@ export function Dashboard({ data, auth, analysisId, onChange, onPlan, onSaveTime
     : delta === 0 ? '비교한 두 달의 매출이 같아요.'
       : `비교한 두 달 사이에 매출이 ${Math.abs(delta).toFixed(2)}% ${delta < 0 ? '줄었어요' : '늘었어요'}.`
   const series = data.timeSeries
+  const concern = data.concern.trim()
+  const exampleConcern = data.demo && concern ? reviewExampleConcern(concern, before, after, series) : undefined
+  const [concernCheck, setConcernCheck] = useState<ConcernCheck>()
+  const [checkingConcern, setCheckingConcern] = useState(false)
+  const [posAttachError, setPosAttachError] = useState('')
+  const posInput = useRef<HTMLInputElement>(null)
+  const concernRequest = useRef<AbortController>(null)
+  useEffect(() => () => concernRequest.current?.abort(), [])
+
+  async function verifyConcern(file?: File) {
+    if (!analysisId || !auth || concernRequest.current) return
+    const controller = new AbortController()
+    concernRequest.current = controller
+    setCheckingConcern(true)
+    setPosAttachError('')
+    try {
+      if (file && concernCheck?.posMonths) {
+        const months = concernCheck.posMonths
+        const imported = await importPos(file, months)
+        if (controller.signal.aborted) return
+        const hourlySales = Object.fromEntries(months.map(month => [month, imported.hourlySales[month]]))
+        await attachHourlySales(auth, analysisId, hourlySales, controller.signal)
+      }
+      setConcernCheck(await checkConcern(auth, analysisId, controller.signal))
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        if (file) setPosAttachError(error instanceof Error ? error.message : 'POS 파일을 추가할 수 없어요.')
+        else setConcernCheck({ status: 'UNAVAILABLE', detail: '고민 확인에 실패했어요. 다시 시도해 주세요.' })
+      }
+    } finally {
+      if (!controller.signal.aborted) {
+        concernRequest.current = null
+        setCheckingConcern(false)
+      }
+    }
+  }
   const biggestDrop = series?.rows.reduce<TimeSeries['rows'][number] | undefined>((largest, row) => {
     const drop = row.before - row.after
     return drop > (largest ? largest.before - largest.after : 0) ? row : largest
@@ -233,6 +301,35 @@ export function Dashboard({ data, auth, analysisId, onChange, onPlan, onSaveTime
     <PageTitle title="매출 분석" detail={`${data.store} · ${period}${data.demo ? ' · 시연 예시' : ''}`} />
     <div className="split dashboard analysis-dashboard">
       <div className="dashboard-main form-stack">
+        {concern && <section className="notice dashboard-concern" aria-label="사장님이 적은 고민">
+          <strong>사장님이 적은 고민</strong>
+          <p className="dashboard-concern-text">{concern}</p>
+          {exampleConcern && <p><strong>{exampleConcern.status}</strong> · {exampleConcern.detail}</p>}
+          {analysisId && auth && <button className="button secondary small" type="button" disabled={checkingConcern}
+            onClick={() => void verifyConcern()}>{checkingConcern ? '고민을 확인하고 있어요…' : 'AI로 고민 확인'}</button>}
+          {concernCheck && <div role="status">
+            {concernCheck.status === 'COMPARED' && concernCheck.beforeMonth && concernCheck.afterMonth
+              && concernCheck.before != null && concernCheck.after != null ? <>
+                <p><strong>{concernCheck.metric === 'COUNT' ? '결제 건수' : '매출액'} 비교</strong>
+                  {concernCheck.startHour != null && concernCheck.endHour != null
+                    ? ` · ${concernCheck.startHour}:00~${concernCheck.endHour}:00` : ' · 하루 전체'}</p>
+                <p>{monthLabel(concernCheck.beforeMonth)} {concernCheck.metric === 'COUNT' ? `${formatNumber(concernCheck.before)}건` : won(concernCheck.before)}
+                  {' → '}{monthLabel(concernCheck.afterMonth)} {concernCheck.metric === 'COUNT' ? `${formatNumber(concernCheck.after)}건` : won(concernCheck.after)}
+                  {' · '}{concernCheck.after < concernCheck.before ? '감소' : concernCheck.after > concernCheck.before ? '증가' : '변화 없음'}
+                  {' · '}{formatRate(concernCheck.changeRate ?? null)}</p>
+              </> : <p><strong>{concernCheck.status === 'MISSING_DATA' ? '자료 부족' : '추가 확인 필요'}</strong> · {concernCheck.detail}</p>}
+          </div>}
+          {concernCheck?.status === 'MISSING_DATA' && concernCheck.posMonths && analysisId && auth && <>
+            <button className="button secondary small" type="button" disabled={checkingConcern}
+              onClick={() => posInput.current?.click()}>POS 다시 올리기</button>
+            <input ref={posInput} type="file" accept=".xlsx,.csv" hidden onChange={event => {
+              const file = event.currentTarget.files?.[0]
+              event.currentTarget.value = ''
+              if (file) void verifyConcern(file)
+            }} />
+          </>}
+          {posAttachError && <p className="error" role="alert">{posAttachError}</p>}
+        </section>}
         <div className="metrics dashboard-metrics">
           <div><span>{monthLabel(after.month)} 매출</span><strong>{won(after.amount)}</strong></div>
           <div><span>우리 가게 매출 변화</span><strong className={delta === null ? 'muted' : delta < 0 ? 'down' : 'up'}>{formatRate(delta)}</strong></div>

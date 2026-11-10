@@ -69,7 +69,7 @@ class StoreSecurityConfiguration {
                         "/api/analyses/{analysisId}", "/api/analyses/{analysisId}/time-series", "/api/analyses/{analysisId}/strategies", "/api/analyses/{analysisId}/plans",
                         "/api/analyses/{analysisId}/recommendations", "/api/analyses/{analysisId}/execution-guide",
                         "/api/analyses/{analysisId}/reviews", "/api/analyses/{analysisId}/review-plans",
-                        "/api/analyses/{analysisId}/questions",
+                        "/api/analyses/{analysisId}/questions", "/api/analyses/{analysisId}/concern-check", "/api/analyses/{analysisId}/hourly-sales",
                         "/api/plans/{planId}", "/api/plans/{planId}/checklist/{itemId}", "/api/plans/{planId}/results",
                         "/api/plans/{planId}/results/{resultId}", "/api/plans/{planId}/inventory-review",
                         "/api/plans/{planId}/promotion-review", "/api/plans/{planId}/promotion-draft", "/api/plans/{planId}/promotion-draft/caption",

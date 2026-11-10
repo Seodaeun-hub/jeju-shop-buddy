@@ -145,14 +145,36 @@ export function sendQuestion(auth: string, id: string, input: QuestionInput) {
 export const listAreas = (signal: AbortSignal) => request<Area[]>('/api/areas', undefined, 'GET', undefined, signal)
 export const registerStore = (auth: string, input: StoreInput) => request<Store>('/api/stores', auth, 'POST', input)
 
+export type ConcernCheck = {
+  status: 'COMPARED' | 'MISSING_DATA' | 'CLARIFICATION_REQUIRED' | 'UNAVAILABLE'
+  detail: string
+  metric?: 'AMOUNT' | 'COUNT'
+  startHour?: number
+  endHour?: number
+  beforeMonth?: string
+  afterMonth?: string
+  before?: number
+  after?: number
+  changeRate?: number | null
+  posMonths?: [string, string]
+}
+
+export function checkConcern(auth: string, id: string, signal: AbortSignal) {
+  return request<ConcernCheck>(`/api/analyses/${encodeURIComponent(id)}/concern-check`, auth, 'POST', undefined, signal)
+}
+
+export async function attachHourlySales(auth: string, id: string, hourlySales: import('../data/pos').HourlySales, signal: AbortSignal) {
+  await send(`/api/analyses/${encodeURIComponent(id)}/hourly-sales`, auth, 'PUT', hourlySales, signal)
+}
+
 function toApiTimeSeries(value: TimeSeries): ApiTimeSeries {
   return { metric: value.metric === 'count' ? 'COUNT' : 'AMOUNT', rows: value.rows }
 }
 
 export function saveAnalysis(auth: string, storeId: string, monthlySales: MonthlySales[], concern: string,
-  timeSeries?: TimeSeries, productSales?: ProductSale[]) {
+  timeSeries?: TimeSeries, productSales?: ProductSale[], hourlySales?: import('../data/pos').HourlySales) {
   return request<SavedAnalysis>(`/api/stores/${storeId}/analyses`, auth, 'POST', {
-    monthlySales, concern: concern || undefined, timeSeries: timeSeries && toApiTimeSeries(timeSeries), productSales,
+    monthlySales, concern: concern || undefined, timeSeries: timeSeries && toApiTimeSeries(timeSeries), productSales, hourlySales,
   })
 }
 

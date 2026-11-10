@@ -4,10 +4,13 @@ import { parseCsv } from './csv'
 import type { CellValue } from 'read-excel-file/browser'
 
 type Cell = CellValue | null | undefined
-type MonthlyTotals = { amount: number; counts: [number, number, number] }
+type MonthlyTotals = { amount: number; counts: [number, number, number]; hours: HourlyTotal[] }
+export type HourlyTotal = { amount: number; count: number }
+export type HourlySales = Record<string, HourlyTotal[]>
 export type PosImport = {
   monthly: MonthlySales[]
   timeSeries: TimeSeries
+  hourlySales: HourlySales
   months: [string, string]
   productSales?: ProductSale[]
   productWarning?: string
@@ -178,10 +181,16 @@ export async function importPos(file: File, compareMonths?: [string, string]): P
       throw new Error(`${index + 1}행의 결제 기준일자, 결제시각, 건수, 금액, 상태를 확인해 주세요.`)
     }
     const bucket = hour < 14 ? 0 : hour < 17 ? 1 : 2
-    const total: MonthlyTotals = totals.get(month) ?? { amount: 0, counts: [0, 0, 0] }
+    const total: MonthlyTotals = totals.get(month) ?? {
+      amount: 0, counts: [0, 0, 0], hours: Array.from({ length: 24 }, () => ({ amount: 0, count: 0 })),
+    }
     total.amount += amount
     total.counts[bucket] += count
-    if (!Number.isSafeInteger(total.amount) || !Number.isSafeInteger(total.counts[bucket])) {
+    const hourTotal = total.hours[hour]
+    hourTotal.amount += amount
+    hourTotal.count += count
+    if (!Number.isSafeInteger(total.amount) || !Number.isSafeInteger(total.counts[bucket])
+        || !Number.isSafeInteger(hourTotal.amount) || !Number.isSafeInteger(hourTotal.count)) {
       throw new Error('월별 매출 또는 시간대별 결제 건수 합계가 입력 가능한 범위를 넘었어요.')
     }
     totals.set(month, total)
@@ -197,6 +206,7 @@ export async function importPos(file: File, compareMonths?: [string, string]): P
   const imported: PosImport = {
     monthly,
     months: [beforeMonth, afterMonth],
+    hourlySales: Object.fromEntries([...totals].map(([month, total]) => [month, total.hours])),
     timeSeries: {
       metric: 'count',
       rows: timeSlots.map((label, index) => ({ label, before: before.counts[index], after: after.counts[index] })),
