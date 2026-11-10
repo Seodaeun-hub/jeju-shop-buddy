@@ -1,0 +1,73 @@
+package com.jejushopbuddy.store;
+
+import java.security.Principal;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.YearMonth;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.UUID;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+class StoreHistoryController {
+    private final JdbcClient jdbc;
+
+    StoreHistoryController(JdbcClient jdbc) {
+        this.jdbc = jdbc;
+    }
+
+    @GetMapping("/api/stores/{storeId}/analyses")
+    ResponseEntity<?> history(@PathVariable UUID storeId, Principal owner) {
+        var rows = jdbc.sql("""
+                SELECT a.id AS analysis_id, a.before_month, a.after_month, a.concern, a.created_at,
+                       p.id AS plan_id, p.strategy_snapshot->>'title' AS title, p.start_date, p.end_date,
+                       EXISTS (SELECT 1 FROM execution_results r WHERE r.plan_id = p.id) AS has_result
+                FROM stores s
+                JOIN owners o ON o.id = s.owner_id
+                LEFT JOIN sales_analyses a ON a.store_id = s.id
+                LEFT JOIN execution_plans p ON p.analysis_id = a.id
+                WHERE s.id = :storeId AND o.email = :email
+                ORDER BY a.created_at DESC, a.id DESC, p.created_at DESC, p.id DESC
+                """)
+                .param("storeId", storeId)
+                .param("email", owner.getName())
+                .query((rs, row) -> {
+                    var analysisId = rs.getObject("analysis_id", UUID.class);
+                    if (analysisId == null) return new HistoryRow(null, null);
+                    var analysis = new AnalysisSummary(analysisId,
+                            YearMonth.from(rs.getObject("before_month", LocalDate.class)).toString(),
+                            YearMonth.from(rs.getObject("after_month", LocalDate.class)).toString(),
+                            rs.getString("concern"), rs.getObject("created_at", OffsetDateTime.class),
+                            new ArrayList<>());
+                    var planId = rs.getObject("plan_id", UUID.class);
+                    var plan = planId == null ? null : new PlanSummary(planId, rs.getString("title"),
+                            rs.getObject("start_date", LocalDate.class), rs.getObject("end_date", LocalDate.class),
+                            rs.getBoolean("has_result"));
+                    return new HistoryRow(analysis, plan);
+                })
+                .list();
+        if (rows.isEmpty()) {
+            return ResponseEntity.status(404).cacheControl(CacheControl.noStore())
+                    .body(new StoreController.ApiError("STORE_NOT_FOUND", "매장을 찾을 수 없어요.", null));
+        }
+        var analyses = new LinkedHashMap<UUID, AnalysisSummary>();
+        for (var row : rows) {
+            if (row.analysis() == null) continue;
+            var analysis = analyses.computeIfAbsent(row.analysis().id(), id -> row.analysis());
+            if (row.plan() != null) analysis.plans().add(row.plan());
+        }
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(List.copyOf(analyses.values()));
+    }
+
+    private record HistoryRow(AnalysisSummary analysis, PlanSummary plan) {}
+    record AnalysisSummary(UUID id, String beforeMonth, String afterMonth, String concern,
+                           OffsetDateTime createdAt, List<PlanSummary> plans) {}
+    record PlanSummary(UUID id, String title, LocalDate startDate, LocalDate endDate, boolean hasResult) {}
+}
