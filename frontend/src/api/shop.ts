@@ -51,6 +51,8 @@ export type InstagramPublication = {
   username: string
   mediaId?: string | null
   permalink?: string | null
+  caption?: string | null
+  imageDataUrl?: string | null
 }
 export type InstagramPublicationStatus = {
   available: boolean

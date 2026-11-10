@@ -65,7 +65,7 @@ class InstagramPublicationController {
         var plan = find(planId, owner.getName());
         if (plan == null) return error(404, "PROMOTION_PLAN_NOT_FOUND", "홍보 초안을 찾을 수 없어요.");
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(new Status(
-                enabled && plan.storeId().equals(storeId) && plan.draft() != null, username, plan.publication()));
+                enabled && plan.storeId().equals(storeId), username, plan.publication()));
     }
 
     @PostMapping("/api/plans/{planId}/instagram-publication")
@@ -83,7 +83,7 @@ class InstagramPublicationController {
         byte[] image = decodeImage(input.image());
         if (image == null) return error(400, "INVALID_INSTAGRAM_IMAGE", "게시할 홍보 이미지를 다시 만들어 주세요.");
 
-        var pending = new Publication("PUBLISHING", username, null, null);
+        var pending = new Publication("PUBLISHING", username, null, null, input.caption(), input.image());
         int reserved = jdbc.sql("""
                 UPDATE execution_plans SET instagram_publication=CAST(:pending AS jsonb)
                 WHERE id=:id AND instagram_publication IS NULL AND promotion_draft=CAST(:draft AS jsonb)
@@ -103,14 +103,14 @@ class InstagramPublicationController {
             publishRequested = true;
             String mediaId = post(accountId + "/media_publish", "creation_id=" + encode(container)).path("id").asText();
             if (!mediaId.matches("[0-9]+")) throw new IOException("Missing Instagram media ID");
-            var published = new Publication("PUBLISHED", username, mediaId, permalink(mediaId));
+            var published = new Publication("PUBLISHED", username, mediaId, permalink(mediaId), pending.caption(), pending.imageDataUrl());
             save(planId, published);
             return ResponseEntity.ok(published);
         } catch (InterruptedException failure) {
             Thread.currentThread().interrupt();
-            return failed(planId, publishRequested, failure);
+            return failed(planId, pending, publishRequested, failure);
         } catch (IOException failure) {
-            return failed(planId, publishRequested, failure);
+            return failed(planId, pending, publishRequested, failure);
         } finally {
             images.remove(imageKey);
         }
@@ -123,10 +123,10 @@ class InstagramPublicationController {
                 : ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(bytes);
     }
 
-    private ResponseEntity<?> failed(UUID planId, boolean publishRequested, Exception failure) {
+    private ResponseEntity<?> failed(UUID planId, Publication pending, boolean publishRequested, Exception failure) {
         LOG.warn("Instagram publication for {}: {}", planId, failure.getMessage());
         if (publishRequested) {
-            save(planId, new Publication("VERIFY_REQUIRED", username, null, null));
+            save(planId, new Publication("VERIFY_REQUIRED", username, null, null, pending.caption(), pending.imageDataUrl()));
             return error(502, "INSTAGRAM_VERIFY_REQUIRED", "게시 결과를 확인하지 못했어요. 중복 게시를 막기 위해 인스타그램 피드를 먼저 확인해 주세요.");
         }
         save(planId, null);
@@ -233,7 +233,11 @@ class InstagramPublicationController {
     }
 
     record Input(String username, String caption, String image) {}
-    record Publication(String state, String username, String mediaId, String permalink) {}
+    static ResponseEntity<ApiError> locked() {
+        return error(409, "INSTAGRAM_PUBLICATION_LOCKED", "인스타그램 게시가 시작된 계획의 할인 조건과 홍보물은 수정할 수 없어요.");
+    }
+
+    record Publication(String state, String username, String mediaId, String permalink, String caption, String imageDataUrl) {}
     record Status(boolean available, String username, Publication publication) {}
     private record Plan(UUID storeId, String draft, Publication publication) {}
 }
