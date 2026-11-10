@@ -157,7 +157,8 @@ export function App() {
 
   function login(session: OwnerSession) {
     setAccount({ ...session, auth: ownerSession })
-    navigate(typeof state?.returnTo === 'string' ? state.returnTo : '/sales', { replace: true })
+    const defaultDestination = pathname === '/signup' ? '/sales' : '/stores'
+    navigate(typeof state?.returnTo === 'string' ? state.returnTo : defaultDestination, { replace: true })
   }
 
   function forgetDeletedAnalysis(id: string) {

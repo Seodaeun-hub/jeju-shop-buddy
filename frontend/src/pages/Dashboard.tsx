@@ -60,7 +60,11 @@ function BsiChart({ months, values }: { months: [string, string]; values: [numbe
         <strong>{bsiFormat(values[index])}</strong>
       </li>)}
     </ul>
-    <p className="muted">보합 기준 100 · <a href={bsiSource}>소상공인시장진흥공단</a></p>
+    <p className="muted">보합 기준 100</p>
+    <details className="source-details">
+      <summary>자료 출처 보기</summary>
+      <a href={bsiSource}>소상공인시장진흥공단</a>
+    </details>
   </>
 }
 
@@ -118,7 +122,10 @@ function Questions({ topic, period, onClose }: { topic: Topic; period: string; o
             <strong className="chat-answer-name">가게짝꿍 · 답변 예시</strong>
             {showAnswer && topic.figure && <p className="dashboard-chat-figure">{topic.figure}</p>}
             <p>{showAnswer ? topic.answer : '지금은 아래 예시 질문에 답할 수 있어요.'}</p>
-            {showAnswer && <small>근거 · {topic.source}</small>}
+            {showAnswer && <details className="source-details">
+              <summary>자료 출처 보기</summary>
+              <small>{topic.source}</small>
+            </details>}
           </div>
         </div>
       </div>
@@ -323,6 +330,7 @@ export function Dashboard({ data, auth, analysisId, onSaveTimeSeries, strategyTo
           {concernCheck && <div role="status">
             {concernCheck.status === 'COMPARED' && concernCheck.beforeMonth && concernCheck.afterMonth
               && concernCheck.before != null && concernCheck.after != null ? <>
+                {concernCheck.answer && <p><strong>{concernCheck.answer}</strong></p>}
                 <p><strong>{concernCheck.metric === 'COUNT' ? '결제 건수' : '매출액'} 비교</strong>
                   {concernCheck.startHour != null && concernCheck.endHour != null
                     ? ` · ${concernCheck.startHour}:00~${concernCheck.endHour}:00` : ' · 하루 전체'}</p>
@@ -330,7 +338,15 @@ export function Dashboard({ data, auth, analysisId, onSaveTimeSeries, strategyTo
                   {' → '}{monthLabel(concernCheck.afterMonth)} {concernCheck.metric === 'COUNT' ? `${formatNumber(concernCheck.after)}건` : won(concernCheck.after)}
                   {' · '}{concernCheck.after < concernCheck.before ? '감소' : concernCheck.after > concernCheck.before ? '증가' : '변화 없음'}
                   {' · '}{formatRate(concernCheck.changeRate ?? null)}</p>
-              </> : <p><strong>{concernCheck.status === 'MISSING_DATA' ? '자료 부족' : '추가 확인 필요'}</strong> · {concernCheck.detail}</p>}
+                <p>{concernCheck.after < concernCheck.before
+                  ? '어떤 대응을 해볼 수 있을지 같이 살펴봐요.'
+                  : '다른 시간대나 전체 매출 흐름도 같이 살펴봐요.'}</p>
+              </> : <>
+                <p><strong>{concernCheck.status === 'MISSING_DATA' ? '아직 이 고민을 판단하기 어려워요.'
+                  : concernCheck.status === 'CLARIFICATION_REQUIRED' ? '어떤 변화를 확인할지 조금만 더 알려 주세요.'
+                  : '지금은 고민을 확인하지 못했어요.'}</strong></p>
+                <p>{concernCheck.detail}</p>
+              </>}
           </div>}
           {concernCheck?.status === 'MISSING_DATA' && concernCheck.posMonths && analysisId && auth && <>
             <button className="button secondary small" type="button" disabled={checkingConcern}
@@ -356,7 +372,11 @@ export function Dashboard({ data, auth, analysisId, onSaveTimeSeries, strategyTo
           {market ? <>
             <MarketChart storeRate={delta} marketRate={market.rate} />
             <p className="dashboard-source">상권 카드 이용액 {won(market.before)} → {won(market.after)}</p>
-            <p className="muted">{data.area} · {data.industry} · <a href={marketSource}>제주데이터허브</a></p>
+            <p className="muted">{data.area} · {data.industry}</p>
+            <details className="source-details">
+              <summary>자료 출처 보기</summary>
+              <a href={marketSource}>제주데이터허브</a>
+            </details>
           </> : <p className="muted dashboard-source">{missingContext ?? '같은 지역·업종의 두 달치 카드 이용 자료가 없어요.'}</p>}
         </section>
         <section className="ruled-block">

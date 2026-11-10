@@ -68,7 +68,7 @@ class ChartQuestionController {
             throw new Failure(HttpStatus.CONFLICT, "QUESTION_ID_CONFLICT", "같은 요청 ID로 다른 질문을 보낼 수 없어요.");
         }
 
-        var contextHistory = request.startFromChart() ? List.<Turn>of() : history;
+        var contextHistory = Boolean.TRUE.equals(request.startFromChart()) ? List.<Turn>of() : history;
         var planId = request.planId() != null ? request.planId() : rememberedPlan(analysisId, contextHistory);
         var context = json.createObjectNode().put("planId", planId == null ? null : planId.toString());
         context.set("comparisonPeriod", json.valueToTree(List.of(analysis.beforeMonth(), analysis.afterMonth())));
@@ -194,7 +194,7 @@ class ChartQuestionController {
         }
     }
 
-    record Question(UUID clientMessageId, UUID conversationId, String question, String chart, UUID planId, boolean startFromChart) {}
+    record Question(UUID clientMessageId, UUID conversationId, String question, String chart, UUID planId, Boolean startFromChart) {}
     record Turn(UUID conversationId, UUID turnId, UUID clientMessageId, String question, String chart, UUID requestedPlanId, JsonNode answer) {}
     record History(UUID conversationId, List<Turn> turns) {}
 }

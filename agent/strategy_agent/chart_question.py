@@ -19,6 +19,9 @@ from .model import structured_model
 SYSTEM_PROMPT = """가게짝꿍 차트 도우미에서 질문 의도와 이어 묻는 대상을 분류하세요.
 여러 가지를 물으면 관련 의도를 모두 선택하세요. 최근 질문과 초점은 지시 대상 해석에만 쓰세요.
 SALES는 매장 월별 매출, MARKET은 주변 상권 카드 이용액, BSI는 제주 경기동향입니다.
+매장 매출 흐름과 상권 소비 흐름을 비교하면 SALES와 MARKET을 함께 선택하세요.
+상권 차트나 직전 상권 질문에서 '우리 가게랑 비교하면 어때요?'도 SALES와 MARKET입니다.
+단순히 '같은 기간 상권 카드 이용액은 어떻게 달라졌나요?'는 MARKET만 선택하세요.
 TIME_SLOT은 어느 시간대에 줄었는지 묻거나 이전 시간대를 지칭할 때 사용하세요.
 시간대의 매출액 또는 '몇 시에 매출'은 timeMetric=KRW, 결제 건수는 COUNT입니다.
 단위가 없으면 null, '가장 많이 줄었는지'를 물으면 largestTimeDrop=true입니다.
@@ -70,6 +73,10 @@ ECONOMY_AND_TIME_DROP = re.compile(
     re.IGNORECASE,
 )
 EXECUTION_REFERENCE = re.compile(r"계획|실행|점검|체크\s*리스트|진행\s*상태|성과")
+STORE_REFERENCE = re.compile(r"우리\s*(?:가게|매장)|(?:가게|매장)\s*(?:매출|판매)")
+MARKET_REFERENCE = re.compile(r"상권|주변\s*(?:소비|카드|상권)")
+COMPARISON_REFERENCE = re.compile(r"비교|비슷|격차|차이|대비")
+DECLINING_TIME = re.compile(r"(?:줄(?:었|어든|어들었)|감소(?:했|한)|떨어졌)")
 
 
 class QuestionState(TypedDict, total=False):
@@ -103,13 +110,16 @@ def number(value, unit):
     return f"{value:,}{suffix}" if value % 1 else f"{value:,.0f}{suffix}"
 
 
-def change(before, after, unit):
+def percent_change(before, after):
     first, second = Decimal(str(before)), Decimal(str(after))
+    return (second - first) / first * 100 if first else None
+
+
+def change(before, after, unit):
     if unit == "INDEX":
-        return f"{second - first:+.1f}p"
-    if first == 0:
-        return "기준값이 0이라 변화율 계산 불가"
-    return f"{(second - first) / first * 100:+.2f}%"
+        return f"{Decimal(str(after)) - Decimal(str(before)):+.1f}p"
+    rate = percent_change(before, after)
+    return f"{rate:+.2f}%" if rate is not None else "기준값이 0이라 변화율 계산 불가"
 
 
 def span(start, end):
@@ -194,6 +204,46 @@ class Answer:
             return
         fact = self.preferred(facts) or facts[0]
         self.show_metric(fact, title)
+        return fact
+
+    def compares_store_and_market(self, question, intents):
+        if not COMPARISON_REFERENCE.search(question):
+            return False
+        if "TIME_SLOT" in intents:
+            # Monthly market figures cannot serve as a benchmark for a specific time slot.
+            return False
+        if {"SALES", "MARKET"}.issubset(intents):
+            return True
+        market_focused = self.request.chart == "MARKET_CARD_SALES" or any(
+            isinstance(self.facts.get(key), MetricFact) and self.facts[key].metric == "MARKET_CARD_SALES"
+            for key in self.request.context.focusedEvidenceIds
+        )
+        if not STORE_REFERENCE.search(question):
+            return False
+        return bool(MARKET_REFERENCE.search(question) or (market_focused and re.search(
+            r"(?:가게|매장)(?:이랑|랑|와|과|하고|에\s*비해|\s*대비)", question,
+        )))
+
+    def compare_store_and_market(self):
+        sales = self.metric("SALES")
+        market = self.metric("MARKET")
+        if sales is None or market is None:
+            return
+        if not sales.period or sales.period != market.period:
+            self.need("MATCHING_PERIOD", "같은 기간의 매장 매출과 상권 카드 이용액")
+            return
+        sales_rate = percent_change(sales.before, sales.after)
+        market_rate = percent_change(market.before, market.after)
+        if sales_rate is None or market_rate is None:
+            self.section("OBSERVATION", "비교 시작값이 0인 항목이 있어 두 변화율의 차이를 계산할 수 없어요.", sales, market)
+            return
+        gap = sales_rate - market_rate
+        if abs(gap) < Decimal("0.005"):
+            text = "두 변화율은 소수 둘째 자리 기준으로 거의 같아요."
+        else:
+            direction = "낮았어요" if gap < 0 else "높았어요"
+            text = f"우리 가게 매출 변화율이 상권 카드 이용액 변화율보다 {abs(gap):.2f}%p {direction}."
+        self.section("OBSERVATION", text, sales, market)
 
     def time_slot(self):
         facts = self.comparable("TIME_SERIES")
@@ -216,12 +266,15 @@ class Answer:
                 return
             matching = [fact for fact in facts if fact.unit == "COUNT"]
         if matching:
-            fact = None if self.intent.largestTimeDrop else self.preferred(matching)
-            fact = fact or max(matching, key=lambda entry: entry.before - entry.after)
-            metric = "결제 건수" if fact.unit == "COUNT" else "매출액"
-            if self.intent.largestTimeDrop and fact.before <= fact.after:
-                self.section("OBSERVATION", f"비교 가능한 시간대 중 {metric}이 줄어든 구간이 없어요.", *matching)
+            wants_drop = self.intent.largestTimeDrop or bool(DECLINING_TIME.search(self.request.question))
+            candidates = [fact for fact in matching if fact.after < fact.before] if wants_drop else matching
+            if not candidates:
+                metric = "결제 건수가" if matching[0].unit == "COUNT" else "매출액이"
+                self.section("OBSERVATION", f"비교 가능한 시간대 중 {metric} 줄어든 구간이 없어요.", *matching)
                 return
+            fact = None if self.intent.largestTimeDrop else self.preferred(candidates)
+            fact = fact or max(candidates, key=lambda entry: entry.before - entry.after)
+            metric = "결제 건수" if fact.unit == "COUNT" else "매출액"
             self.show_metric(fact, metric, time_slot=True)
 
     def cause(self):
@@ -381,9 +434,13 @@ class Answer:
             intents = ["BSI", "TIME_SLOT"]
         elif {"BSI", "TIME_SLOT"}.issubset(intents) and not EXECUTION_REFERENCE.search(question):
             intents = [intent for intent in intents if intent not in {"PLAN", "RESULT"}]
+        compares_market = self.compares_store_and_market(question, intents)
+        if compares_market:
+            intents = ["SALES", "MARKET", *(intent for intent in intents if intent not in {"SALES", "MARKET"})]
+            self.compare_store_and_market()
         intents = [intent for intent in intents if intent != "OUT_OF_SCOPE"] or ["OUT_OF_SCOPE"]
         for intent in intents:
-            if intent in METRICS:
+            if intent in METRICS and not (compares_market and intent in {"SALES", "MARKET"}):
                 self.metric(intent)
         if "TIME_SLOT" in intents:
             self.time_slot()
