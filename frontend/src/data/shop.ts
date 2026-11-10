@@ -114,7 +114,7 @@ export type PromotionDraft = {
   publishDate: string
   publishTime: string
   timeZone: 'Asia/Seoul'
-  copySource: 'GPT' | 'TEMPLATE'
+  copySource: 'GPT' | 'TEMPLATE' | 'EDITED'
   photoDataUrl: string | null
   templateVersion: number
 }
@@ -125,6 +125,7 @@ export type PromotionDraftInput = {
   publishTime: string
   photoDataUrl?: string
   useSavedPhoto: boolean
+  caption?: string
 }
 
 export type Plan = {

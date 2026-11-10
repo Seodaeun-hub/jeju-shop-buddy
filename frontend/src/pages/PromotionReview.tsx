@@ -10,10 +10,11 @@ const moneyFields = [
   { key: 'budgetWon', label: '할인 예산 (원)', min: 0 },
 ] as const
 
-export function PromotionReview({ analysis, saved, initialBudget, onSave }: {
+export function PromotionReview({ analysis, saved, initialBudget, onSave, readOnly = false }: {
   analysis: Analysis
   saved?: SavedReview
   initialBudget: number
+  readOnly?: boolean
   onSave?: (input: PromotionReviewInput) => Promise<void>
 }) {
   const suggestions = useId()
@@ -41,7 +42,7 @@ export function PromotionReview({ analysis, saved, initialBudget, onSave }: {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!onSave || saving || !valid || !draft.productName.trim()) return
+    if (!onSave || readOnly || saving || !valid || !draft.productName.trim()) return
     setSaving(true)
     setMessage('')
     setError('')
@@ -69,7 +70,7 @@ export function PromotionReview({ analysis, saved, initialBudget, onSave }: {
       </table>
     </details> : <p className="muted">저장된 POS 품목별 판매량이 없어요. 품목명은 직접 입력할 수 있어요.</p>}
     <form className="receipt form-stack" onSubmit={submit}>
-      <fieldset disabled={saving} className="form-stack">
+      <fieldset disabled={readOnly || saving} className="form-stack">
         <label>검토할 품목<input list={suggestions} maxLength={255} required value={draft.productName}
           onChange={(event) => update('productName', event.target.value)} /></label>
         <datalist id={suggestions}>{analysis.productSales?.map(({ productName }) =>
@@ -88,7 +89,7 @@ export function PromotionReview({ analysis, saved, initialBudget, onSave }: {
         {margin < 0 && <p className="down">이 할인 조건에서는 판매할 때마다 원가를 회수하지 못해요.</p>}
       </div> : <p className="muted">판매가·원가·개당 할인액·예산을 입력해 주세요. 할인액은 판매가 이하여야 해요.</p>}
       <p className="muted">남는 금액은 할인 후 판매가에서 입력한 원가를 뺀 값이에요. 최대 수량은 할인 예산을 개당 할인액으로 나눈 몫이에요.</p>
-      {onSave && <button className="button primary small" disabled={saving || !valid || !draft.productName.trim()}>
+      {onSave && !readOnly && <button className="button primary small" disabled={saving || !valid || !draft.productName.trim()}>
         {saving ? '저장 중…' : '프로모션 검토 저장'}
       </button>}
       {message && <p role="status">{message}</p>}

@@ -33,7 +33,7 @@
   gap: .85rem;
   padding: .8rem .8rem 1.15rem;
 }
-.promo-draft canvas { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; }
+.promo-draft > :is(canvas, img):not([hidden]) { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; }
 .promo-copy { display: grid; justify-items: start; gap: .45rem; min-width: 0; }
 .promo-copy > p { white-space: pre-line; word-break: keep-all; overflow-wrap: anywhere; }
 .promo-copy > a { color: var(--green); font-weight: 750; text-underline-offset: .2em; }
@@ -79,5 +79,32 @@
   .execution-checklist label { grid-template-columns: auto max-content minmax(0, 1fr); }
   .execution-checklist .badge { grid-column: 3; justify-self: start; }
   .promo-draft { grid-template-columns: minmax(0, 1fr); }
-  .promo-draft canvas { width: min(100%, 16rem); }
+  .promo-draft > :is(canvas, img):not([hidden]) { width: min(100%, 16rem); }
+}
+
+.instagram-publish { display: grid; gap: .4rem; justify-items: start; }
+.instagram-preview {
+  width: min(92vw, 50rem);
+  max-height: 88vh;
+  margin: auto;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--sheet);
+  color: inherit;
+  overflow: auto;
+}
+.instagram-preview::backdrop { background: rgba(24, 33, 26, .62); }
+.instagram-preview h2 { margin: 0 0 .8rem; }
+.instagram-preview-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+.instagram-preview-body img { display: block; width: 100%; height: auto; border-radius: 8px; }
+.instagram-preview-caption { margin-top: .65rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.instagram-preview > .promo-actions { justify-content: flex-end; margin-top: .8rem; }
+@media (max-width: 560px) {
+  .instagram-preview-body { grid-template-columns: minmax(0, 1fr); }
 }

@@ -50,15 +50,25 @@ class PromotionReviewController {
                     promotion_draft = CASE WHEN p.promotion_review = CAST(:review AS jsonb)
                                           THEN p.promotion_draft ELSE NULL END
                 FROM sales_analyses a, stores s, owners o
-                WHERE p.id = :planId AND p.strategy_code = 'PROMOTION'
+                WHERE p.id = :planId AND p.strategy_code = 'PROMOTION' AND p.instagram_publication IS NULL
                   AND p.analysis_id = a.id AND a.store_id = s.id AND s.owner_id = o.id AND o.email = :email
                 """)
                 .param("review", json.writeValueAsString(review))
                 .param("planId", planId)
                 .param("email", owner.getName())
                 .update();
-        if (updated == 0) return ResponseEntity.status(404)
-                .body(new ApiError("PROMOTION_PLAN_NOT_FOUND", "프로모션 계획을 찾을 수 없어요.", null));
+        if (updated == 0) {
+            boolean locked = jdbc.sql("""
+                    SELECT EXISTS (
+                        SELECT 1 FROM execution_plans p JOIN sales_analyses a ON a.id=p.analysis_id
+                        JOIN stores s ON s.id=a.store_id JOIN owners o ON o.id=s.owner_id
+                        WHERE p.id=:id AND p.strategy_code='PROMOTION' AND p.instagram_publication IS NOT NULL AND o.email=:email
+                    )
+                    """).param("id", planId).param("email", owner.getName()).query(Boolean.class).single();
+            if (locked) return InstagramPublicationController.locked();
+            return ResponseEntity.status(404)
+                    .body(new ApiError("PROMOTION_PLAN_NOT_FOUND", "프로모션 계획을 찾을 수 없어요.", null));
+        }
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(review);
     }
 

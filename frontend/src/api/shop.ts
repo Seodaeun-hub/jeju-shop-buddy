@@ -46,6 +46,25 @@ async function request<T>(...args: Parameters<typeof send>): Promise<T> {
   return (await send(...args)).json()
 }
 
+export type InstagramPublication = {
+  state: 'PUBLISHING' | 'PUBLISHED' | 'VERIFY_REQUIRED'
+  username: string
+  mediaId?: string | null
+  permalink?: string | null
+  caption?: string | null
+  imageDataUrl?: string | null
+}
+export type InstagramPublicationStatus = {
+  available: boolean
+  username: string
+  publication?: InstagramPublication | null
+}
+const instagramPublicationPath = (planId: string) => `/api/plans/${encodeURIComponent(planId)}/instagram-publication`
+export const fetchInstagramPublication = (auth: string, planId: string, signal?: AbortSignal) =>
+  request<InstagramPublicationStatus>(instagramPublicationPath(planId), auth, 'GET', undefined, signal)
+export const publishInstagram = (auth: string, planId: string, input: { username: string; caption: string; image: string }) =>
+  request<InstagramPublication>(instagramPublicationPath(planId), auth, 'POST', input)
+
 function basicAuthorization(email: string, password: string) {
   const bytes = new TextEncoder().encode(email.trim() + ':' + password)
   return 'Basic ' + btoa(String.fromCharCode(...bytes))

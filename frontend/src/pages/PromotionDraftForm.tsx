@@ -16,6 +16,7 @@ export function PromotionDraftForm({ plan, auth, onSave }: {
   const [publishTime, setPublishTime] = useState(draft?.publishTime.slice(0, 5) ?? '11:00')
   const [savedPhoto, setSavedPhoto] = useState<string | null>()
   const [photo, setPhoto] = useState<string>()
+  const [captionEdit, setCaptionEdit] = useState<string>()
   const [useSavedPhoto, setUseSavedPhoto] = useState(draft ? Boolean(draft.photoDataUrl) : true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -52,7 +53,8 @@ export function PromotionDraftForm({ plan, auth, onSave }: {
     setBusy(true)
     setError('')
     try {
-      await onSave({ review, publishDate, publishTime, photoDataUrl: photo, useSavedPhoto })
+      await onSave({ review, publishDate, publishTime, photoDataUrl: photo, useSavedPhoto, caption: captionEdit })
+      setCaptionEdit(undefined)
       if (photo) {
         setSavedPhoto(photo)
         setPhoto(undefined)
@@ -73,6 +75,8 @@ export function PromotionDraftForm({ plan, auth, onSave }: {
       <fieldset disabled={busy} className="form-stack">
         <label>게시 날짜<input type="date" required max={plan.endDate} value={publishDate} onChange={event => setPublishDate(event.target.value)} /></label>
         <label>게시 시간<input type="time" required value={publishTime} onChange={event => setPublishTime(event.target.value)} /></label>
+        {draft && <label>홍보 문구<textarea rows={5} required maxLength={2200} value={captionEdit ?? draft.caption}
+          onChange={event => setCaptionEdit(event.target.value)} /></label>}
         <label>음식 사진 올리기<input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => {
           const file = event.target.files?.[0]
           if (file) void upload(file)
@@ -84,7 +88,7 @@ export function PromotionDraftForm({ plan, auth, onSave }: {
       {preview && <img src={preview} alt={review.productName + ' 사진 미리보기'} width={160} />}
       {review.maxDiscountQuantity === 0 && <p className="muted">할인 예산으로 최소 한 개를 할인할 수 있어야 해요.</p>}
       <button className="button primary small" disabled={busy || review.maxDiscountQuantity === 0}>
-        {busy ? '준비 중…' : '할인 조건 확정하고 홍보 초안 저장'}
+        {busy ? '준비 중…' : draft ? '홍보 초안 변경 저장' : '할인 조건 확정하고 홍보 초안 저장'}
       </button>
       {error && <p className="error" role="alert">{error}</p>}
     </form>
