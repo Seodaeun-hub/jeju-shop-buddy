@@ -74,11 +74,19 @@ function basicAuthorization(email: string, password: string) {
   return 'Basic ' + btoa(String.fromCharCode(...bytes))
 }
 
+export type OwnerSession = { email: string; name: string }
 export const ownerSession = 'session'
+export const signupOwner = (name: string, email: string, password: string) =>
+  request<OwnerSession>('/api/session/signup', ownerSession, 'POST', { name, email, password })
 export const loginOwner = (email: string, password: string) =>
-  request<{ email: string }>('/api/session', basicAuthorization(email, password), 'POST')
+  request<OwnerSession>('/api/session', basicAuthorization(email, password), 'POST')
 export const fetchOwnerSession = (signal: AbortSignal) =>
-  request<{ email: string }>('/api/session', ownerSession, 'GET', undefined, signal)
+  request<OwnerSession>('/api/session', ownerSession, 'GET', undefined, signal)
+export const updateOwnerName = (name: string) =>
+  request<OwnerSession>('/api/session/profile', ownerSession, 'PATCH', { name })
+export async function updateOwnerPassword(currentPassword: string, newPassword: string) {
+  await send('/api/session/password', ownerSession, 'PUT', { currentPassword, newPassword })
+}
 export const logoutOwner = () => send('/api/session', ownerSession, 'DELETE')
 
 type StorePromotionTone = { tone: PromotionTone | null; avoidPhrases: string }

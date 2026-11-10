@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
-import { createPromotionDraft, fetchAnalysis, fetchOwnerSession, fetchPlan, loginOwner, logoutOwner, ownerSession, regeneratePromotionCaption, saveInventoryReview, savePromotionReview, saveTimeSeries, toPlan, updateChecklistItem } from './api/shop'
+import { createPromotionDraft, fetchAnalysis, fetchOwnerSession, fetchPlan, loginOwner, logoutOwner, ownerSession, signupOwner, type OwnerSession, regeneratePromotionCaption, saveInventoryReview, savePromotionReview, saveTimeSeries, toPlan, updateChecklistItem } from './api/shop'
 import { Dashboard } from './pages/Dashboard'
 import { ExistingStoreIntake, Intake } from './pages/Intake'
 import { MyStores } from './pages/MyStores'
+import { MyPage } from './pages/MyPage'
 import { Execution } from './pages/Execution'
 import { Results } from './pages/Results'
 import { SavedStrategyPage, Strategy } from './pages/Strategy'
@@ -51,11 +52,11 @@ function Home({ onDemo }: { onDemo: () => void }) {
   )
 }
 
-function Account({ signup, onLogin }: { signup: boolean; onLogin: (email: string) => void }) {
+function Account({ signup, onLogin }: { signup: boolean; onLogin: (session: OwnerSession) => void }) {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
 
-  async function login(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (pending) return
     const fields = new FormData(event.currentTarget)
@@ -63,10 +64,12 @@ function Account({ signup, onLogin }: { signup: boolean; onLogin: (email: string
     setPending(true)
     setError('')
     try {
-      const session = await loginOwner(email, String(fields.get('password')))
-      onLogin(session.email)
+      const password = String(fields.get('password'))
+      const session = signup ? await signupOwner(String(fields.get('name')), email, password)
+        : await loginOwner(email, password)
+      onLogin(session)
     } catch (error) {
-      setError(error instanceof Error ? error.message : '로그인할 수 없어요.')
+      setError(error instanceof Error ? error.message : (signup ? '회원가입을 완료하지 못했어요.' : '로그인할 수 없어요.'))
     } finally {
       setPending(false)
     }
@@ -78,13 +81,17 @@ function Account({ signup, onLogin }: { signup: boolean; onLogin: (email: string
         <div><h1>{signup ? '회원가입' : '로그인'}</h1><p>{signup ? '가입하고 우리 가게를 등록해보세요.' : '사장님, 다시 오셨네요.'}</p></div>
         <Citrus stamp />
       </div>
-      {signup ? <p className="notice">회원가입은 준비 중이에요. 등록된 사업주 계정으로 로그인할 수 있어요.</p> :
-        <form className="form-stack account-fields" onSubmit={login}>
+      <form className="form-stack account-fields" onSubmit={submit}>
+          {signup && <label>사장님 이름 또는 별명
+            <input name="name" autoComplete="nickname" required maxLength={30} placeholder="예: 다은" />
+            <small className="muted">로그인하면 화면 위에 이 이름으로 인사해요.</small>
+          </label>}
           <label>이메일<input name="email" type="email" autoComplete="username" required placeholder="이메일을 입력하세요" /></label>
-          <label>비밀번호<input name="password" type="password" autoComplete="current-password" required placeholder="비밀번호를 입력하세요" /></label>
+          <label>비밀번호<input name="password" type="password" autoComplete={signup ? 'new-password' : 'current-password'} minLength={signup ? 8 : undefined}
+            required placeholder={signup ? '8자 이상 입력하세요' : '비밀번호를 입력하세요'} /></label>
           {error && <p className="error" role="alert">{error}</p>}
-          <button className="button primary full" disabled={pending}>{pending ? '로그인 중…' : '로그인'}</button>
-        </form>}
+          <button className="button primary full" disabled={pending}>{signup ? (pending ? '가입 중…' : '회원가입') : (pending ? '로그인 중…' : '로그인')}</button>
+      </form>
       <p className="account-switch">{signup ? '이미 계정이 있나요?' : '처음 오셨나요?'} <Link to={signup ? '/login' : '/signup'}>{signup ? '로그인' : '회원가입'}</Link></p>
     </section>
   )
@@ -95,7 +102,7 @@ export function App() {
   const [plan, setPlan] = useState<Plan>()
   const navigate = useNavigate()
   const { pathname, search, state } = useLocation()
-  const [account, setAccount] = useState<{ auth: string; email: string }>()
+  const [account, setAccount] = useState<OwnerSession & { auth: string }>()
   const [sessionPending, setSessionPending] = useState(true)
   const [logoutError, setLogoutError] = useState('')
   const [lastId, setLastId] = useState<string>()
@@ -116,7 +123,7 @@ export function App() {
   const strategyPath = analysisId ? '/strategy?' + new URLSearchParams({ id: analysisId }) : '/strategy'
   const planPath = (route: '/execution' | '/results', value: Plan) => value.id && value.analysisId
     ? route + '?' + new URLSearchParams({ id: value.id, analysisId: value.analysisId }) : route
-  const publicPage = ['/', '/login', '/signup'].includes(pathname)
+  const publicPage = pathname === '/login' || pathname === '/signup' || (pathname === '/' && !account)
 
   useEffect(() => {
     window.scrollTo(0, 0)
@@ -124,8 +131,8 @@ export function App() {
 
   useEffect(() => {
     const controller = new AbortController()
-    fetchOwnerSession(controller.signal).then(({ email }) => {
-      if (!controller.signal.aborted) setAccount({ auth: ownerSession, email })
+    fetchOwnerSession(controller.signal).then(session => {
+      if (!controller.signal.aborted) setAccount({ ...session, auth: ownerSession })
     }).catch(() => undefined).finally(() => {
       if (!controller.signal.aborted) setSessionPending(false)
     })
@@ -147,8 +154,8 @@ export function App() {
     return () => controller.abort()
   }, [auth, analysisId, retry])
 
-  function login(email: string) {
-    setAccount({ auth: ownerSession, email })
+  function login(session: OwnerSession) {
+    setAccount({ ...session, auth: ownerSession })
     navigate(typeof state?.returnTo === 'string' ? state.returnTo : '/sales', { replace: true })
   }
 
@@ -311,9 +318,9 @@ export function App() {
               : to === '/strategy' ? strategyPath : to === '/execution' && plan ? planPath('/execution', plan) : to} className={pathname === '/results' && to === '/execution' ? 'active' : undefined}>{label}</NavLink>)}
           </nav>}
           <div className="header-actions">
-            {pathname === '/' ? <><Link to="/login">로그인</Link><Link className="button small secondary" to="/signup">회원가입</Link></>
+            {pathname === '/' && !account ? (!sessionPending && <><Link to="/login">로그인</Link><Link className="button small secondary" to="/signup">회원가입</Link></>)
               : publicPage ? <Link to="/">← 메인으로</Link>
-              : <><span className="badge">{account?.email ?? '체험 모드'}</span><button className="text-button" onClick={leavePreview}>{account ? '로그아웃' : '나가기'}</button></>}
+              : <><span className="badge account-greeting">{account ? (account.name ? `${account.name}님, 환영해요!` : '사장님, 환영해요!') : '체험 모드'}</span>{account && <Link to="/my-page">마이페이지</Link>}<button className="text-button" onClick={leavePreview}>{account ? '로그아웃' : '나가기'}</button></>}
           </div>
         </div>
       </header>
@@ -323,6 +330,9 @@ export function App() {
           <Route path="/" element={<Home onDemo={() => openAnalysis(example)} />} />
           <Route path="/login" element={<Account key="login" signup={false} onLogin={login} />} />
           <Route path="/signup" element={<Account key="signup" signup onLogin={login} />} />
+          <Route path="/my-page" element={account
+            ? <MyPage key={account.email} account={account} onUpdate={session => setAccount({ ...session, auth: ownerSession })} />
+            : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
           <Route path="/stores" element={auth ? <MyStores key={account?.email} auth={auth} /> : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
           <Route path="/sales" element={auth
             ? salesStoreId ? <ExistingStoreIntake key={salesStoreId} auth={auth} storeId={salesStoreId} onAnalyze={openSavedAnalysis} />
