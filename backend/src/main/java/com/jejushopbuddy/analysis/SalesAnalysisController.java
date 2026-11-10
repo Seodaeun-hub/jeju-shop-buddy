@@ -475,7 +475,7 @@ class SalesAnalysisController {
                     .body(new ApiError("STORE_NOT_FOUND", "매장을 찾을 수 없어요.", null));
         }
         return ResponseEntity.status(HttpStatus.CREATED).body(new AnalysisResponse(
-                id, store, input.concern(), input.beforeMonth(), input.afterMonth(), input.monthlySales(),
+                id, store, input.name(), input.concern(), input.beforeMonth(), input.afterMonth(), input.monthlySales(),
                 input.timeSeries(), input.productSales(), createdAt.get()));
     }
 
@@ -492,7 +492,15 @@ class SalesAnalysisController {
     }
 
     private static AnalysisInput readInput(JsonNode body) {
-        fields(body, Set.of("concern", "monthlySales", "timeSeries", "productSales", "hourlySales"), null);
+        fields(body, Set.of("name", "concern", "monthlySales", "timeSeries", "productSales", "hourlySales"), null);
+        var nameField = body.get("name");
+        if (nameField != null && !nameField.isString()) {
+            throw invalid("INVALID_REQUEST", "분석 이름은 글로 입력해 주세요.", "name");
+        }
+        String name = nameField == null ? "" : nameField.stringValue().strip();
+        if (name.length() > 100 || name.chars().anyMatch(Character::isISOControl)) {
+            throw invalid("INVALID_REQUEST", "분석 이름은 100자 이내의 한 줄로 입력해 주세요.", "name");
+        }
         var concern = body.get("concern");
         if (concern != null && (!concern.isString() || concern.stringValue().indexOf(0) >= 0)) {
             throw invalid("INVALID_REQUEST", "고민은 글로 입력해 주세요.", "concern");
@@ -517,7 +525,7 @@ class SalesAnalysisController {
         var ordered = months.entrySet().stream()
                 .map(month -> new MonthlySale(month.getKey().toString(), month.getValue())).toList();
         var timeSeries = body.get("timeSeries");
-        return new AnalysisInput(concern == null ? null : concern.stringValue(), ordered,
+        return new AnalysisInput(name.isBlank() ? null : name, concern == null ? null : concern.stringValue(), ordered,
                 timeSeries == null ? null : readTimeSeries(timeSeries, "timeSeries."),
                 readProductSales(body.get("productSales")), readHourlySales(body.get("hourlySales"), ordered));
     }
@@ -652,7 +660,7 @@ class SalesAnalysisController {
         }
     }
 
-    record AnalysisInput(String concern, List<MonthlySale> monthlySales, TimeSeries timeSeries,
+    record AnalysisInput(String name, String concern, List<MonthlySale> monthlySales, TimeSeries timeSeries,
                          List<ProductSale> productSales, JsonNode hourlySales) {
         String beforeMonth() {
             return monthlySales.get(monthlySales.size() - 2).month();
@@ -670,7 +678,7 @@ class SalesAnalysisController {
                        @JsonInclude(JsonInclude.Include.NON_NULL) Long priceWon) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    record AnalysisResponse(UUID id, UUID storeId, String concern, String beforeMonth, String afterMonth,
+    record AnalysisResponse(UUID id, UUID storeId, String name, String concern, String beforeMonth, String afterMonth,
                             List<MonthlySale> monthlySales, TimeSeries timeSeries,
                             @JsonInclude(JsonInclude.Include.NON_EMPTY) List<ProductSale> productSales,
                             OffsetDateTime createdAt) {}

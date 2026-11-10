@@ -24,8 +24,8 @@ class SalesAnalysisWriter {
     @Transactional
     public Optional<OffsetDateTime> save(UUID id, UUID storeId, String ownerEmail, AnalysisInput input) {
         var createdAt = jdbc.sql("""
-                INSERT INTO sales_analyses (id, store_id, concern, before_month, after_month, hourly_sales)
-                SELECT :id, s.id, :concern, :beforeMonth, :afterMonth, CAST(:hourlySales AS jsonb)
+                INSERT INTO sales_analyses (id, store_id, name, concern, before_month, after_month, hourly_sales)
+                SELECT :id, s.id, :name, :concern, :beforeMonth, :afterMonth, CAST(:hourlySales AS jsonb)
                 FROM stores s JOIN owners o ON o.id = s.owner_id
                 WHERE s.id = :storeId AND o.email = :ownerEmail
                 FOR SHARE OF s, o
@@ -34,6 +34,7 @@ class SalesAnalysisWriter {
                 .param("id", id)
                 .param("storeId", storeId)
                 .param("ownerEmail", ownerEmail)
+                .param("name", input.name())
                 .param("concern", input.concern())
                 .param("hourlySales", input.hourlySales() == null ? null : input.hourlySales().toString())
                 .param("beforeMonth", YearMonth.parse(input.beforeMonth()).atDay(1))

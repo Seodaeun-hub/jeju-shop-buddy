@@ -28,7 +28,7 @@ class SalesAnalysisReader {
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public Optional<AnalysisResponse> find(UUID id, String ownerEmail) {
         var analysis = jdbc.sql("""
-                SELECT a.store_id, a.concern, a.before_month, a.after_month, a.created_at
+                SELECT a.store_id, a.name, a.concern, a.before_month, a.after_month, a.created_at
                 FROM sales_analyses a
                 JOIN stores s ON s.id = a.store_id
                 JOIN owners o ON o.id = s.owner_id
@@ -37,7 +37,7 @@ class SalesAnalysisReader {
                 .param("id", id)
                 .param("ownerEmail", ownerEmail)
                 .query((rs, row) -> new SavedAnalysis(rs.getObject("store_id", UUID.class),
-                        rs.getString("concern"), month(rs, "before_month"), month(rs, "after_month"),
+                        rs.getString("name"), rs.getString("concern"), month(rs, "before_month"), month(rs, "after_month"),
                         rs.getObject("created_at", OffsetDateTime.class)))
                 .optional();
         if (analysis.isEmpty()) {
@@ -60,7 +60,7 @@ class SalesAnalysisReader {
                         rs.getLong("before_quantity"), rs.getLong("after_quantity"), rs.getObject("price_won", Long.class)))
                 .list();
         var saved = analysis.get();
-        return Optional.of(new AnalysisResponse(id, saved.storeId(), saved.concern(), saved.beforeMonth(),
+        return Optional.of(new AnalysisResponse(id, saved.storeId(), saved.name(), saved.concern(), saved.beforeMonth(),
                 saved.afterMonth(), monthly, findTimeSeries(id).orElse(null), products, saved.createdAt()));
     }
 
@@ -81,6 +81,6 @@ class SalesAnalysisReader {
         return YearMonth.from(rs.getObject(column, LocalDate.class)).toString();
     }
 
-    private record SavedAnalysis(UUID storeId, String concern, String beforeMonth, String afterMonth,
+    private record SavedAnalysis(UUID storeId, String name, String concern, String beforeMonth, String afterMonth,
                                  OffsetDateTime createdAt) {}
 }

@@ -284,6 +284,7 @@ paths:
                   required: [id, beforeMonth, afterMonth, createdAt, plans]
                   properties:
                     id: { type: string, format: uuid }
+                    name: { type: string, maxLength: 100, nullable: true }
                     beforeMonth: { type: string, example: '2021-04' }
                     afterMonth: { type: string, example: '2021-05' }
                     concern: { type: string, nullable: true }
@@ -1635,6 +1636,10 @@ components:
       additionalProperties: false
       required: [monthlySales]
       properties:
+        name:
+          type: string
+          maxLength: 100
+          description: 선택 입력하는 분석 이름
         concern:
           type: string
           description: 사업주가 분석할 때 적은 고민
@@ -1655,6 +1660,9 @@ components:
         storeId:
           type: string
           format: uuid
+        name:
+          type: string
+          maxLength: 100
         concern:
           type: string
         beforeMonth:

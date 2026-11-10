@@ -16,6 +16,7 @@ type ApiTimeSeries = { metric: 'COUNT' | 'AMOUNT'; rows: TimeSeries['rows'] }
 type SavedAnalysis = {
   id: string
   storeId: string
+  name?: string
   createdAt: string
   concern?: string
   monthlySales: MonthlySales[]
@@ -100,6 +101,7 @@ export const saveStorePromotionTone = (auth: string, id: string, settings: { ton
 export const listStores = (auth: string, signal?: AbortSignal) => request<Store[]>('/api/stores', auth, 'GET', undefined, signal)
 export type StoreAnalysisSummary = {
   id: string
+  name?: string | null
   beforeMonth: string
   afterMonth: string
   concern?: string | null
@@ -172,10 +174,11 @@ function toApiTimeSeries(value: TimeSeries): ApiTimeSeries {
   return { metric: value.metric === 'count' ? 'COUNT' : 'AMOUNT', rows: value.rows }
 }
 
-export function saveAnalysis(auth: string, storeId: string, monthlySales: MonthlySales[], concern: string,
+export function saveAnalysis(auth: string, storeId: string, monthlySales: MonthlySales[], concern: string, name: string,
   timeSeries?: TimeSeries, productSales?: ProductSale[], hourlySales?: import('../data/pos').HourlySales) {
   return request<SavedAnalysis>(`/api/stores/${storeId}/analyses`, auth, 'POST', {
-    monthlySales, concern: concern || undefined, timeSeries: timeSeries && toApiTimeSeries(timeSeries), productSales, hourlySales,
+    monthlySales, name: name || undefined, concern: concern || undefined,
+    timeSeries: timeSeries && toApiTimeSeries(timeSeries), productSales, hourlySales,
   })
 }
 
@@ -184,7 +187,7 @@ export async function fetchAnalysis(auth: string, id: string, signal: AbortSigna
   const store = (await listStores(auth, signal)).find(({ id }) => id === saved.storeId)
   if (!store) throw new Error('분석에 연결된 매장을 찾을 수 없어요.')
   return {
-    store: store.name, storeId: store.id, createdAt: saved.createdAt,
+    store: store.name, storeId: store.id, name: saved.name, createdAt: saved.createdAt,
     address: store.address, area: store.areaName,
     industry: store.customIndustryName ?? industryOptions.find(({ code }) => code === store.industryCode)?.name ?? store.industryCode,
     concern: saved.concern ?? '', monthly: saved.monthlySales,
