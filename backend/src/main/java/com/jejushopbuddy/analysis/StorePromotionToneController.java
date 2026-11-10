@@ -59,7 +59,7 @@ class StorePromotionToneController {
             return value == null ? null : valueOf(value);
         }
 
-        String caption(String product, String price, String limit, String period, String store, String avoidPhrases) {
+        String caption(String product, String price, String discount, String limit, String period, String store, String avoidPhrases) {
             String compact = product + " " + price + " · " + limit;
             String[] alternatives = switch (this) {
                 case PLAIN -> new String[]{
@@ -72,12 +72,13 @@ class StorePromotionToneController {
                 };
                 case SHORT -> new String[]{compact};
             };
+            String details = "\n" + discount + "\n\n" + period + " · " + store;
             for (String alternative : alternatives) {
                 if (!containsAvoidedPhrase(alternative, avoidPhrases)) {
-                    return alternative + "\n\n" + period + " · " + store;
+                    return alternative + details;
                 }
             }
-            return compact + "\n\n" + period + " · " + store;
+            return compact + details;
         }
 
         private static boolean containsAvoidedPhrase(String text, String avoidPhrases) {
