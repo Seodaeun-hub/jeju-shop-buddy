@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
-import { createPromotionDraft, fetchAnalysis, fetchOwnerSession, fetchPlan, loginOwner, logoutOwner, ownerSession, saveInventoryReview, savePromotionReview, saveTimeSeries, toPlan, updateChecklistItem } from './api/shop'
+import { createPromotionDraft, fetchAnalysis, fetchOwnerSession, fetchPlan, loginOwner, logoutOwner, ownerSession, regeneratePromotionCaption, saveInventoryReview, savePromotionReview, saveTimeSeries, toPlan, updateChecklistItem } from './api/shop'
 import { Dashboard } from './pages/Dashboard'
 import { ExistingStoreIntake, Intake } from './pages/Intake'
 import { MyStores } from './pages/MyStores'
@@ -9,7 +9,7 @@ import { Execution } from './pages/Execution'
 import { Results } from './pages/Results'
 import { SavedStrategyPage, Strategy } from './pages/Strategy'
 import { example } from './data/shop'
-import type { Analysis, InventoryItem, Plan, PromotionDraftInput, PromotionReviewInput, TimeSeries } from './data/shop'
+import type { Analysis, InventoryItem, Plan, PromotionDraftInput, PromotionReviewInput, PromotionTone, TimeSeries } from './data/shop'
 import { Citrus } from './components/ui'
 
 const navigation = [
@@ -225,6 +225,14 @@ export function App() {
     setPlan((current) => current?.id === id && current.promotionReview === input.review ? { ...current, promotionDraft: saved } : current)
   }
 
+  async function regeneratePlanPromotionCaption(tone: PromotionTone) {
+    const id = plan?.id
+    if (!auth || !id) return
+    const draft = await regeneratePromotionCaption(auth, id, tone)
+    setPlan(current => current?.id === id && current.promotionDraft === plan.promotionDraft
+      ? { ...current, promotionDraft: draft } : current)
+  }
+
   async function toggleChecklist(index: number, completed: boolean) {
     if (!plan) return
     const planId = plan.id
@@ -283,7 +291,8 @@ export function App() {
         : <Execution key={plan.id ?? 'demo'} plan={plan} onChange={setPlan} onToggleChecklist={toggleChecklist}
           analysis={currentAnalysis} onSaveInventory={auth && plan.id ? savePlanInventory : undefined}
           onSavePromotion={auth && plan.id ? savePlanPromotion : undefined}
-          auth={auth} onSavePromotionDraft={auth && plan.id ? savePlanPromotionDraft : undefined} resultsTo={planPath('/results', plan)} />
+          auth={auth} onSavePromotionDraft={auth && plan.id ? savePlanPromotionDraft : undefined}
+          onRegeneratePromotionCaption={regeneratePlanPromotionCaption} resultsTo={planPath('/results', plan)} />
       : requestedPlanId && analysisId ? !currentAnalysis ? analysisStatus : <section className="empty-state">
         {planError?.id === requestedPlanId ? <><p role="alert" className="error">{planError.message}</p><button className="button secondary" onClick={() => {
           setPlanError(undefined)

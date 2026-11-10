@@ -104,7 +104,15 @@ export type PromotionReview = PromotionReviewInput & {
   maxDiscountQuantity: number
 }
 
+export const promotionTones = [
+  {value: 'PLAIN', label: '담백한 안내'},
+  {value: 'FRIENDLY', label: '친근한 동네 가게'},
+  {value: 'SHORT', label: '짧은 공지'},
+] as const
+export type PromotionTone = (typeof promotionTones)[number]['value']
+
 export type PromotionDraft = {
+  tone?: PromotionTone
   storeName: string
   headline: string
   feature: string

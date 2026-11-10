@@ -40,6 +40,8 @@ CREATE TABLE stores (
     address_source VARCHAR(6) NOT NULL,
     industry_code VARCHAR(32) NOT NULL,
     custom_industry_name VARCHAR(100),
+    promotion_tone VARCHAR(16) CHECK (promotion_tone IN ('PLAIN', 'FRIENDLY', 'SHORT')),
+    promotion_avoid_phrases VARCHAR(500) NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_stores_owner FOREIGN KEY (owner_id)

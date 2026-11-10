@@ -1,5 +1,5 @@
 import type { Review, ReviewTopic } from '../data/reviews'
-import type { Analysis, InventoryItem, MonthlySales, Plan, ProductSale, PromotionDraft, PromotionDraftInput, PromotionReview, PromotionReviewInput, SalesResult, TimeSeries } from '../data/shop'
+import type { Analysis, InventoryItem, MonthlySales, Plan, ProductSale, PromotionDraft, PromotionDraftInput, PromotionReview, PromotionReviewInput, PromotionTone, SalesResult, TimeSeries } from '../data/shop'
 import { formatEvidence } from '../data/strategyEvidence'
 
 export type Area = { code: string; name: string }
@@ -80,6 +80,13 @@ export const loginOwner = (email: string, password: string) =>
 export const fetchOwnerSession = (signal: AbortSignal) =>
   request<{ email: string }>('/api/session', ownerSession, 'GET', undefined, signal)
 export const logoutOwner = () => send('/api/session', ownerSession, 'DELETE')
+
+type StorePromotionTone = { tone: PromotionTone | null; avoidPhrases: string }
+const storePromotionTonePath = (id: string) => `/api/stores/${encodeURIComponent(id)}/promotion-tone`
+export const fetchStorePromotionTone = (auth: string, id: string, signal: AbortSignal) =>
+  request<StorePromotionTone>(storePromotionTonePath(id), auth, 'GET', undefined, signal)
+export const saveStorePromotionTone = (auth: string, id: string, settings: { tone: PromotionTone; avoidPhrases: string }) =>
+  request<StorePromotionTone>(storePromotionTonePath(id), auth, 'PUT', settings)
 
 export const listStores = (auth: string, signal?: AbortSignal) => request<Store[]>('/api/stores', auth, 'GET', undefined, signal)
 export type StoreAnalysisSummary = {
@@ -270,8 +277,12 @@ export function createPromotionDraft(auth: string, id: string, input: PromotionD
   return request<PromotionDraft>(`/api/plans/${encodeURIComponent(id)}/promotion-draft`, auth, 'POST', input)
 }
 
+export function regeneratePromotionCaption(auth: string, id: string, tone: PromotionTone) {
+  return request<PromotionDraft>(`/api/plans/${encodeURIComponent(id)}/promotion-draft/caption`, auth, 'POST', {tone})
+}
+
 export function fetchPromotionPhoto(auth: string, id: string, signal: AbortSignal) {
-  return request<MenuPhoto>(`/api/plans/${encodeURIComponent(id)}/promotion-photo`, auth, 'GET', undefined, signal)
+  return request<MenuPhoto & { defaultTone: PromotionTone | null }>(`/api/plans/${encodeURIComponent(id)}/promotion-photo`, auth, 'GET', undefined, signal)
 }
 
 function menuPhotoPath(id: string) {
