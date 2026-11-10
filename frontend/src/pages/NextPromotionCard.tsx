@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchNextPromotionExplanation, type NextPromotionChecklistItem, type NextPromotionExplanation, type PromotionActuals, type PromotionProfit, type PromotionImpact, type PromotionImpactAdvice, type PromotionImpactTotals } from '../api/shop'
+import type { PromotionReview } from '../data/shop'
+import { NextPromotionPlanForm } from './NextPromotionPlanForm'
 import { changeRate, formatNumber, formatRate, won } from '../data/shop'
 
 const messages: Record<PromotionImpactAdvice['action'], { title: string; detail: string }> = {
@@ -41,9 +43,10 @@ function sameTotals(left: PromotionImpactTotals, right: PromotionImpactTotals) {
   return left.quantity === right.quantity && left.amount === right.amount && left.recordedDays === right.recordedDays
 }
 
-export function NextPromotionCard({ auth, planId, before, after, advice, actuals, profit, checklist, pending, onCreate, onToggle }: {
+export function NextPromotionCard({ auth, planId, review, before, after, advice, actuals, profit, checklist, pending, onCreate, onToggle }: {
   auth: string
   planId: string
+  review?: PromotionReview
   before: PromotionImpactTotals
   after: PromotionImpactTotals
   advice: PromotionImpactAdvice
@@ -106,6 +109,8 @@ export function NextPromotionCard({ auth, planId, before, after, advice, actuals
         ? '비교 기간에 관측된 변화이며, 할인으로 인한 변화인지 판단하려면 추가 비교가 필요해요.'
         : 'POS에서 관측된 판매 변화이며, 할인 적용 수량과 실제 이익은 별도 자료가 필요해요.'}</p>
     </details>
+    {review && (advice.action === 'KEEP_TERMS' || advice.action === 'REVIEW_TERMS') &&
+      <NextPromotionPlanForm key={advice.action} auth={auth} planId={planId} action={advice.action} review={review} pending={pending} />}
     {checklist === null
       ? <button type="button" className="button secondary small" disabled={pending} onClick={onCreate}>다음 행사 점검표 만들기</button>
       : <fieldset className="checklist" disabled={pending}>

@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { fetchPromotionImpact, saveNextPromotionChecklist, savePromotionActuals, savePromotionImpact, type NextPromotionChecklistItem, type PromotionActuals, type PromotionImpact, type PromotionImpactPeriod, type PromotionImpactTotals } from '../api/shop'
+import type { PromotionReview } from '../data/shop'
 import { NextPromotionCard } from './NextPromotionCard'
 import { importPromotionProduct } from '../data/pos'
 import { changeRate, formatNumber, formatRate, won } from '../data/shop'
@@ -15,7 +16,7 @@ function ImpactRow({ label, before, after, format }: {
     <td>{delta > 0 ? '+' : delta < 0 ? '−' : ''}{format(Math.abs(delta))} · {formatRate(changeRate(before, after))}</td></tr>
 }
 
-export function PromotionImpactPanel({ auth, planId }: { auth: string; planId: string }) {
+export function PromotionImpactPanel({ auth, planId, review }: { auth: string; planId: string; review?: PromotionReview }) {
   const [result, setResult] = useState<PromotionImpact>()
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -155,7 +156,7 @@ export function PromotionImpactPanel({ auth, planId }: { auth: string; planId: s
           <p className="muted">품목 매출총이익은 실판매금액에서 판매량 × 개당 원가를 뺀 값이에요. 실판매금액에 반영된 할인은 다시 빼지 않아요. 인건비와 임대료 등 운영비는 포함되지 않아요.</p>
         </form>}
       {result.beforeTotals && result.afterTotals && result.advice &&
-        <NextPromotionCard auth={auth} planId={planId} before={result.beforeTotals} after={result.afterTotals}
+        <NextPromotionCard auth={auth} planId={planId} review={review} before={result.beforeTotals} after={result.afterTotals}
           advice={result.advice} actuals={result.actuals} profit={result.profit} checklist={result.nextChecklist} pending={pending}
           onCreate={() => void saveChecklist()}
           onToggle={(item, completed) => void saveChecklist({ item, completed })} />}

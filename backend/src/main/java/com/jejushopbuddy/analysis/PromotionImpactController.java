@@ -3,7 +3,10 @@ package com.jejushopbuddy.analysis;
 import com.jejushopbuddy.analysis.SalesAnalysisController.ApiError;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.security.Principal;
+import java.util.List;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -24,11 +27,16 @@ class PromotionImpactController {
     private final JdbcClient jdbc;
     private final ObjectMapper json;
     private final StrategyAgentClient agent;
+    private final ExecutionPlanReader plans;
+    private final ExecutionPlanWriter planWriter;
 
-    PromotionImpactController(JdbcClient jdbc, ObjectMapper json, StrategyAgentClient agent) {
+    PromotionImpactController(JdbcClient jdbc, ObjectMapper json, StrategyAgentClient agent,
+                              ExecutionPlanReader plans, ExecutionPlanWriter planWriter) {
         this.jdbc = jdbc;
         this.json = json;
         this.agent = agent;
+        this.plans = plans;
+        this.planWriter = planWriter;
     }
 
     @GetMapping
@@ -123,6 +131,53 @@ class PromotionImpactController {
                 .body(new ApiError("PROMOTION_IMPACT_CHANGED", "POS 집계가 바뀌었어요. 새로고침해 주세요.", null));
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(comparison(
                 new Plan(plan.product(), plan.start(), plan.end(), plan.state(), plan.publishedAt(), saved.get())));
+    }
+
+    @PutMapping("/next-plan/{requestId}")
+    ResponseEntity<?> createNextPlan(@PathVariable UUID planId, @PathVariable UUID requestId,
+                                     @RequestBody NextPlanInput input, Principal owner) {
+        String email = owner.getName();
+        var source = find(planId, email);
+        if (source == null) return notFound();
+        UUID id = UUID.nameUUIDFromBytes(("promotion-follow-up:" + planId + ":" + requestId).getBytes(StandardCharsets.UTF_8));
+        var existing = plans.find(id, email);
+        if (existing.isPresent()) return ResponseEntity.ok(existing.get());
+
+        var advice = comparison(source).advice();
+        if (advice == null || (advice.action() != NextAction.KEEP_TERMS && advice.action() != NextAction.REVIEW_TERMS)
+                || input.action() != advice.action()) {
+            return invalid("현재 다음 행사 제안을 다시 확인해 주세요.");
+        }
+        var original = plans.find(planId, email).orElse(null);
+        if (original == null || original.promotionReview() == null) return notFound();
+        var review = original.promotionReview();
+        Long discount = wholeValue(input.discountWon());
+        Long quantity = wholeValue(input.maxDiscountQuantity());
+        if (!validTotal(discount) || discount == 0 || discount > review.priceWon()
+                || !validTotal(quantity) || quantity == 0 || quantity > MAX_SAFE_INTEGER / discount) {
+            return invalid("할인액과 할인 수량 한도를 확인해 주세요.");
+        }
+        boolean changed = discount != review.discountWon() || quantity != review.maxDiscountQuantity();
+        if (advice.action() == NextAction.KEEP_TERMS && changed) {
+            return invalid("유지 검토에서는 기존 할인 조건을 사용해 주세요.");
+        }
+        if (advice.action() == NextAction.REVIEW_TERMS && !changed) {
+            return invalid("개당 할인액이나 할인 수량 한도를 바꿔 주세요.");
+        }
+        if (input.startDate() == null || input.startDate().isBefore(LocalDate.now(SEOUL))
+                || input.startDate().isAfter(LocalDate.of(9999, 11, 30))) {
+            return invalid("오늘 이후의 행사 시작일을 확인해 주세요.");
+        }
+
+        long price = review.priceWon() - discount;
+        var nextReview = new PromotionReviewController.Review(review.productName(), review.priceWon(), review.costWon(),
+                discount, changed ? discount * quantity : review.budgetWon(), price, price - review.costWon(), quantity);
+        String reason = changed ? "이전 행사 결과의 할인 조건 재검토 제안을 바탕으로 조정한 계획이에요."
+                : "이전 행사 결과의 할인 조건 유지 검토 제안을 바탕으로 만든 계획이에요.";
+        var strategy = new SalesStrategies.Suggestion("PROMOTION", "다음 행사 할인 계획", "RECOMMENDED", reason,
+                List.of(), List.of(), "행사 종료 후 판매량과 품목 매출총이익을 비교해요.");
+        var created = planWriter.createNextPromotion(id, original, email, input.startDate(), strategy, nextReview);
+        return ResponseEntity.created(URI.create("/api/plans/" + created.id())).body(created);
     }
 
     @PutMapping("/next-checklist")
@@ -253,6 +308,7 @@ class PromotionImpactController {
     enum ChecklistItem { DISCOUNT_QUANTITY, ACTUAL_COST, UPLOAD_POS }
     record ChecklistUpdate(ChecklistItem item, Boolean completed) {}
     record Advice(NextAction action, BigDecimal beforeAveragePrice, BigDecimal afterAveragePrice) {}
+    record NextPlanInput(NextAction action, LocalDate startDate, BigDecimal discountWon, BigDecimal maxDiscountQuantity) {}
     record ActualsInput(BigDecimal discountedQuantity, BigDecimal beforeUnitCost, BigDecimal afterUnitCost) {}
     record Actuals(Long discountedQuantity, Long beforeUnitCost, Long afterUnitCost) {}
     record Profit(long beforeWon, long afterWon, long changeWon) {}
