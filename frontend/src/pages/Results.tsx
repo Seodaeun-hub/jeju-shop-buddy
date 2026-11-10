@@ -7,6 +7,7 @@ import { Citrus, PageTitle } from '../components/ui'
 import { formatQuantity, parseQuantity } from '../data/inventory'
 import { addDays, changeRate, formatNumber, formatRate, won } from '../data/shop'
 import type { Plan, SalesPeriod, SalesResult } from '../data/shop'
+import { PromotionImpactPanel } from './PromotionImpactPanel'
 import '../styles/results.css'
 
 const sample: SalesResult = {
@@ -179,6 +180,7 @@ function SalesResults({ plan, onChange, auth }: { plan: Plan; onChange: (plan: P
   return <>
     <PageTitle title="실행 결과 확인" detail={`${plan.store}${showSample ? ' · 시연용 가상 결과' : ''}`} />
     <ResultSummary plan={plan} detail={savedResult?.scope ?? defaultScope} />
+    {plan.strategy === 'promotion' && auth && planId && <PromotionImpactPanel auth={auth} planId={planId} />}
     {loading && <section className="empty-state compact">
       {loadError ? <>
         <p role="alert" className="error">{loadError}</p>

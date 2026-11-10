@@ -18,14 +18,18 @@ const productColumns = ['주문기준일자', '결제상태', '상품명', '수�
 const maxFileSize = 10 * 1024 * 1024
 
 function readMonth(value: Cell) {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 7)
+  return readDate(value)?.slice(0, 7)
+}
+
+function readDate(value: Cell) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10)
   const match = String(value ?? '').trim().match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})$/)
   if (!match) return undefined
   const [, year, month, day] = match
   const date = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
   const parsed = new Date(date)
   if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) return undefined
-  return date.slice(0, 7)
+  return date
 }
 
 function readHour(value: Cell) {
@@ -52,6 +56,10 @@ async function readPosRows(file: File): Promise<Cell[][]> {
     }
   }
   if (!/\.csv$/i.test(file.name)) throw new Error('엑셀(.xlsx) 또는 CSV(.csv) 파일을 선택해 주세요.')
+  return readPosCsv(file)
+}
+
+async function readPosCsv(file: File) {
   const bytes = await file.arrayBuffer()
   let text: string
   try {
@@ -93,6 +101,59 @@ async function readProductSales(file: File, beforeMonth: string, afterMonth: str
   }
   return [...products.values()].sort((a, b) => b.after - a.after || b.before - a.before
     || a.productName.localeCompare(b.productName, 'ko'))
+}
+
+export async function importPromotionProduct(file: File, product: string, start: string, end: string) {
+  if (file.size > maxFileSize) throw new Error('10MB 이하의 POS 파일을 선택해 주세요.')
+  let rows: Cell[][]
+  if (/\.xlsx$/i.test(file.name)) {
+    try {
+      const { readSheet } = await import('read-excel-file/browser')
+      rows = await readSheet(file, '상품 주문')
+    } catch {
+      throw new Error('토스포스 엑셀에서 상품 주문 시트를 찾을 수 없어요.')
+    }
+  } else if (/\.csv$/i.test(file.name)) {
+    rows = await readPosCsv(file)
+  } else {
+    throw new Error('상품 주문 엑셀(.xlsx) 또는 CSV(.csv)를 선택해 주세요.')
+  }
+  const headerIndex = rows.findIndex(row => row.some(cell => String(cell ?? '').trim()))
+  const header = rows[headerIndex]?.map(cell => String(cell ?? '').replace(/\s/g, '')) ?? []
+  const indices = [...productColumns.map(column => header.indexOf(column)),
+    header.findIndex(column => /^실판매금액(?:\(.+\))?$/.test(column))]
+  if (indices.includes(-1)) {
+    throw new Error('상품 주문에 주문기준일자·결제상태·상품명·수량·실판매금액 열이 있는지 확인해 주세요.')
+  }
+
+  const days = new Set<string>()
+  let quantity = 0
+  let amount = 0
+  for (const [index, row] of rows.entries()) {
+    if (index <= headerIndex || row.every(cell => !String(cell ?? '').trim())) continue
+    const [dateValue, state, name, countValue, amountValue] = indices.map(column => row[column])
+    const date = readDate(dateValue)
+    if (!date) throw new Error(`${index + 1}행의 주문기준일자를 확인해 주세요.`)
+    if (date < start || date > end) continue
+    const status = String(state ?? '').trim()
+    if (!['완료', '결제완료', '취소', '결제취소'].includes(status) || !String(name ?? '').trim()) {
+      throw new Error(`${index + 1}행의 결제상태와 상품명을 확인해 주세요.`)
+    }
+    days.add(date)
+    if (status === '취소' || status === '결제취소' || String(name).trim() !== product) continue
+    const count = readTotal(countValue)
+    const sales = readTotal(amountValue)
+    if (count === undefined || sales === undefined) {
+      throw new Error(`${index + 1}행의 수량과 실판매금액을 확인해 주세요.`)
+    }
+    quantity += count
+    amount += sales
+    if (!Number.isSafeInteger(quantity) || !Number.isSafeInteger(amount)) {
+      throw new Error('판매량 또는 실판매금액 합계가 저장 가능한 범위를 넘었어요.')
+    }
+  }
+  if (!days.size) throw new Error('표시된 비교 기간의 주문 자료가 없어요. 파일에 포함된 날짜를 확인해 주세요.')
+  return {quantity, amount, recordedDays: days.size}
 }
 
 export async function importPos(file: File, compareMonths?: [string, string]): Promise<PosImport> {

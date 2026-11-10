@@ -323,6 +323,24 @@ function resultsPath(planId: string, resultId?: string) {
   return resultId ? `${base}/${encodeURIComponent(resultId)}` : base
 }
 
+export type PromotionImpactPeriod = { start: string; end: string }
+export type PromotionImpactTotals = { quantity: number; amount: number; recordedDays: number }
+export type PromotionImpact = {
+  productName: string | null
+  before: PromotionImpactPeriod | null
+  after: PromotionImpactPeriod | null
+  beforeTotals: PromotionImpactTotals | null
+  afterTotals: PromotionImpactTotals | null
+  afterReady: boolean
+  message: string | null
+}
+const promotionImpactPath = (planId: string) => `/api/plans/${encodeURIComponent(planId)}/promotion-impact`
+export const fetchPromotionImpact = (auth: string, planId: string, signal: AbortSignal) =>
+  request<PromotionImpact>(promotionImpactPath(planId), auth, 'GET', undefined, signal)
+export const savePromotionImpact = (auth: string, planId: string,
+  input: PromotionImpactPeriod & PromotionImpactTotals & {phase: 'BEFORE' | 'AFTER'}) =>
+  request<PromotionImpact>(promotionImpactPath(planId), auth, 'PUT', input)
+
 export async function fetchSalesResult(auth: string, planId: string, signal: AbortSignal): Promise<SavedSalesResult | null> {
   const response = await send(resultsPath(planId), auth, 'GET', undefined, signal)
   return response.status === 204 ? null : response.json()

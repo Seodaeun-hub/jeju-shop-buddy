@@ -151,6 +151,7 @@ CREATE TABLE execution_plans (
     strategy_snapshot JSONB NOT NULL,
     inventory_review JSONB CHECK (inventory_review IS NULL OR (strategy_code = 'INVENTORY' AND jsonb_typeof(inventory_review) = 'array')),
     promotion_review JSONB CHECK (promotion_review IS NULL OR (strategy_code = 'PROMOTION' AND jsonb_typeof(promotion_review) = 'object')),
+    promotion_impact JSONB CHECK (promotion_impact IS NULL OR (strategy_code = 'PROMOTION' AND jsonb_typeof(promotion_impact) = 'object')),
     instagram_scheduled_at TIMESTAMPTZ,
     instagram_publication_started_at TIMESTAMPTZ,
     instagram_publication JSONB CHECK (instagram_publication IS NULL OR (strategy_code = 'PROMOTION' AND jsonb_typeof(instagram_publication) = 'object')),
