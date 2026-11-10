@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { Citrus, PageTitle } from '../components/ui'
+import { ExecutionGuideSteps } from '../components/ExecutionGuidePanel'
 import { formatNumber, won } from '../data/shop'
 import type { Plan } from '../data/shop'
 import { InventoryReview } from './InventoryReview'
@@ -174,6 +175,11 @@ export function Execution({ plan, onChange, onToggleChecklist, resultsTo }: {
           <dd><ul>{plan.recommendation.contextEvidence.map((item) => <li key={item}>{item}</li>)}</ul></dd>
         </>}
       </dl>
+    </section>}
+    {plan.executionGuide && <section className="receipt ruled-block execution-guide" aria-label="저장된 실행 가이드">
+      <h2>저장된 실행 가이드</h2>
+      <p>{plan.executionGuide.channel === 'NAVER' ? '네이버 안내' : '매장 안내'}</p>
+      <ExecutionGuideSteps guide={plan.executionGuide} />
     </section>}
     <div className="split planning execution-layout">
       <section>

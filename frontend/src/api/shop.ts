@@ -112,6 +112,7 @@ export type SavedStrategy = {
   missingInputs: string[]
   followUp: string
   nextAction?: string
+  executionGuide?: ExecutionGuide
   recommendation?: {
     id: string
     beforeMonth: string
@@ -148,6 +149,8 @@ export function generateRecommendation(auth: string, id: string, signal: AbortSi
 export type ExecutionGuideChannel = 'NAVER' | 'IN_STORE'
 
 export type ExecutionGuide = {
+  guideId: string
+  channel: ExecutionGuideChannel
   status: 'OK' | 'NO_RELEVANT_GUIDE' | 'CURATED_FALLBACK'
   message: string | null
   steps: { kind: 'STORE_CHECK' | 'OFFICIAL_GUIDE'; text: string; when: string | null; sourceIds: string[] }[]
@@ -160,8 +163,10 @@ export function fetchExecutionGuide(auth: string, id: string, channel: Execution
     { strategyCode: 'OUTREACH', channel, recommendationId }, signal)
 }
 
-export function createPlan(auth: string, id: string, strategyCode: StrategyCode, conditions: PlanConditions, recommendationId?: string) {
-  return request<SavedPlan>(`/api/analyses/${encodeURIComponent(id)}/plans`, auth, 'POST', { strategyCode, conditions, recommendationId })
+export function createPlan(auth: string, id: string, strategyCode: StrategyCode, conditions: PlanConditions,
+  recommendationId?: string, executionGuideId?: string) {
+  return request<SavedPlan>(`/api/analyses/${encodeURIComponent(id)}/plans`, auth, 'POST',
+    { strategyCode, conditions, recommendationId, executionGuideId })
 }
 
 export function fetchPlan(auth: string, id: string, signal: AbortSignal) {
@@ -240,6 +245,7 @@ export function toPlan(saved: SavedPlan, store: string): Plan {
     endDate: saved.endDate,
     timeLabel: strategy.evidence.find(({ source }) => source === 'TIME_SERIES')?.label,
     followUp: strategy.followUp,
+    executionGuide: strategy.executionGuide,
     recommendation: context && {
       reason: strategy.reason,
       evidence: strategy.evidence.map((item) => formatEvidence(item, context.beforeMonth, context.afterMonth)),

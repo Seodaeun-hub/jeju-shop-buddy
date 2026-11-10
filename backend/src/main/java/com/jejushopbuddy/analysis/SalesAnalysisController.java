@@ -38,6 +38,7 @@ class SalesAnalysisController {
     private final SalesStrategies salesStrategies;
     private final StrategyAgentClient strategyAgent;
     private final StrategyRecommendations recommendations;
+    private final ExecutionGuideSnapshots guideSnapshots;
     private final StoreReviewService reviews;
     private final ExecutionPlanWriter planWriter;
     private final ExecutionPlanReader planReader;
@@ -48,12 +49,13 @@ class SalesAnalysisController {
                             ExecutionPlanWriter planWriter, ExecutionPlanReader planReader,
                             ExecutionResultWriter resultWriter, ExecutionResultReader resultReader,
                             SalesStrategies salesStrategies, StoreReviewService reviews, StrategyAgentClient strategyAgent,
-                            StrategyRecommendations recommendations) {
+                            StrategyRecommendations recommendations, ExecutionGuideSnapshots guideSnapshots) {
         this.writer = writer;
         this.reader = reader;
         this.salesStrategies = salesStrategies;
         this.strategyAgent = strategyAgent;
         this.recommendations = recommendations;
+        this.guideSnapshots = guideSnapshots;
         this.reviews = reviews;
         this.planWriter = planWriter;
         this.planReader = planReader;
@@ -124,7 +126,8 @@ class SalesAnalysisController {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                     .body(new ApiError("GUIDE_UNAVAILABLE", "실행 가이드를 불러올 수 없어요. 잠시 후 다시 시도해 주세요.", null));
         }
-        return ResponseEntity.ok(guide.get());
+        return ResponseEntity.ok(guideSnapshots.save(saved, recommendationId, strategy.code(),
+                channel.stringValue(), guide.get()));
     }
 
     @GetMapping("/api/analyses/{analysisId}/reviews")
@@ -349,14 +352,17 @@ class SalesAnalysisController {
             produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<?> createPlan(@PathVariable String analysisId, @RequestBody JsonNode body, Principal owner) {
         UUID id = parseId(analysisId, "INVALID_ANALYSIS_ID", "분석 ID 형식을 확인해 주세요.", "analysisId");
-        fields(body, Set.of("strategyCode", "conditions", "recommendationId"), null);
+        fields(body, Set.of("strategyCode", "conditions", "recommendationId", "executionGuideId"), null);
         var code = body.get("strategyCode");
         if (code == null || !code.isString() || !Set.of("OUTREACH", "PROMOTION", "INVENTORY").contains(code.stringValue())) {
             throw invalid("INVALID_STRATEGY_CODE", "대응 전략을 선택해 주세요.", "strategyCode");
         }
         String strategyCode = code.stringValue();
         var conditions = planConditions(body.get("conditions"), strategyCode);
-        var result = planWriter.create(id, owner.getName(), strategyCode, conditions, readRecommendationId(body));
+        var guide = body.get("executionGuideId");
+        UUID guideId = guide == null ? null : parseId(guide.isString() ? guide.stringValue() : "",
+                "INVALID_EXECUTION_GUIDE_ID", "실행 가이드 ID 형식을 확인해 주세요.", "executionGuideId");
+        var result = planWriter.create(id, owner.getName(), strategyCode, conditions, readRecommendationId(body), guideId);
         if (result.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(new ApiError("ANALYSIS_NOT_FOUND", "매출 분석을 찾을 수 없어요.", null));
@@ -374,6 +380,13 @@ class SalesAnalysisController {
     ResponseEntity<ApiError> recommendationUnavailable() {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiError("RECOMMENDATION_UNAVAILABLE",
                 "추천이 바뀌었거나 만료됐어요. 화면을 새로고침해 추천을 다시 받아 주세요.", "recommendationId"));
+    }
+
+    @ExceptionHandler(ExecutionGuideSnapshots.Unavailable.class)
+    ResponseEntity<ApiError> guideSnapshotUnavailable() {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiError("EXECUTION_GUIDE_UNAVAILABLE",
+                "이 계획에 사용할 실행 가이드를 찾을 수 없어요. 화면을 새로고침해 가이드를 다시 열어 주세요.",
+                "executionGuideId"));
     }
 
     private static ExecutionPlanWriter.Conditions planConditions(JsonNode node, String strategyCode) {

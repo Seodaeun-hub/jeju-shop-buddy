@@ -1,3 +1,4 @@
+import type { ExecutionGuide } from '../api/shop'
 import { exampleReviews } from './reviews'
 import type { Review, ReviewTopic } from './reviews'
 
@@ -105,6 +106,7 @@ export type Plan = {
   timeLabel?: string
   followUp: string
   recommendation?: { reason: string; evidence: string[]; contextEvidence: string[] }
+  executionGuide?: ExecutionGuide
   budget: number
   channel: string
   tasks: { id?: string; label: string; date: string }[]

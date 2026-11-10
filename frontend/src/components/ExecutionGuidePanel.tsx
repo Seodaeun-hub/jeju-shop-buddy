@@ -2,10 +2,11 @@ import { useEffect, useId, useState } from 'react'
 import { fetchExecutionGuide } from '../api/shop'
 import type { ExecutionGuide, ExecutionGuideChannel } from '../api/shop'
 
-export function ExecutionGuidePanel({ auth, analysisId, recommendationId }: {
+export function ExecutionGuidePanel({ auth, analysisId, recommendationId, onView }: {
   auth: string
   analysisId: string
   recommendationId?: string
+  onView: (guideId: string) => void
 }) {
   const id = useId()
   const [open, setOpen] = useState(false)
@@ -28,6 +29,10 @@ export function ExecutionGuidePanel({ auth, analysisId, recommendationId }: {
     return () => request.abort()
   }, [analysisId, auth, channel, guide, open, recommendationId, retry])
 
+  useEffect(() => {
+    if (open && guide) onView(guide.guideId)
+  }, [guide, onView, open])
+
   return <div className="execution-guide">
     <button className="button secondary fit" type="button" aria-expanded={open} aria-controls={id}
       onClick={() => { setError(''); setOpen(!open) }}>
@@ -49,19 +54,24 @@ export function ExecutionGuidePanel({ auth, analysisId, recommendationId }: {
             setError('')
             setRetry((attempt) => attempt + 1)
           }}>다시 시도</button>
-        </div> : guide ? <>
-          {guide.message && <p role="status">{guide.message}</p>}
-          <ol>{guide.steps.map((step, index) => <li key={index}>
-            <div>{step.when && <strong>{step.when} </strong>}{step.text}</div>
-            {step.sourceIds.map((sourceId) => {
-              const source = guide.sources.find(({ id }) => id === sourceId)
-              return source && <a key={source.id} href={source.url} target="_blank" rel="noopener noreferrer">
-                {source.title} · {source.publisher}
-              </a>
-            })}
-          </li>)}</ol>
-        </> : <p role="status">실행 가이드를 불러오는 중이에요.</p>}
+        </div> : guide ? <ExecutionGuideSteps guide={guide} />
+          : <p role="status">실행 가이드를 불러오는 중이에요.</p>}
       </>}
     </section>
   </div>
+}
+
+export function ExecutionGuideSteps({ guide }: { guide: ExecutionGuide }) {
+  return <>
+    {guide.message && <p role="status">{guide.message}</p>}
+    <ol>{guide.steps.map((step, index) => <li key={index}>
+      <div>{step.when && <strong>{step.when} </strong>}{step.text}</div>
+      {step.sourceIds.map((sourceId) => {
+        const source = guide.sources.find(({ id }) => id === sourceId)
+        return source && <a key={source.id} href={source.url} target="_blank" rel="noopener noreferrer">
+          {source.title} · {source.publisher}
+        </a>
+      })}
+    </li>)}</ol>
+  </>
 }
