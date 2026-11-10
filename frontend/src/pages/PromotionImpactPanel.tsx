@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { fetchPromotionImpact, saveNextPromotionChecklist, savePromotionImpact, type NextPromotionChecklistItem, type PromotionImpact, type PromotionImpactPeriod, type PromotionImpactTotals } from '../api/shop'
+import { fetchPromotionImpact, saveNextPromotionChecklist, savePromotionActuals, savePromotionImpact, type NextPromotionChecklistItem, type PromotionActuals, type PromotionImpact, type PromotionImpactPeriod, type PromotionImpactTotals } from '../api/shop'
 import { NextPromotionCard } from './NextPromotionCard'
 import { importPromotionProduct } from '../data/pos'
 import { changeRate, formatNumber, formatRate, won } from '../data/shop'
@@ -42,9 +42,11 @@ export function PromotionImpactPanel({ auth, planId }: { auth: string; planId: s
     setNotice('')
     try {
       const totals = await importPromotionProduct(file, result.productName, period.start, period.end)
-      setResult(await savePromotionImpact(auth, planId, {phase, ...period, ...totals}))
+      const saved = await savePromotionImpact(auth, planId, {phase, ...period, ...totals})
+      setResult(saved)
       form.reset()
-      setNotice(phase === 'BEFORE' ? '행사 전 POS 집계를 저장했어요.' : '홍보 게시 후 POS 집계를 저장했어요.')
+      const message = phase === 'BEFORE' ? '행사 전 POS 집계를 저장했어요.' : '홍보 게시 후 POS 집계를 저장했어요.'
+      setNotice(result.actuals && !saved.actuals ? message + ' 집계가 바뀌어 실제 할인 수량과 원가를 다시 입력해 주세요.' : message)
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'POS 집계를 저장하지 못했어요.')
     } finally {
@@ -62,6 +64,28 @@ export function PromotionImpactPanel({ auth, planId }: { auth: string; planId: s
       if (!update) setNotice('다음 행사 점검표를 만들었어요.')
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : '다음 행사 점검표를 저장하지 못했어요.')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  async function saveActuals(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (pending) return
+    const form = new FormData(event.currentTarget)
+    const actuals: PromotionActuals = {
+      discountedQuantity: Number(form.get('discountedQuantity')),
+      beforeUnitCost: Number(form.get('beforeUnitCost')),
+      afterUnitCost: Number(form.get('afterUnitCost')),
+    }
+    setPending(true)
+    setError('')
+    setNotice('')
+    try {
+      setResult(await savePromotionActuals(auth, planId, actuals))
+      setNotice('실제 할인 수량과 개당 원가를 저장했어요.')
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : '실제 할인 수량과 원가를 저장하지 못했어요.')
     } finally {
       setPending(false)
     }
@@ -103,9 +127,36 @@ export function PromotionImpactPanel({ auth, planId }: { auth: string; planId: s
       {result.beforeTotals && result.afterTotals && result.beforeTotals.recordedDays !== result.afterTotals.recordedDays &&
         <p className="muted">두 파일의 주문 기록일 수가 달라요. 합계를 해석하기 전에 영업일과 내보낸 기간을 확인해 주세요.</p>}
       <p className="muted">결제 완료된 주문의 수량과 실판매금액을 합산해요. 기간 중 관측된 변화를 보여줘요.</p>
+      {result.beforeTotals && result.afterTotals &&
+        <form className="receipt form-stack" aria-label="실제 할인과 원가" onSubmit={event => void saveActuals(event)}
+          key={JSON.stringify([planId, result.beforeTotals, result.afterTotals, result.actuals])}>
+          <h3>실제 할인과 원가</h3>
+          <p>두 POS 비교 기간에 해당하는 값을 입력해 주세요. 할인이 적용된 판매가 없으면 수량에 0을 입력해 주세요.</p>
+          <div className="result-form-grid">
+            <label>실제 할인 적용 수량 (개)
+              <input name="discountedQuantity" type="number" min={0} max={result.afterTotals.quantity} step={1}
+                defaultValue={result.actuals?.discountedQuantity} required disabled={pending} />
+            </label>
+            <label>행사 전 개당 원가 (원)
+              <input name="beforeUnitCost" type="number" min={0} max={Number.MAX_SAFE_INTEGER} step={1}
+                defaultValue={result.actuals?.beforeUnitCost} required disabled={pending} />
+            </label>
+            <label>행사 후 개당 원가 (원)
+              <input name="afterUnitCost" type="number" min={0} max={Number.MAX_SAFE_INTEGER} step={1}
+                defaultValue={result.actuals?.afterUnitCost} required disabled={pending} />
+            </label>
+          </div>
+          <button type="submit" className="button secondary small" disabled={pending}>실제 할인과 원가 저장</button>
+          {result.profit && <table className="input-table" aria-label="품목 매출총이익 비교">
+            <thead><tr><th scope="col">지표</th><th scope="col">행사 전</th><th scope="col">행사 후</th><th scope="col">변화</th></tr></thead>
+            <tbody><tr><th scope="row">품목 매출총이익</th><td>{won(result.profit.beforeWon)}</td>
+              <td>{won(result.profit.afterWon)}</td><td>{result.profit.changeWon > 0 ? '+' : ''}{won(result.profit.changeWon)}</td></tr></tbody>
+          </table>}
+          <p className="muted">품목 매출총이익은 실판매금액에서 판매량 × 개당 원가를 뺀 값이에요. 실판매금액에 반영된 할인은 다시 빼지 않아요. 인건비와 임대료 등 운영비는 포함되지 않아요.</p>
+        </form>}
       {result.beforeTotals && result.afterTotals && result.advice &&
         <NextPromotionCard auth={auth} planId={planId} before={result.beforeTotals} after={result.afterTotals}
-          advice={result.advice} checklist={result.nextChecklist} pending={pending}
+          advice={result.advice} actuals={result.actuals} profit={result.profit} checklist={result.nextChecklist} pending={pending}
           onCreate={() => void saveChecklist()}
           onToggle={(item, completed) => void saveChecklist({ item, completed })} />}
     </>}

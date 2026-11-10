@@ -327,10 +327,12 @@ export type PromotionImpactPeriod = { start: string; end: string }
 export type PromotionImpactTotals = { quantity: number; amount: number; recordedDays: number }
 export type NextPromotionChecklistItem = 'DISCOUNT_QUANTITY' | 'ACTUAL_COST' | 'UPLOAD_POS'
 export type PromotionImpactAdvice = {
-  action: 'RETEST' | 'REVIEW_TERMS' | 'CHECK_DATA'
+  action: 'RETEST' | 'KEEP_TERMS' | 'REVIEW_TERMS' | 'CHECK_DATA'
   beforeAveragePrice: number | null
   afterAveragePrice: number | null
 }
+export type PromotionActuals = { discountedQuantity: number; beforeUnitCost: number; afterUnitCost: number }
+export type PromotionProfit = { beforeWon: number; afterWon: number; changeWon: number }
 export type PromotionImpact = {
   productName: string | null
   before: PromotionImpactPeriod | null
@@ -340,6 +342,8 @@ export type PromotionImpact = {
   afterReady: boolean
   message: string | null
   advice: PromotionImpactAdvice | null
+  actuals: PromotionActuals | null
+  profit: PromotionProfit | null
   nextChecklist: Partial<Record<NextPromotionChecklistItem, boolean>> | null
 }
 const promotionImpactPath = (planId: string) => `/api/plans/${encodeURIComponent(planId)}/promotion-impact`
@@ -350,11 +354,14 @@ export const savePromotionImpact = (auth: string, planId: string,
   request<PromotionImpact>(promotionImpactPath(planId), auth, 'PUT', input)
 
 export type NextPromotionExplanation = {
-  input: { before: PromotionImpactTotals; after: PromotionImpactTotals; advice: PromotionImpactAdvice }
+  input: { before: PromotionImpactTotals; after: PromotionImpactTotals; advice: PromotionImpactAdvice; actuals: PromotionActuals | null; profit: PromotionProfit | null }
   explanation: string | null
 }
 export const fetchNextPromotionExplanation = (auth: string, planId: string, signal: AbortSignal) =>
   request<NextPromotionExplanation>(promotionImpactPath(planId) + '/next-explanation', auth, 'GET', undefined, signal)
+
+export const savePromotionActuals = (auth: string, planId: string, actuals: PromotionActuals) =>
+  request<PromotionImpact>(promotionImpactPath(planId) + '/actuals', auth, 'PUT', actuals)
 
 export const saveNextPromotionChecklist = (auth: string, planId: string,
   update: { item: NextPromotionChecklistItem; completed: boolean } | Record<string, never>) =>
