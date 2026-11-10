@@ -2,6 +2,7 @@ package com.jejushopbuddy.analysis;
 
 import com.jejushopbuddy.analysis.SalesAnalysisController.AnalysisResponse;
 import com.jejushopbuddy.analysis.SalesAnalysisController.MonthlySale;
+import com.jejushopbuddy.analysis.SalesAnalysisController.ProductSale;
 import com.jejushopbuddy.analysis.SalesAnalysisController.TimeSeries;
 import com.jejushopbuddy.analysis.SalesAnalysisController.TimeSlot;
 import java.sql.ResultSet;
@@ -50,9 +51,17 @@ class SalesAnalysisReader {
                 .param("id", id)
                 .query((rs, row) -> new MonthlySale(month(rs, "sales_month"), rs.getLong("amount")))
                 .list();
+        var products = jdbc.sql("""
+                SELECT product_name, before_quantity, after_quantity FROM analysis_product_sales
+                WHERE analysis_id = :id ORDER BY after_quantity DESC, before_quantity DESC, product_name COLLATE "C"
+                """)
+                .param("id", id)
+                .query((rs, row) -> new ProductSale(rs.getString("product_name"),
+                        rs.getLong("before_quantity"), rs.getLong("after_quantity")))
+                .list();
         var saved = analysis.get();
         return Optional.of(new AnalysisResponse(id, saved.storeId(), saved.concern(), saved.beforeMonth(),
-                saved.afterMonth(), monthly, findTimeSeries(id).orElse(null), saved.createdAt()));
+                saved.afterMonth(), monthly, findTimeSeries(id).orElse(null), products, saved.createdAt()));
     }
 
     private Optional<TimeSeries> findTimeSeries(UUID id) {
