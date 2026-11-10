@@ -1,7 +1,7 @@
 import { ReviewInsights, SavedReviewInsights } from '../components/ReviewInsights'
 import { ChartQuestions } from '../components/ChartQuestions'
 import type { Plan } from '../data/shop'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router'
 import { Citrus, PageTitle } from '../components/ui'
@@ -91,9 +91,9 @@ function TimeChart({ series, labels, format, highlight }: {
   </>
 }
 
-function Questions({ topic, period, showExample, onClose }: { topic: Topic; period: string; showExample: boolean; onClose: () => void }) {
+function Questions({ topic, period, onClose }: { topic: Topic; period: string; onClose: () => void }) {
   const [draft, setDraft] = useState('')
-  const [asked, setAsked] = useState(showExample ? topic.suggestion : '')
+  const [asked, setAsked] = useState('')
 
   function ask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -172,11 +172,12 @@ export function Dashboard({ data, auth, analysisId, onChange, onPlan, onSaveTime
   onSaveTimeSeries: (value: TimeSeries) => Promise<void>
   strategyTo: string
 }) {
-  const [question, setQuestion] = useState<{ topic: Topic; showExample: boolean }>()
+  const [question, setQuestion] = useState<Topic>()
+  const [chatOpen, setChatOpen] = useState(false)
   const [timeOpen, setTimeOpen] = useState(false)
-  const panel = useRef<HTMLElement>(null)
+  const chatPanel = useRef<HTMLDivElement>(null)
   const questionTrigger = useRef<HTMLButtonElement>(null)
-  const previewQuestion = useRef<HTMLButtonElement>(null)
+  const chatLauncher = useRef<HTMLButtonElement>(null)
   const [before, after] = data.monthly.slice(-2)
   const monthlyMax = Math.max(1, ...data.monthly.map(({ amount }) => amount))
   const period = `${monthLabel(before.month)} → ${monthLabel(after.month)}`
@@ -278,24 +279,33 @@ export function Dashboard({ data, auth, analysisId, onChange, onPlan, onSaveTime
     figure: bsi ? `${bsi.before} → ${bsi.after}` : undefined,
     source: '소상공인시장진흥공단',
   }
-  const topics = [monthlyTopic, comparisonTopic, timeTopic, bsiTopic]
   const saved = Boolean(auth && analysisId)
   const suggestedTopic = series ? timeTopic : market ? comparisonTopic : monthlyTopic
 
-  function openTopic(value: Topic, button: HTMLButtonElement, showExample = false) {
+  function openTopic(topic: Topic, button: HTMLButtonElement) {
     questionTrigger.current = button
-    setQuestion({ topic: value, showExample })
-    requestAnimationFrame(() => panel.current?.focus())
+    setQuestion(topic)
+    setChatOpen(true)
+    requestAnimationFrame(() => chatPanel.current?.focus())
   }
 
-  function closeTopic() {
-    setQuestion(undefined)
+  const closeTopic = useCallback(() => {
+    setChatOpen(false)
     requestAnimationFrame(() => {
       const trigger = questionTrigger.current
       if (trigger?.isConnected) trigger.focus()
-      else previewQuestion.current?.focus()
+      else chatLauncher.current?.focus()
     })
-  }
+  }, [])
+
+  useEffect(() => {
+    if (!chatOpen || timeOpen) return
+    function onEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape' && !event.defaultPrevented) closeTopic()
+    }
+    window.addEventListener('keydown', onEscape)
+    return () => window.removeEventListener('keydown', onEscape)
+  }, [chatOpen, timeOpen, closeTopic])
 
   return <>
     <PageTitle title="매출 분석" detail={`${data.store} · ${period}${data.demo ? ' · 시연 예시' : ''}`} />
@@ -390,52 +400,58 @@ export function Dashboard({ data, auth, analysisId, onChange, onPlan, onSaveTime
           </> : <p className="muted">상품 주문 시트가 포함된 POS 엑셀로 분석하면 품목별 판매량을 볼 수 있어요.</p>}
         </section>
       </div>
-      <aside tabIndex={-1} ref={panel} className="dashboard-aside form-stack">
-        {auth && analysisId && <ChartQuestions auth={auth} analysisId={analysisId}
-          chart={question?.topic.chart} title={question?.topic.title} suggestion={question?.topic.suggestion}
-          period={period} strategyTo={strategyTo} onClose={closeTopic} onTime={() => setTimeOpen(true)}
-          onReviews={() => {
-            setQuestion(undefined)
-            requestAnimationFrame(() => document.getElementById('review-heading')?.scrollIntoView({ block: 'center' }))
-          }}
-          onRestore={(chart) => {
-            const topic = topics.find((item) => item.chart === chart) ?? monthlyTopic
-            setQuestion((current) => current ?? { topic, showExample: false })
-          }} />}
-        {question && !saved && <Questions key={question.topic.title} topic={question.topic} showExample={question.showExample} period={period} onClose={closeTopic} />}
-        {!question && <>
-          <section className="receipt dashboard-receipt">
-            <div className="section-top"><h2>짝꿍의 한눈 요약</h2><Citrus stamp /></div>
-            <p className="dashboard-summary">{biggestDrop
-              ? <><strong>{biggestDrop.label}</strong>에 {unit} 감소 폭이 가장 컸어요.</>
-              : summary}</p>
-            {biggestDrop && <p className="muted">{formatTime(biggestDrop.before)} → {formatTime(biggestDrop.after)}</p>}
-          </section>
-          {data.demo && data.reviews && <ReviewInsights
-            store={data.store}
-            reviews={data.reviews}
-            onReviews={(reviews) => onChange({ ...data, reviews })}
-            onPlan={onPlan}
-          />}
-          {auth && analysisId && <SavedReviewInsights auth={auth} analysisId={analysisId} store={data.store} onPlan={onPlan} />}
-          <section className="ruled-block dashboard-bsi">
-            <div className="section-top"><h2>제주 경기동향</h2><AskButton label="제주 경기동향 차트 질문" onClick={(button) => openTopic(bsiTopic, button)} /></div>
-            {bsi
-              ? <BsiChart months={[before.month, after.month]} values={[bsi.before, bsi.after]} />
-              : <p className="muted">{missingContext ?? '비교한 두 달의 제주 체감 BSI 자료가 없어요.'}</p>}
-          </section>
-          <section className="question-panel dashboard-question-preview">
-            <h2>짝꿍에게 질문하기</h2>
-            <button ref={previewQuestion} type="button" className="chip" onClick={(event) => openTopic(suggestedTopic, event.currentTarget, true)}>{suggestedTopic.suggestion}</button>
-          </section>
-        </>}
+      <aside className="dashboard-aside form-stack">
+        <section className="receipt dashboard-receipt">
+          <div className="section-top"><h2>짝꿍의 한눈 요약</h2><Citrus stamp /></div>
+          <p className="dashboard-summary">{biggestDrop
+            ? <><strong>{biggestDrop.label}</strong>에 {unit} 감소 폭이 가장 컸어요.</>
+            : summary}</p>
+          {biggestDrop && <p className="muted">{formatTime(biggestDrop.before)} → {formatTime(biggestDrop.after)}</p>}
+        </section>
+        {data.demo && data.reviews && <ReviewInsights
+          store={data.store}
+          reviews={data.reviews}
+          onReviews={(reviews) => onChange({ ...data, reviews })}
+          onPlan={onPlan}
+        />}
+        {auth && analysisId && <SavedReviewInsights auth={auth} analysisId={analysisId} store={data.store} onPlan={onPlan} />}
+        <section className="ruled-block dashboard-bsi">
+          <div className="section-top"><h2>제주 경기동향</h2><AskButton label="제주 경기동향 차트 질문" onClick={(button) => openTopic(bsiTopic, button)} /></div>
+          {bsi
+            ? <BsiChart months={[before.month, after.month]} values={[bsi.before, bsi.after]} />
+            : <p className="muted">{missingContext ?? '비교한 두 달의 제주 체감 BSI 자료가 없어요.'}</p>}
+        </section>
         <Link className="button primary full dashboard-next" to={strategyTo}>대응 전략 보기 <span aria-hidden="true">→</span></Link>
       </aside>
+    </div>
+    <div className="dashboard-chat-widget">
+      <div id="dashboard-chat-panel" className="dashboard-chat-window" ref={chatPanel}
+        hidden={!chatOpen} tabIndex={-1}>
+        {question && (auth && analysisId ? <ChartQuestions auth={auth} analysisId={analysisId}
+          chart={question.chart} title={question.title} suggestion={question.suggestion}
+          period={period} strategyTo={strategyTo} onClose={closeTopic} onTime={() => setTimeOpen(true)}
+          onReviews={() => {
+            setChatOpen(false)
+            requestAnimationFrame(() => {
+              const heading = document.getElementById('review-heading')
+              heading?.focus({ preventScroll: true })
+              heading?.scrollIntoView({ block: 'center' })
+            })
+          }} /> : <Questions key={question.chart} topic={question} period={period} onClose={closeTopic} />)}
+      </div>
+      <button ref={chatLauncher} type="button" className="dashboard-chat-launcher"
+        aria-label={chatOpen ? '짝꿍 대화 닫기' : '짝꿍 대화 열기'} aria-expanded={chatOpen}
+        aria-controls="dashboard-chat-panel" aria-describedby={chatOpen ? undefined : 'dashboard-chat-tip'}
+        onClick={(event) => chatOpen ? closeTopic() : openTopic(question ?? suggestedTopic, event.currentTarget)}>
+        <Citrus />
+      </button>
+      {!chatOpen && <span id="dashboard-chat-tip" role="tooltip" className="dashboard-chat-tooltip">
+        궁금한 건 짝꿍에게 질문하세요!
+      </span>}
     </div>
     {timeOpen && <TimeDialog monthly={data.monthly} initial={series} onClose={() => setTimeOpen(false)} onSave={async (value) => {
       await onSaveTimeSeries(value)
       setTimeOpen(false)
-      if (!saved) setQuestion(undefined)
     }} />}
   </>
 }
