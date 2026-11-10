@@ -1,0 +1,221 @@
+import json
+import os
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from fastapi.testclient import TestClient
+
+from strategy_agent import api
+from strategy_agent.chart_question import build_question_graph
+from strategy_agent.chart_question_schemas import QuestionIntent
+
+AGENT = Path(__file__).resolve().parents[1]
+PERIOD = {"before": "2021-04", "after": "2021-05"}
+QUESTIONS = [
+    ("우리 가게 매출이 얼마나 줄었고 주변도 비슷했나요?", ["SALES", "MARKET"], {}),
+    ("제주 경기는 어땠고, 우리 가게는 언제 많이 줄었어요?", ["BSI", "TIME_SLOT"], {}),
+    ("그럼 그 시간대에 뭘 먼저 확인해요?", ["TIME_SLOT", "STRATEGY", "GUIDE"], {}),
+    ("그때 리뷰에도 오후 주문 안내 불편이 있었나요?", ["REVIEWS"], {"reviewTopic": "AFTERNOON_ORDER"}),
+    ("그 계획을 실행한 뒤 좋아졌나요?", ["PLAN", "RESULT"], {}),
+]
+
+
+def fixture(mode="pos"):
+    sales = json.loads((AGENT / "tests/fixtures" / f"aewol-{mode}.json").read_text(encoding="utf-8"))
+    catalog = json.loads((AGENT / "strategy_agent/execution_guide_catalog.json").read_text(encoding="utf-8"))
+    labels = {"DEMO_POS": "애월 가상 한식당 POS", "MANUAL_MONTHLY": "사업주 월별 직접 입력",
+              "JEJU_DATAHUB": "제주데이터허브", "SEMAS_BSI": "소상공인시장진흥공단"}
+    urls = {"JEJU_DATAHUB": "https://data.edmgr.kr/dataView.do?id=jejudatahub-net-748",
+            "SEMAS_BSI": "https://www.data.go.kr/data/3060077/fileData.do"}
+    metrics = []
+    for row in sales["evidence"]:
+        fact = {key: value for key, value in row.items() if key not in {"source", "type"}}
+        fact.update(kind="METRIC", metric=row["type"], chart=row["type"], period=PERIOD,
+                    source={"label": labels.get(row["source"], row["source"]), "url": urls.get(row["source"])})
+        metrics.append(fact)
+    guides = [
+        {"id": f"g{index}", "kind": "GUIDE", "label": doc["title"], "action": doc["chunks"][0]["action"],
+         "when": "네이버 예약·주문을 이용하는 경우" if index == 2 else None,
+         "source": {"label": doc["publisher"], "url": doc["url"]}}
+        for index, doc in enumerate(catalog["documents"], start=1)
+    ]
+    reviews = [
+        {"id": key, "kind": "REVIEW", "date": day, "topic": topic, "excerpt": excerpt,
+         "source": {"label": "매장 등록 가상 리뷰"}}
+        for key, day, topic, excerpt in [
+            ("r1", "2021-05-12", "AFTERNOON_ORDER", "오후에 식사 주문을 받는지 헷갈렸어요."),
+            ("r2", "2021-05-19", "AFTERNOON_ORDER", "쉬는 시간인지 주문 가능한 시간인지 구분하기 어려웠어요."),
+            ("r3", "2021-06-02", "AFTERNOON_ORDER", "오후 주문 시간이 헷갈렸어요."),
+            ("r4", "2021-05-20", "PARKING", "주차장 입구를 찾기 어려웠어요."),
+            ("r5", "2021-05-21", "WAIT_TIME", "예상보다 기다리는 시간이 길었어요."),
+        ]
+    ]
+    plan = {"id": "p1", "kind": "PLAN", "planId": "plan-1", "label": "주문 안내 점검하기",
+            "strategyCode": "OUTREACH", "completed": 1, "total": 4, "source": {"label": "저장된 실행 계획"}}
+    result = {
+        "id": "x1", "kind": "RESULT", "planId": "plan-1", "scope": "같은 요일 오후 2~5시",
+        "before": {"start": "2026-11-03", "end": "2026-11-09", "businessDays": 5},
+        "after": {"start": "2026-11-10", "end": "2026-11-16", "businessDays": 5},
+        "dailyAverageSales": {"before": 100000, "after": 150000, "unit": "KRW", "changePercent": 50.0},
+        "dailyAveragePayments": {"before": 6, "after": 8, "unit": "COUNT", "changePercent": 33.33},
+        "source": {"label": "저장된 실행 결과 · 시연용 가상 입력"},
+    }
+    strategy = {"id": "s1", "kind": "STRATEGY", "code": "OUTREACH", "label": plan["label"],
+                "reason": "감소한 구간에 실제 주문 가능 시간과 공개 안내를 대조해 보세요.",
+                "evidenceIds": ["e1", "e2", "e3"] if mode == "pos" else ["e1", "e3"],
+                "source": {"label": "저장된 추천 전략"}}
+    return {
+        "schemaVersion": "1.0", "chart": "MONTHLY_SALES",
+        "context": {"comparisonPeriod": list(PERIOD.values())},
+        "availableEvidence": [*metrics, strategy, *guides, *reviews, plan, result],
+        "allowedActions": [
+            {"type": kind, "targetId": target}
+            for kind, target in [
+                ("OPEN_STRATEGY", "OUTREACH"), ("OPEN_EXECUTION_GUIDE", "OUTREACH"),
+                ("OPEN_REVIEWS", "AFTERNOON_ORDER"), ("OPEN_REVIEWS", "PARKING"),
+                ("OPEN_PLAN_RESULTS", "plan-1"), ("ADD_TIME_SERIES", "AMOUNT"), ("SELECT_PLAN", "plan-1"),
+            ]
+        ],
+    }
+
+
+def classified(intents, **kwargs):
+    return QuestionIntent.model_validate({
+        "intents": intents, "timeMetric": None, "reviewTopic": None, "strategyCode": None,
+        "focusEvidenceId": None, "reviewPeriod": None, "largestTimeDrop": False, "resultMetric": None,
+        **kwargs,
+    })
+
+
+class ChartQuestionTest(unittest.TestCase):
+    def ask(self, payload, question, intent=None):
+        graph = build_question_graph(lambda _: intent) if intent else api.question_graph
+        with patch.object(api, "question_graph", graph):
+            response = TestClient(api.app).post("/internal/chart-questions", json={**payload, "question": question})
+        self.assertEqual(response.status_code, 200, response.text)
+        answer = response.json()
+        originals = {fact["id"]: fact for fact in payload["availableEvidence"]}
+        returned = {fact["id"]: fact for fact in answer["evidence"]}
+        self.assertEqual(set(returned), {key for section in answer["sections"] for key in section["evidenceIds"]})
+        for key, fact in returned.items():
+            for field, value in originals[key].items():
+                if field == "source":
+                    self.assertEqual({k: fact[field][k] for k in value}, value)
+                else:
+                    self.assertEqual(fact[field], value)
+        self.assertTrue(all(action in payload["allowedActions"] for action in answer["actions"]))
+        return answer
+
+    def assert_text(self, answer, *expected):
+        text = "\n".join(section["text"] for section in answer["sections"])
+        for word in expected:
+            self.assertIn(word, text)
+
+    def aewol_conversation(self, live):
+        payload = fixture()
+        answers = []
+        questions = []
+        for question, intents, options in QUESTIONS:
+            answer = self.ask(payload, question, None if live else classified(intents, **options))
+            self.assertEqual(answer["status"], "ANSWERED", answer)
+            questions.append(question)
+            payload["context"].update(focusedEvidenceIds=answer["focusedEvidenceIds"], recentQuestions=questions.copy())
+            answers.append(answer)
+        sales, bsi, guide, reviews, result = answers
+        self.assert_text(sales, "32,379,500원", "29,581,000원", "-8.64%", "2,049,456,994원", "2,199,885,864원", "+7.34%")
+        self.assert_text(bsi, "63.1", "64.4", "+1.3p", "오후 2~5시 결제 건수", "337건", "189건")
+        self.assert_text(guide, "주문 안내 점검하기", "라스트오더", "네이버 예약·주문을 이용하는 경우")
+        self.assertEqual({fact["id"] for fact in guide["evidence"] if fact["kind"] == "GUIDE"}, {"g1", "g2"})
+        self.assertEqual([fact["id"] for fact in reviews["evidence"]], ["r1", "r2"])
+        self.assert_text(reviews, "2021-04 ~ 2021-05", "2건")
+        self.assertEqual(result["planId"], "plan-1")
+        self.assert_text(result, "4개 중 1개", "100,000원", "150,000원", "+50.00%", "6건", "8건", "+33.33%")
+
+    def test_aewol_conversation(self):
+        self.aewol_conversation(live=False)
+
+    def test_monthly_only_and_count_instead_of_amount(self):
+        question = "몇 시에 매출이 가장 많이 줄었어요?"
+        intent = classified(["TIME_SLOT"], timeMetric="KRW", largestTimeDrop=True)
+        missing = self.ask(fixture("monthly"), question, intent)
+        self.assertEqual(missing["status"], "MISSING_DATA")
+        self.assertEqual(missing["missingInputs"][0]["code"], "TIME_SERIES_AMOUNT")
+        self.assertEqual(missing["actions"], [{"type": "ADD_TIME_SERIES", "targetId": "AMOUNT"}])
+        partial = self.ask(fixture(), question, intent)
+        self.assertEqual(partial["status"], "PARTIAL")
+        self.assert_text(partial, "시간대별 매출액", "결제 건수", "189건")
+        overlapping_intent = classified(["TIME_SLOT", "SALES"], largestTimeDrop=True)
+        answer = self.ask(fixture("monthly"), question, overlapping_intent)
+        self.assertEqual(answer["status"], "MISSING_DATA")
+        self.assertEqual(answer["evidence"], [])
+        self.assertEqual(answer["missingInputs"][0]["code"], "TIME_SERIES_AMOUNT")
+        combined = self.ask(fixture("monthly"), "월별 매출과 매출이 가장 많이 줄어든 시간대를 알려주세요.",
+                            classified(["SALES", "TIME_SLOT"], timeMetric="KRW"))
+        self.assertEqual(combined["status"], "PARTIAL")
+        self.assertEqual([fact["metric"] for fact in combined["evidence"]], ["MONTHLY_SALES"])
+
+    def test_partial_market_and_missing_operational_data(self):
+        payload = fixture()
+        for fact in payload["availableEvidence"]:
+            if fact["id"] in {"e3", "e4"}:
+                fact["after"] = None
+        answer = self.ask(payload, "매출과 상권·BSI, 판매량·원가·재고도 알려줘",
+                          classified(["SALES", "MARKET", "BSI", "ITEM_SALES", "COST", "STOCK"]))
+        self.assertEqual(answer["status"], "PARTIAL")
+        self.assertEqual([fact["id"] for fact in answer["evidence"]], ["e1"])
+        self.assertEqual({entry["code"] for entry in answer["missingInputs"]},
+                         {"MARKET_CARD_SALES", "JEJU_BSI", "ITEM_SALES", "UNIT_COST", "STOCK"})
+
+    def test_review_topic_and_explicit_period(self):
+        for topic, key in [("PARKING", "r4"), ("WAIT_TIME", "r5")]:
+            answer = self.ask(fixture(), "그때 리뷰 불편은?", classified(["REVIEWS"], reviewTopic=topic))
+            self.assertEqual([fact["id"] for fact in answer["evidence"]], [key])
+        period = {"before": "2021-06", "after": "2021-06"}
+        answer = self.ask(fixture(), "6월 주문 안내 리뷰는?", classified(["REVIEWS"], reviewPeriod=period))
+        self.assertEqual([fact["id"] for fact in answer["evidence"]], ["r3"])
+        answer = self.ask(fixture(), "6월 주차 리뷰는?", classified(["REVIEWS"], reviewPeriod=period, reviewTopic="PARKING"))
+        self.assertEqual(answer["status"], "MISSING_DATA")
+        self.assert_text(answer, "2021-06 ~ 2021-06")
+
+    def test_ambiguous_plan_and_no_result_for_selected_plan(self):
+        payload = fixture()
+        other_plan = {"id": "p2", "kind": "PLAN", "planId": "plan-2", "completed": 0, "total": 2}
+        payload["availableEvidence"].append(other_plan)
+        intent = classified(["RESULT"], focusEvidenceId="p2")
+        answer = self.ask(payload, "실행 결과는 어땠나요?", intent)
+        self.assertEqual(answer["status"], "CLARIFICATION_REQUIRED")
+        self.assertEqual(answer["actions"], [{"type": "SELECT_PLAN", "targetId": "plan-1"}])
+        payload["context"]["planId"] = "plan-2"
+        answer = self.ask(payload, "그 계획의 결과는?", intent)
+        self.assertEqual(answer["status"], "PARTIAL")
+        self.assertEqual([fact["id"] for fact in answer["evidence"]], ["p2"])
+        self.assertEqual(answer["missingInputs"][0]["code"], "RESULT")
+
+    def test_missing_official_guide_and_out_of_scope(self):
+        payload = fixture()
+        answer = self.ask(payload, "재고 전략 공식 링크 알려줘", classified(["GUIDE"], strategyCode="INVENTORY"))
+        self.assertEqual(answer["status"], "MISSING_DATA")
+        self.assertEqual(answer["missingInputs"][0]["code"], "OFFICIAL_GUIDE")
+        self.assertEqual(answer["evidence"], [])
+        answer = self.ask(payload, "매장과 상관없는 질문", classified(["OUT_OF_SCOPE"]))
+        self.assertEqual(answer["status"], "OUT_OF_SCOPE")
+        self.assertEqual(answer["actions"], [])
+
+    def test_model_failure_is_service_unavailable(self):
+        def unavailable(_):
+            raise TimeoutError
+
+        with patch.object(api, "question_graph", build_question_graph(unavailable)):
+            response = TestClient(api.app).post("/internal/chart-questions", json={**fixture(), "question": "매출은?"})
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["detail"]["code"], "QA_UNAVAILABLE")
+
+    @unittest.skipUnless(os.getenv("RUN_LIVE_CHART_QA") == "1", "Live OpenAI verification is opt-in")
+    def test_live_aewol_and_missing_data(self):
+        self.aewol_conversation(live=True)
+        for _ in range(3):
+            answer = self.ask(fixture("monthly"), "몇 시에 매출이 가장 많이 줄었어요?")
+            self.assertEqual(answer["status"], "MISSING_DATA")
+            self.assertEqual(answer["evidence"], [])
+            self.assertEqual(answer["missingInputs"][0]["code"], "TIME_SERIES_AMOUNT")

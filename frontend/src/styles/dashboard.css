@@ -77,6 +77,12 @@
 .dashboard-chat-heading { padding-bottom: .45rem; border-bottom: 1px solid var(--line); }
 .dashboard-chat-heading h2 { display: flex; align-items: center; gap: .3rem; }
 .dashboard-chat-figure { color: var(--green); background: var(--pale-green); padding: .35rem .45rem; border-radius: 4px; font-weight: 800; }
+.chart-question-history { max-height: 36rem; overflow-y: auto; }
+.chart-question-evidence, .chart-question-missing { margin: .65rem 0; padding: .55rem; border: 1px solid var(--line); border-radius: 6px; overflow-wrap: anywhere; }
+.chart-question-evidence summary { cursor: pointer; font-weight: 700; }
+.chart-question-evidence li, .chart-question-missing li { margin: .35rem 0; }
+.chart-question-evidence small { display: block; }
+.chart-question-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
 .dashboard-next { min-height: 3.1rem; }
 
 @media (max-width: 800px) {
