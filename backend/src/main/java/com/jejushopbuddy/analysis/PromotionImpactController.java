@@ -1,11 +1,14 @@
 package com.jejushopbuddy.analysis;
 
 import com.jejushopbuddy.analysis.SalesAnalysisController.ApiError;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.security.Principal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
@@ -71,6 +74,35 @@ class PromotionImpactController {
                 new Plan(plan.product(), plan.start(), plan.end(), plan.state(), plan.publishedAt(), saved.get())));
     }
 
+    @PutMapping("/next-checklist")
+    ResponseEntity<?> saveNextChecklist(@PathVariable UUID planId, @RequestBody ChecklistUpdate update, Principal owner) {
+        var plan = find(planId, owner.getName());
+        if (plan == null) return notFound();
+        var comparison = comparison(plan);
+        if (comparison.advice() == null) return invalid("행사 전후 POS를 모두 저장해 주세요.");
+        if ((update.item() == null) != (update.completed() == null)) return invalid("점검 항목과 완료 여부를 확인해 주세요.");
+
+        var changes = update.item() == null ? Map.of() : Map.of(update.item().name(), update.completed());
+        var saved = jdbc.sql("""
+                UPDATE execution_plans p
+                SET promotion_impact = jsonb_set(p.promotion_impact, '{nextChecklist}',
+                    COALESCE(p.promotion_impact->'nextChecklist', '{}'::jsonb) || CAST(:changes AS jsonb))
+                FROM sales_analyses a, stores s, owners o
+                WHERE p.id=:id AND p.strategy_code='PROMOTION' AND p.analysis_id=a.id
+                  AND a.store_id=s.id AND s.owner_id=o.id AND o.email=:email
+                  AND p.instagram_publication->>'state'='PUBLISHED'
+                  AND p.promotion_impact->'before' IS NOT NULL AND p.promotion_impact->'after' IS NOT NULL
+                  AND (:create OR p.promotion_impact->'nextChecklist' IS NOT NULL)
+                RETURNING p.promotion_impact
+                """)
+                .param("changes", json.writeValueAsString(changes)).param("id", planId)
+                .param("email", owner.getName()).param("create", update.item() == null)
+                .query(String.class).optional();
+        if (saved.isEmpty()) return invalid("먼저 다음 행사 점검표를 만들어 주세요.");
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(comparison(
+                new Plan(plan.product(), plan.start(), plan.end(), plan.state(), plan.publishedAt(), saved.get())));
+    }
+
     private Plan find(UUID id, String email) {
         return jdbc.sql("""
                 SELECT p.promotion_review->>'productName' AS product, p.start_date, p.end_date,
@@ -98,14 +130,29 @@ class PromotionImpactController {
             return unavailable(plan, "게시 다음 날부터 행사 종료일까지 비교할 날짜가 없어요.");
         }
         long shift = (ChronoUnit.DAYS.between(plan.start(), plan.end()) / 7 + 1) * 7;
-        var snapshot = plan.snapshot() == null ? new Snapshot(null, null) : json.readValue(plan.snapshot(), Snapshot.class);
+        var snapshot = plan.snapshot() == null ? new Snapshot(null, null, null) : json.readValue(plan.snapshot(), Snapshot.class);
         return new Comparison(plan.product(), new Period(afterStart.minusDays(shift), plan.end().minusDays(shift)),
                 new Period(afterStart, plan.end()), snapshot.before(), snapshot.after(),
-                plan.end().isBefore(LocalDate.now(SEOUL)), null);
+                plan.end().isBefore(LocalDate.now(SEOUL)), null, advice(snapshot.before(), snapshot.after()),
+                snapshot.nextChecklist());
+    }
+
+    private static Advice advice(Totals before, Totals after) {
+        if (before == null || after == null) return null;
+        var action = before.recordedDays() != after.recordedDays() || before.quantity() == 0
+                ? NextAction.CHECK_DATA
+                : after.amount() > before.amount() && after.quantity() > before.quantity()
+                    ? NextAction.RETEST : NextAction.REVIEW_TERMS;
+        return new Advice(action, averagePrice(before), averagePrice(after));
+    }
+
+    private static BigDecimal averagePrice(Totals totals) {
+        return totals.quantity() == 0 ? null : BigDecimal.valueOf(totals.amount())
+                .divide(BigDecimal.valueOf(totals.quantity()), 2, RoundingMode.HALF_UP);
     }
 
     private static Comparison unavailable(Plan plan, String message) {
-        return new Comparison(plan.product(), null, null, null, null, false, message);
+        return new Comparison(plan.product(), null, null, null, null, false, message, null, null);
     }
 
     private static boolean validTotal(Long value) {
@@ -124,8 +171,13 @@ class PromotionImpactController {
     record Upload(Phase phase, LocalDate start, LocalDate end, Long quantity, Long amount, Integer recordedDays) {}
     record Totals(long quantity, long amount, int recordedDays) {}
     record Period(LocalDate start, LocalDate end) {}
-    record Snapshot(Totals before, Totals after) {}
+    enum NextAction { RETEST, REVIEW_TERMS, CHECK_DATA }
+    enum ChecklistItem { DISCOUNT_QUANTITY, ACTUAL_COST, UPLOAD_POS }
+    record ChecklistUpdate(ChecklistItem item, Boolean completed) {}
+    record Advice(NextAction action, BigDecimal beforeAveragePrice, BigDecimal afterAveragePrice) {}
+    record Snapshot(Totals before, Totals after, Map<ChecklistItem, Boolean> nextChecklist) {}
     record Comparison(String productName, Period before, Period after, Totals beforeTotals, Totals afterTotals,
-                      boolean afterReady, String message) {}
+                      boolean afterReady, String message, Advice advice,
+                      Map<ChecklistItem, Boolean> nextChecklist) {}
     private record Plan(String product, LocalDate start, LocalDate end, String state, String publishedAt, String snapshot) {}
 }
