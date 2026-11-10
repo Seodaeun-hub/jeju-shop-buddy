@@ -68,10 +68,11 @@ class ChartQuestionController {
             throw new Failure(HttpStatus.CONFLICT, "QUESTION_ID_CONFLICT", "같은 요청 ID로 다른 질문을 보낼 수 없어요.");
         }
 
-        var planId = request.planId() != null ? request.planId() : rememberedPlan(analysisId, history);
+        var contextHistory = request.startFromChart() ? List.<Turn>of() : history;
+        var planId = request.planId() != null ? request.planId() : rememberedPlan(analysisId, contextHistory);
         var context = json.createObjectNode().put("planId", planId == null ? null : planId.toString());
         context.set("comparisonPeriod", json.valueToTree(List.of(analysis.beforeMonth(), analysis.afterMonth())));
-        var recent = history.subList(Math.max(0, history.size() - 5), history.size());
+        var recent = contextHistory.subList(Math.max(0, contextHistory.size() - 5), contextHistory.size());
         context.set("recentQuestions", json.valueToTree(recent.stream().map(Turn::question).toList()));
         var focus = new LinkedHashSet<String>();
         for (var turn : recent.reversed()) {
@@ -193,7 +194,7 @@ class ChartQuestionController {
         }
     }
 
-    record Question(UUID clientMessageId, UUID conversationId, String question, String chart, UUID planId) {}
+    record Question(UUID clientMessageId, UUID conversationId, String question, String chart, UUID planId, boolean startFromChart) {}
     record Turn(UUID conversationId, UUID turnId, UUID clientMessageId, String question, String chart, UUID requestedPlanId, JsonNode answer) {}
     record History(UUID conversationId, List<Turn> turns) {}
 }

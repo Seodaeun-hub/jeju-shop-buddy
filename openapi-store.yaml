@@ -1723,6 +1723,8 @@ components:
         reason:
           type: string
           description: 확인한 근거를 바탕으로 해당 행동을 제안하거나 보류한 이유
+        customerNotice:
+          $ref: '#/components/schemas/CustomerNotice'
         executionGuide:
           $ref: '#/components/schemas/ExecutionGuideSnapshot'
         nextAction:
@@ -1793,11 +1795,21 @@ components:
     StrategyCode:
       type: string
       enum: [OUTREACH, PROMOTION, INVENTORY]
+    CustomerNotice:
+      type: object
+      additionalProperties: false
+      required: [concern, text, placement]
+      properties:
+        concern: { type: string, minLength: 1, maxLength: 200 }
+        text: { type: string, minLength: 1, maxLength: 200 }
+        placement: { type: string, minLength: 1, maxLength: 200 }
     CreateExecutionPlanRequest:
       type: object
       additionalProperties: false
       required: [strategyCode, conditions]
       properties:
+        customerNotice:
+          $ref: '#/components/schemas/CustomerNotice'
         executionGuideId:
           type: string
           format: uuid

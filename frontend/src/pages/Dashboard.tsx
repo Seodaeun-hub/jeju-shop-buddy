@@ -1,6 +1,4 @@
-import { ReviewInsights, SavedReviewInsights } from '../components/ReviewInsights'
 import { ChartQuestions } from '../components/ChartQuestions'
-import type { Plan } from '../data/shop'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router'
@@ -168,17 +166,17 @@ function reviewExampleConcern(concern: string, before: Analysis['monthly'][numbe
   return { status: '추가 확인 필요', detail: '현재 매출 자료만으로 이 고민을 판단하기 어려워요.' }
 }
 
-export function Dashboard({ data, auth, analysisId, onChange, onPlan, onSaveTimeSeries, strategyTo }: {
+export function Dashboard({ data, auth, analysisId, onSaveTimeSeries, strategyTo }: {
   data: Analysis
   auth?: string
   analysisId?: string
-  onChange: (value: Analysis) => void
-  onPlan: (value: Plan) => void
   onSaveTimeSeries: (value: TimeSeries) => Promise<void>
   strategyTo: string
 }) {
   const [question, setQuestion] = useState<Topic>()
   const [chatOpen, setChatOpen] = useState(false)
+  const [chartEntry, setChartEntry] = useState<number>()
+  const nextChartEntry = useRef(0)
   const [timeOpen, setTimeOpen] = useState(false)
   const chatPanel = useRef<HTMLDivElement>(null)
   const questionTrigger = useRef<HTMLButtonElement>(null)
@@ -287,7 +285,8 @@ export function Dashboard({ data, auth, analysisId, onChange, onPlan, onSaveTime
   const saved = Boolean(auth && analysisId)
   const suggestedTopic = series ? timeTopic : market ? comparisonTopic : monthlyTopic
 
-  function openTopic(topic: Topic, button: HTMLButtonElement) {
+  function openTopic(topic: Topic, button: HTMLButtonElement, fromChart = true) {
+    setChartEntry(fromChart ? ++nextChartEntry.current : undefined)
     questionTrigger.current = button
     setQuestion(topic)
     setChatOpen(true)
@@ -413,13 +412,6 @@ export function Dashboard({ data, auth, analysisId, onChange, onPlan, onSaveTime
             : summary}</p>
           {biggestDrop && <p className="muted">{formatTime(biggestDrop.before)} → {formatTime(biggestDrop.after)}</p>}
         </section>
-        {data.demo && data.reviews && <ReviewInsights
-          store={data.store}
-          reviews={data.reviews}
-          onReviews={(reviews) => onChange({ ...data, reviews })}
-          onPlan={onPlan}
-        />}
-        {auth && analysisId && <SavedReviewInsights auth={auth} analysisId={analysisId} store={data.store} onPlan={onPlan} />}
         <section className="ruled-block dashboard-bsi">
           <div className="section-top"><h2>제주 경기동향</h2><AskButton label="제주 경기동향 차트 질문" onClick={(button) => openTopic(bsiTopic, button)} /></div>
           {bsi
@@ -432,22 +424,14 @@ export function Dashboard({ data, auth, analysisId, onChange, onPlan, onSaveTime
     <div className="dashboard-chat-widget">
       <div id="dashboard-chat-panel" className="dashboard-chat-window" ref={chatPanel}
         hidden={!chatOpen} tabIndex={-1}>
-        {question && (auth && analysisId ? <ChartQuestions auth={auth} analysisId={analysisId}
+        {question && (auth && analysisId ? <ChartQuestions key={chartEntry ?? "general"} fromChart={chartEntry !== undefined} auth={auth} analysisId={analysisId}
           chart={question.chart} title={question.title} suggestion={question.suggestion}
-          period={period} strategyTo={strategyTo} onClose={closeTopic} onTime={() => setTimeOpen(true)}
-          onReviews={() => {
-            setChatOpen(false)
-            requestAnimationFrame(() => {
-              const heading = document.getElementById('review-heading')
-              heading?.focus({ preventScroll: true })
-              heading?.scrollIntoView({ block: 'center' })
-            })
-          }} /> : <Questions key={question.chart} topic={question} period={period} onClose={closeTopic} />)}
+          period={period} strategyTo={strategyTo} onClose={closeTopic} onTime={() => setTimeOpen(true)} /> : <Questions key={chartEntry ?? question.chart} topic={question} period={period} onClose={closeTopic} />)}
       </div>
       <button ref={chatLauncher} type="button" className="dashboard-chat-launcher"
         aria-label={chatOpen ? '짝꿍 대화 닫기' : '짝꿍 대화 열기'} aria-expanded={chatOpen}
         aria-controls="dashboard-chat-panel" aria-describedby={chatOpen ? undefined : 'dashboard-chat-tip'}
-        onClick={(event) => chatOpen ? closeTopic() : openTopic(question ?? suggestedTopic, event.currentTarget)}>
+        onClick={(event) => chatOpen ? closeTopic() : openTopic(suggestedTopic, event.currentTarget, false)}>
         <Citrus />
       </button>
       {!chatOpen && <span id="dashboard-chat-tip" role="tooltip" className="dashboard-chat-tooltip">

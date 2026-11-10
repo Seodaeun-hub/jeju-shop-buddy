@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { fetchInstagramPublication, type InstagramPublicationStatus } from '../api/shop'
+import { CustomerNoticeDetails } from '../components/CustomerNotice'
 import { Citrus, PageTitle } from '../components/ui'
 import { ExecutionGuideSteps } from '../components/ExecutionGuidePanel'
 import { drawPromotionCard } from '../data/promotionCard'
@@ -249,6 +250,11 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
           <dd><ul>{plan.recommendation.contextEvidence.map((item) => <li key={item}>{item}</li>)}</ul></dd>
         </>}
       </dl>
+    </section>}
+    {plan.customerNotice && <section className="receipt ruled-block" aria-label="손님 안내 제안">
+      <h2>손님 안내 제안</h2>
+      <p>{plan.customerNotice.concern}</p>
+      <CustomerNoticeDetails notice={plan.customerNotice} />
     </section>}
     {plan.executionGuide && <section className="receipt ruled-block execution-guide" aria-label="저장된 실행 가이드">
       <h2>저장된 실행 가이드</h2>

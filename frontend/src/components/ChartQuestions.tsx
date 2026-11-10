@@ -57,7 +57,7 @@ function AnswerSummary({ answer }: { answer: QuestionTurn['answer'] }) {
   </>
 }
 
-export function ChartQuestions({ auth, analysisId, chart, title, period, suggestion, strategyTo, onClose, onTime, onReviews }: {
+export function ChartQuestions({ auth, analysisId, chart, title, period, suggestion, strategyTo, fromChart, onClose, onTime }: {
   auth: string
   analysisId: string
   chart?: QuestionChart
@@ -65,13 +65,13 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
   period: string
   suggestion?: string
   strategyTo: string
+  fromChart: boolean
   onClose: () => void
   onTime: () => void
-  onReviews: () => void
 }) {
   const [turns, setTurns] = useState<QuestionTurn[]>([])
   const [draft, setDraft] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!fromChart)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   const [failed, setFailed] = useState<QuestionInput>()
@@ -80,6 +80,7 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
   const thread = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    if (fromChart) return
     const controller = new AbortController()
     setLoading(true)
     setHistoryFailed(false)
@@ -95,7 +96,7 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
       if (!controller.signal.aborted) setLoading(false)
     })
     return () => controller.abort()
-  }, [auth, analysisId, reload])
+  }, [auth, analysisId, fromChart, reload])
 
   useEffect(() => {
     const list = thread.current
@@ -124,14 +125,16 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
 
   function ask(question: string, planId?: string) {
     if (!chart || !question.trim()) return
-    void submit({ clientMessageId: crypto.randomUUID(), conversationId: turns.at(-1)?.conversationId, chart, question: question.trim(), planId })
+    void submit({
+      clientMessageId: crypto.randomUUID(), conversationId: turns.at(-1)?.conversationId, chart,
+      question: question.trim(), planId, startFromChart: fromChart && turns.length === 0 ? true : undefined,
+    })
   }
 
   function actionButton(action: QuestionAction, turn: QuestionTurn) {
     const { type, targetId } = action
     const key = type + targetId
     if (type === 'ADD_TIME_SERIES') return <button key={key} type="button" className="button secondary small" onClick={onTime}>시간대별 자료 추가</button>
-    if (type === 'OPEN_REVIEWS') return <button key={key} type="button" className="button secondary small" onClick={onReviews}>리뷰 보기·등록</button>
     if (type === 'OPEN_STRATEGY' || type === 'OPEN_EXECUTION_GUIDE') return <Link key={key} className="button secondary small" to={strategyTo}>대응 전략 보기</Link>
     if (type === 'OPEN_PLAN_RESULTS') {
       const query = new URLSearchParams({ id: targetId, analysisId })
@@ -151,10 +154,10 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
   return <div hidden={!chart}>
     <section className="question-panel dashboard-chat" aria-label="짝꿍에게 질문하기">
       <div className="section-top dashboard-chat-heading">
-        <h2><Citrus /> 짝꿍에게 질문하기</h2>
+        <h2><Citrus /> {fromChart ? "이 차트에 대해 질문하기" : "짝꿍에게 질문하기"}</h2>
         <button type="button" aria-label="질문 패널 닫기" className="text-button close" onClick={onClose}>×</button>
       </div>
-      <p className="badge">{title} · {period}</p>
+      <p className="badge">{fromChart ? title : "매출 분석"} · {period}</p>
       {loading && <p role="status">대화를 불러오는 중이에요.</p>}
       <div className="chat-messages chart-question-history" ref={thread} aria-live="polite">
         {turns.map((turn) => <div key={turn.turnId} className="chat-turn">

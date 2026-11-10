@@ -42,7 +42,7 @@ class ExecutionPlanWriter {
 
     @Transactional(isolation = Isolation.REPEATABLE_READ)
     public Optional<Plan> create(UUID analysisId, String ownerEmail, String strategyCode, Conditions conditions,
-                                 UUID recommendationId, UUID guideId) {
+                                 UUID recommendationId, UUID guideId, SalesStrategies.CustomerNotice customerNotice) {
         var analysis = reader.find(analysisId, ownerEmail);
         if (analysis.isEmpty()) {
             return Optional.empty();
@@ -54,7 +54,7 @@ class ExecutionPlanWriter {
         if (guideId != null) {
             strategy = strategy.withExecutionGuide(guideSnapshots.select(analysis.get(), recommendationId, strategyCode, guideId));
         }
-        return Optional.of(persist(analysisId, strategy, conditions));
+        return Optional.of(persist(analysisId, strategy.withCustomerNotice(customerNotice), conditions));
     }
 
     @Transactional

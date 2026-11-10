@@ -352,7 +352,7 @@ class SalesAnalysisController {
             produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<?> createPlan(@PathVariable String analysisId, @RequestBody JsonNode body, Principal owner) {
         UUID id = parseId(analysisId, "INVALID_ANALYSIS_ID", "분석 ID 형식을 확인해 주세요.", "analysisId");
-        fields(body, Set.of("strategyCode", "conditions", "recommendationId", "executionGuideId"), null);
+        fields(body, Set.of("strategyCode", "conditions", "recommendationId", "executionGuideId", "customerNotice"), null);
         var code = body.get("strategyCode");
         if (code == null || !code.isString() || !Set.of("OUTREACH", "PROMOTION", "INVENTORY").contains(code.stringValue())) {
             throw invalid("INVALID_STRATEGY_CODE", "대응 전략을 선택해 주세요.", "strategyCode");
@@ -362,12 +362,30 @@ class SalesAnalysisController {
         var guide = body.get("executionGuideId");
         UUID guideId = guide == null ? null : parseId(guide.isString() ? guide.stringValue() : "",
                 "INVALID_EXECUTION_GUIDE_ID", "실행 가이드 ID 형식을 확인해 주세요.", "executionGuideId");
-        var result = planWriter.create(id, owner.getName(), strategyCode, conditions, readRecommendationId(body), guideId);
+        var result = planWriter.create(id, owner.getName(), strategyCode, conditions, readRecommendationId(body),
+                guideId, readCustomerNotice(body.get("customerNotice")));
         if (result.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(new ApiError("ANALYSIS_NOT_FOUND", "매출 분석을 찾을 수 없어요.", null));
         }
         return ResponseEntity.status(HttpStatus.CREATED).body(result.get());
+    }
+
+    private static SalesStrategies.CustomerNotice readCustomerNotice(JsonNode notice) {
+        if (notice == null) return null;
+        fields(notice, Set.of("concern", "text", "placement"), "customerNotice");
+        return new SalesStrategies.CustomerNotice(noticeText(notice, "concern"),
+                noticeText(notice, "text"), noticeText(notice, "placement"));
+    }
+
+    private static String noticeText(JsonNode notice, String field) {
+        var value = notice.get(field);
+        String text = value != null && value.isString() ? value.stringValue().strip() : "";
+        if (text.isEmpty() || text.length() > 200 || text.codePoints().anyMatch(Character::isISOControl)) {
+            throw invalid("INVALID_CUSTOMER_NOTICE", "손님 안내는 200자 이내의 한 줄로 입력해 주세요.",
+                    "customerNotice." + field);
+        }
+        return text;
     }
 
     private static UUID readRecommendationId(JsonNode body) {
