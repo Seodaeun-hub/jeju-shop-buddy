@@ -1,3 +1,10 @@
+.analysis-switcher { margin-bottom: 1.4rem; }
+.analysis-current dl { display: flex; flex-wrap: wrap; gap: .65rem 1.8rem; margin: .65rem 0 0; }
+.analysis-current dt { color: var(--muted); font-size: .84rem; }
+.analysis-current dd { margin: .15rem 0 0; font-weight: 750; overflow-wrap: anywhere; }
+.analysis-selectors { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); gap: .8rem; }
+.analysis-selectors select { min-width: 0; width: 100%; }
+
 .dashboard.analysis-dashboard {
   grid-template-columns: minmax(0, 1.95fr) minmax(0, 1fr);
   gap: 1.6rem;

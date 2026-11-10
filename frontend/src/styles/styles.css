@@ -136,6 +136,13 @@ h1, h2, h3, legend, .wordmark, .main-nav a {
 .notice p { font-size: .92rem; }
 .upload-preview { display: grid; place-items: center; gap: .45rem; border: 1px dashed var(--green); padding: 1.5rem 1rem; text-align: center; min-height: 190px; border-radius: 6px; }
 .upload-preview small { color: var(--muted); overflow-wrap: anywhere; }
+.pos-file-statuses { display: grid; gap: .55rem; width: 100%; min-width: 0; margin-top: .45rem; }
+.pos-file-status { display: grid; gap: .55rem; padding: .7rem .8rem; border: 1px solid var(--line); border-radius: 6px; background: var(--sheet); text-align: left; }
+.pos-file-status > div[role="status"] { min-width: 0; display: grid; gap: .2rem; }
+.pos-file-status .badge { justify-self: start; }
+.pos-file-status .button { white-space: normal; text-align: center; }
+.pos-file-picker.with-filename { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem .65rem; min-width: 0; padding: .4rem; border: 1px solid var(--line); border-radius: 6px; }
+.pos-file-picker.with-filename > span { flex: 1 1 11rem; min-width: 0; padding-inline: .25rem; font-size: .9rem; overflow-wrap: anywhere; }
 .upload-arrow { font-size: 2rem; color: var(--green); }
 .file-picker { display: grid; gap: .3rem; font-weight: 750; }
 .form-footer { display: flex; align-items: center; justify-content: flex-end; gap: .9rem; margin-top: 1.35rem; padding-top: 1rem; border-top: 1px solid var(--rule); flex-wrap: wrap; }
