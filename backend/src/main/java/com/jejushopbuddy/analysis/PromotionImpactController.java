@@ -23,10 +23,12 @@ class PromotionImpactController {
     private static final long MAX_SAFE_INTEGER = 9_007_199_254_740_991L;
     private final JdbcClient jdbc;
     private final ObjectMapper json;
+    private final StrategyAgentClient agent;
 
-    PromotionImpactController(JdbcClient jdbc, ObjectMapper json) {
+    PromotionImpactController(JdbcClient jdbc, ObjectMapper json, StrategyAgentClient agent) {
         this.jdbc = jdbc;
         this.json = json;
+        this.agent = agent;
     }
 
     @GetMapping
@@ -72,6 +74,17 @@ class PromotionImpactController {
                 .body(new ApiError("PROMOTION_IMPACT_CHANGED", "게시 상태가 바뀌었어요. 새로고침해 주세요.", null));
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(comparison(
                 new Plan(plan.product(), plan.start(), plan.end(), plan.state(), plan.publishedAt(), saved.get())));
+    }
+
+    @GetMapping("/next-explanation")
+    ResponseEntity<?> nextExplanation(@PathVariable UUID planId, Principal owner) {
+        var plan = find(planId, owner.getName());
+        if (plan == null) return notFound();
+        var result = comparison(plan);
+        if (result.advice() == null) return invalid("행사 전후 POS를 모두 저장해 주세요.");
+        var input = new ExplanationInput(result.beforeTotals(), result.afterTotals(), result.advice());
+        var explanation = agent.nextPromotionExplanation(input).orElse(null);
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(new Explanation(input, explanation));
     }
 
     @PutMapping("/next-checklist")
@@ -175,6 +188,8 @@ class PromotionImpactController {
     enum ChecklistItem { DISCOUNT_QUANTITY, ACTUAL_COST, UPLOAD_POS }
     record ChecklistUpdate(ChecklistItem item, Boolean completed) {}
     record Advice(NextAction action, BigDecimal beforeAveragePrice, BigDecimal afterAveragePrice) {}
+    record ExplanationInput(Totals before, Totals after, Advice advice) {}
+    record Explanation(ExplanationInput input, String explanation) {}
     record Snapshot(Totals before, Totals after, Map<ChecklistItem, Boolean> nextChecklist) {}
     record Comparison(String productName, Period before, Period after, Totals beforeTotals, Totals afterTotals,
                       boolean afterReady, String message, Advice advice,

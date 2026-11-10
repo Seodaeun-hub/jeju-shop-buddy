@@ -1,4 +1,5 @@
-import type { NextPromotionChecklistItem, PromotionImpact, PromotionImpactAdvice, PromotionImpactTotals } from '../api/shop'
+import { useEffect, useState } from 'react'
+import { fetchNextPromotionExplanation, type NextPromotionChecklistItem, type NextPromotionExplanation, type PromotionImpact, type PromotionImpactAdvice, type PromotionImpactTotals } from '../api/shop'
 import { changeRate, formatNumber, formatRate, won } from '../data/shop'
 
 const messages: Record<PromotionImpactAdvice['action'], { title: string; detail: string }> = {
@@ -32,7 +33,13 @@ function EvidenceRow({ label, before, after, format }: {
   </tr>
 }
 
-export function NextPromotionCard({ before, after, advice, checklist, pending, onCreate, onToggle }: {
+function sameTotals(left: PromotionImpactTotals, right: PromotionImpactTotals) {
+  return left.quantity === right.quantity && left.amount === right.amount && left.recordedDays === right.recordedDays
+}
+
+export function NextPromotionCard({ auth, planId, before, after, advice, checklist, pending, onCreate, onToggle }: {
+  auth: string
+  planId: string
   before: PromotionImpactTotals
   after: PromotionImpactTotals
   advice: PromotionImpactAdvice
@@ -41,13 +48,36 @@ export function NextPromotionCard({ before, after, advice, checklist, pending, o
   onCreate: () => void
   onToggle: (item: NextPromotionChecklistItem, completed: boolean) => void
 }) {
+  const [open, setOpen] = useState(false)
+  const [loaded, setLoaded] = useState<{ key: string; response: NextPromotionExplanation | null }>()
+  const key = JSON.stringify([planId, before, after, advice])
+
+  useEffect(() => {
+    if (!open) return
+    const controller = new AbortController()
+    fetchNextPromotionExplanation(auth, planId, controller.signal)
+      .then(response => {
+        if (!controller.signal.aborted) setLoaded({ key, response })
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setLoaded({ key, response: null })
+      })
+    return () => controller.abort()
+  }, [auth, planId, open, key])
+
+  const current = loaded?.key === key ? loaded : undefined
+  const response = current?.response
+  const explanation = response && sameTotals(response.input.before, before) && sameTotals(response.input.after, after)
+    && response.input.advice.action === advice.action ? response.explanation : null
   const message = messages[advice.action]
   return <section className="receipt form-stack" aria-labelledby="next-promotion-title">
     <h3 id="next-promotion-title">다음 행사에서 해볼 일</h3>
     <p><strong>{message.title}</strong></p>
     <p>{message.detail}</p>
-    <details>
+    <details onToggle={event => setOpen(event.currentTarget.open)}>
       <summary>왜 이렇게 제안했나요?</summary>
+      {open && !current && <p className="muted" role="status">AI 설명을 불러오는 중이에요.</p>}
+      {explanation && <p><strong>AI 설명</strong> · {explanation}</p>}
       <table className="input-table" aria-label="다음 행사 제안 근거">
         <thead><tr><th scope="col">비교 지표</th><th scope="col">행사 전 POS</th>
           <th scope="col">행사 후 POS</th><th scope="col">변화율</th></tr></thead>
