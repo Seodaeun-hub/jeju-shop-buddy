@@ -90,6 +90,20 @@ export type SalesPeriod = {
 
 export type SalesResult = { before: SalesPeriod; after: SalesPeriod }
 
+export type PromotionReviewInput = {
+  productName: string
+  priceWon: number
+  costWon: number
+  discountWon: number
+  budgetWon: number
+}
+
+export type PromotionReview = PromotionReviewInput & {
+  discountedPriceWon: number
+  marginPerItemWon: number
+  maxDiscountQuantity: number
+}
+
 export type Plan = {
   id?: string
   analysisId?: string
@@ -100,6 +114,7 @@ export type Plan = {
   reviewTopic?: ReviewTopic
   remainingStock?: Record<string, { unit: string; quantity: string }>
   inventoryItems?: InventoryItem[]
+  promotionReview?: PromotionReview
   strategy: (typeof strategies)[number]['id']
   title: string
   store: string

@@ -3,8 +3,9 @@ import { Link } from 'react-router'
 import { Citrus, PageTitle } from '../components/ui'
 import { ExecutionGuideSteps } from '../components/ExecutionGuidePanel'
 import { formatNumber, won } from '../data/shop'
-import type { Analysis, InventoryItem, Plan } from '../data/shop'
+import type { Analysis, InventoryItem, Plan, PromotionReviewInput } from '../data/shop'
 import { InventoryReview } from './InventoryReview'
+import { PromotionReview } from './PromotionReview'
 import '../styles/execution.css'
 
 function shortDate(date: string) {
@@ -129,12 +130,13 @@ function PromoDraft({ plan }: { plan: Plan }) {
   </section>
 }
 
-export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveInventory, resultsTo }: {
+export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveInventory, onSavePromotion, resultsTo }: {
   plan: Plan
   onChange: (value: Plan) => void
   onToggleChecklist: (index: number, completed: boolean) => Promise<void>
   analysis: Analysis
   onSaveInventory?: (items: InventoryItem[]) => Promise<void>
+  onSavePromotion?: (input: PromotionReviewInput) => Promise<void>
   resultsTo: string
 }) {
   const [savingIndex, setSavingIndex] = useState<number>()
@@ -209,16 +211,15 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
         {plan.strategy === 'promotion' && !plan.timeLabel && <p className="muted execution-note">행사 소식을 올리기 전에 혜택을 적용할 시간대를 정해 주세요.</p>}
       </section>
       <div className="form-stack execution-aside">
+        {plan.strategy === 'promotion' && <PromotionReview analysis={analysis} saved={plan.promotionReview}
+          initialBudget={plan.budget} onSave={onSavePromotion} />}
         {inventory ? <InventoryReview
           items={plan.inventoryItems ?? []}
           analysis={analysis}
           onSave={onSaveInventory}
           reviewDate={shortDate(plan.tasks[2].date)}
           onChange={(inventoryItems) => onChange({ ...plan, inventoryItems })}
-        /> : needsPromotionInputs ? <section className="execution-material">
-          <div className="ruled"><h2>혜택을 정하기 전에 확인할 자료</h2></div>
-          <ul>{plan.missingInputs?.map((input) => <li key={input}>{input}</li>)}</ul>
-        </section> : (!plan.reviewTopic || plan.reviewTopic === 'AFTERNOON_ORDER') && <PromoDraft plan={plan} />}
+        /> : !needsPromotionInputs && (!plan.reviewTopic || plan.reviewTopic === 'AFTERNOON_ORDER') && <PromoDraft plan={plan} />}
         <section>
           <h2>실행 후 확인할 지표</h2>
           <p className="execution-metric">{plan.followUp}</p>
