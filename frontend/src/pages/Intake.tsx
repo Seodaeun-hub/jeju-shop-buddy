@@ -19,6 +19,11 @@ const concerns = [
 
 const industryGroups = [...new Set(industryOptions.map(({ group }) => group))]
 
+const administrativeAreaAliases = new Map([
+  ['제주시 도두일동', '제주시 도두동'],
+  ['제주시 도두이동', '제주시 도두동'],
+])
+
 type InputRow = { id: number; month: string; amount: string }
 type InputMode = 'manual' | 'upload'
 
@@ -362,7 +367,7 @@ export function Intake({ auth, onAnalyze, existingStore }: { auth: string; onAna
           {industry === 'OTHER' && <label>업종명 직접 입력<input required maxLength={100} value={customIndustry} onChange={(event) => setCustomIndustry(event.target.value)} placeholder="예: 꽃집" /></label>}
           <AddressField address={address} area={searchedArea} onChange={(value, district) => {
             setAddress(value)
-            setSearchedArea(district)
+            setSearchedArea(district && (administrativeAreaAliases.get(district) ?? district))
             setAreaCode('')
           }} />
           <label>제주 읍·면·동<select required value={resolvedAreaCode} disabled={!areas}
