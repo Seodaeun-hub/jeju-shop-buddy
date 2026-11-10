@@ -34,32 +34,60 @@ class ExplanationState(TypedDict):
     result: NextPromotionExplanation
 
 
-PROMPT = """소상공인에게 서버가 이미 정한 다음 행사 제안의 이유를 한국어 두세 문장으로 설명하세요.
-입력의 행사 전후 판매량, 실판매금액, 개당 평균 실판매금액을 비교해 증가·감소·동일을 정확히 설명하세요.
-개당 평균 실판매금액이 비어 있으면 비교할 수 없다고 하세요. 숫자와 기호는 화면에 따로 표시하므로 쓰지 마세요.
-RETEST는 현재 할인 조건으로 한 번 더 시험하는 제안입니다. 판매량과 실판매금액이 늘어난 점,
-개당 평균 실판매금액이 어떻게 달라졌는지, 실제 할인 적용 수량과 원가가 없어 실제 이익을 판단할 수 없다는 점을 연결하세요.
-REVIEW_TERMS는 할인 조건을 검토하는 제안입니다. 실제 할인 적용 수량과 원가 확인부터 제안하세요.
-CHECK_DATA는 비교 자료를 확인하는 제안입니다. 주문 기록일 수 차이 또는 행사 전 판매량이 없는 이유 중 입력에 맞는 것만 말하세요.
-매출 증감의 원인을 단정하거나 이익, 효과, 향후 매출을 보장하지 마세요. 할인율이나 새 가격을 제시하지 마세요.
-출력은 explanation 필드에 넣고 제목, 표, 목록, 링크를 쓰지 마세요.
+class ExplanationFocus(Contract):
+    lead: Literal["SALES_VOLUME", "SALES_AMOUNT", "AVERAGE_PRICE"]
+
+
+PROMPT = """소상공인에게 다음 행사 제안의 근거를 설명할 때 먼저 보여줄 POS 지표를 고르세요.
+SALES_VOLUME은 판매량, SALES_AMOUNT는 실판매금액, AVERAGE_PRICE는 개당 평균 실판매금액입니다.
+입력의 행사 전후 수치와 서버가 정한 제안 유형을 보고 가장 먼저 읽을 만한 지표 하나를 lead에 반환하세요.
+지표의 변화와 확인할 수 없는 내용은 서버가 직접 설명합니다.
 """
+
+
+def change_sentence(label: str, before: int | float | None, after: int | float | None) -> str:
+    if before is None or after is None:
+        return f"{label} 비교할 수 없어요."
+    if after == before:
+        return f"{label} 같았어요."
+    return f"{label} {'늘었어요' if after > before else '줄었어요'}."
+
+
+def next_step(request: NextPromotionRequest) -> str:
+    if request.advice.action == "RETEST":
+        return "같은 할인 조건으로 한 번 더 시험하면서 실제 할인 적용 수량과 원가를 기록해 보세요."
+    if request.advice.action == "REVIEW_TERMS":
+        return "실제 할인 적용 수량과 원가를 확인한 뒤 할인 조건을 검토해 보세요."
+
+    gaps = []
+    if request.before.recordedDays != request.after.recordedDays:
+        gaps.append("주문이 기록된 날짜 수가 달라요.")
+    if request.before.quantity == 0:
+        gaps.append("행사 전 판매 기록이 없어요.")
+    return " ".join([*gaps, "두 POS 파일의 기간과 영업일을 먼저 확인해 보세요."])
 
 
 def build_next_promotion_graph():
     def explain(state: ExplanationState):
         request = state["request"]
-        draft = structured_model(NextPromotionExplanation).invoke([
+        draft = structured_model(ExplanationFocus).invoke([
             SystemMessage(content=PROMPT),
             HumanMessage(content=request.model_dump_json()),
         ])
-        explanation = NextPromotionExplanation.model_validate(draft).explanation.strip()
-        metrics = ("판매량", "실판매금액", "개당 평균")
-        if (not explanation or len(explanation) > 360 or not explanation.isprintable()
-                or any(char.isnumeric() for char in explanation)
-                or (request.advice.action == "RETEST"
-                    and not all(term in explanation for term in (*metrics, "할인 적용 수량", "원가")))):
-            raise ValueError("invalid next promotion explanation")
+        focus = ExplanationFocus.model_validate(draft)
+        metrics = {
+            "SALES_VOLUME": change_sentence("판매량은", request.before.quantity, request.after.quantity),
+            "SALES_AMOUNT": change_sentence("실판매금액은", request.before.amount, request.after.amount),
+            "AVERAGE_PRICE": change_sentence(
+                "개당 평균 실판매금액은", request.advice.beforeAveragePrice, request.advice.afterAveragePrice,
+            ),
+        }
+        lead = metrics.pop(focus.lead)
+        explanation = " ".join([
+            lead, *metrics.values(),
+            "이 POS 집계만으로는 실제 할인 적용 여부나 실제 이익을 판단할 수 없어요.",
+            next_step(request),
+        ])
         return {"result": NextPromotionExplanation(explanation=explanation)}
 
     graph = StateGraph(ExplanationState)
