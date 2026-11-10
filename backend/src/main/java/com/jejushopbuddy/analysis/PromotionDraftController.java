@@ -53,13 +53,15 @@ class PromotionDraftController {
         if (!StoreProductPhotos.valid(input.photoDataUrl())) return bad("사용할 음식 사진을 다시 선택해 주세요.");
 
         String product = review.productName();
+        String discount = discountLine(review);
         String photo = input.photoDataUrl() != null ? input.photoDataUrl()
                 : input.useSavedPhoto() ? photos.find(plan.storeId(), product) : null;
         String edited = input.caption() == null ? null : input.caption().strip();
         if (edited != null && (edited.isEmpty() || edited.length() > 2200)) return bad("홍보 문구는 1~2,200자로 작성해 주세요.");
         if (plan.draft() != null && input.publishDate().equals(plan.draft().publishDate())
                 && input.publishTime().equals(plan.draft().publishTime()) && java.util.Objects.equals(photo, plan.draft().photoDataUrl())
-                && (edited == null || edited.equals(plan.draft().caption()))) {
+                && (edited == null || edited.equals(plan.draft().caption()))
+                && (edited != null || "EDITED".equals(plan.draft().copySource()) || plan.draft().caption().contains(discount))) {
             return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(plan.draft());
         }
         if (edited == null && plan.draft() != null && "EDITED".equals(plan.draft().copySource())) {
@@ -72,13 +74,13 @@ class PromotionDraftController {
         Tone tone = plan.draft() == null ? plan.defaultTone() : plan.draft().tone();
         String source = "EDITED";
         if (caption == null && tone != null) {
-            caption = tone.caption(product, price, feature, detail, plan.storeName(), plan.avoidPhrases());
+            caption = tone.caption(product, price, discount, feature, detail, plan.storeName(), plan.avoidPhrases());
             source = "TEMPLATE";
         }
         if (caption == null) {
             var opening = agent.promotionOpening(product);
             caption = product + " " + price + " · " + feature
-                    + opening.map(line -> "\n" + line).orElse("")
+                    + "\n" + discount + opening.map(line -> "\n" + line).orElse("")
                     + "\n\n" + detail + " · " + plan.storeName();
             source = opening.isPresent() ? "GPT" : "TEMPLATE";
         }
@@ -108,7 +110,7 @@ class PromotionDraftController {
 
         var review = plan.review();
         String limit = String.format(Locale.KOREA, "%,d개 한정", review.maxDiscountQuantity());
-        String caption = input.tone().caption(review.productName(), won(review.discountedPriceWon()), limit,
+        String caption = input.tone().caption(review.productName(), won(review.discountedPriceWon()), discountLine(review), limit,
                 saved.detail(), saved.storeName(), plan.avoidPhrases());
         var draft = new Draft(saved.storeName(), saved.headline(), saved.feature(), saved.discountedPrice(),
                 saved.detail(), caption, saved.publishDate(), saved.publishTime(), saved.timeZone(),
@@ -141,6 +143,10 @@ class PromotionDraftController {
                         rs.getString("promotion_draft"), rs.getBoolean("publication_locked"),
                         Tone.parse(rs.getString("promotion_tone")), rs.getString("promotion_avoid_phrases")))
                 .optional().orElse(null);
+    }
+
+    private static String discountLine(Review review) {
+        return "개당 " + won(review.discountWon()) + " 할인";
     }
 
     private static String won(long amount) { return String.format(Locale.KOREA, "%,d원", amount); }
