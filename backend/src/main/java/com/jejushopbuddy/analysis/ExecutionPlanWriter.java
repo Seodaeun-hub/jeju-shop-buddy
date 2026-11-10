@@ -105,7 +105,7 @@ class ExecutionPlanWriter {
                     .param("completed", item.completed())
                     .update();
         }
-        return new Plan(id, analysisId, strategy, conditions, start, end, checklist, createdAt);
+        return new Plan(id, analysisId, strategy, conditions, start, end, checklist, createdAt, null);
     }
 
     @Transactional
@@ -183,5 +183,6 @@ class ExecutionPlanWriter {
     record ChecklistItem(UUID id, String title, LocalDate dueDate, boolean completed) {}
 
     record Plan(UUID id, UUID analysisId, Suggestion strategy, Conditions conditions, LocalDate startDate,
-                LocalDate endDate, List<ChecklistItem> checklist, OffsetDateTime createdAt) {}
+                LocalDate endDate, List<ChecklistItem> checklist, OffsetDateTime createdAt,
+                @JsonInclude(JsonInclude.Include.NON_NULL) List<InventoryReviewController.Item> inventoryItems) {}
 }

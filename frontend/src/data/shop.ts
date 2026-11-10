@@ -77,6 +77,7 @@ export type InventoryItem = {
   expectedUse: string
   incoming: string
   finalOrder: string
+  shortage?: number | null
 }
 
 export type SalesPeriod = {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
-import { fetchAnalysis, fetchOwnerSession, fetchPlan, loginOwner, logoutOwner, ownerSession, saveTimeSeries, toPlan, updateChecklistItem } from './api/shop'
+import { fetchAnalysis, fetchOwnerSession, fetchPlan, loginOwner, logoutOwner, ownerSession, saveInventoryReview, saveTimeSeries, toPlan, updateChecklistItem } from './api/shop'
 import { Dashboard } from './pages/Dashboard'
 import { ExistingStoreIntake, Intake } from './pages/Intake'
 import { MyStores } from './pages/MyStores'
@@ -9,7 +9,7 @@ import { Execution } from './pages/Execution'
 import { Results } from './pages/Results'
 import { SavedStrategyPage, Strategy } from './pages/Strategy'
 import { example } from './data/shop'
-import type { Analysis, Plan, TimeSeries } from './data/shop'
+import type { Analysis, InventoryItem, Plan, TimeSeries } from './data/shop'
 import { Citrus } from './components/ui'
 
 const navigation = [
@@ -201,6 +201,13 @@ export function App() {
     setAnalysis((current) => current && { ...current, timeSeries: value })
   }
 
+  async function savePlanInventory(items: InventoryItem[]) {
+    const id = plan?.id
+    if (!auth || !id) return
+    const saved = await saveInventoryReview(auth, id, items)
+    setPlan((current) => current?.id === id ? { ...current, inventoryItems: saved } : current)
+  }
+
   async function toggleChecklist(index: number, completed: boolean) {
     if (!plan) return
     const planId = plan.id
@@ -256,7 +263,8 @@ export function App() {
     : plan && currentAnalysis && (!requestedPlanId || requestedPlanId === plan.id) && (!plan.analysisId || plan.analysisId === analysisId)
       ? pathname === '/results'
         ? <Results key={plan.id ?? 'demo'} plan={plan} onChange={setPlan} auth={auth} executionTo={planPath('/execution', plan)} />
-        : <Execution key={plan.id ?? 'demo'} plan={plan} onChange={setPlan} onToggleChecklist={toggleChecklist} resultsTo={planPath('/results', plan)} />
+        : <Execution key={plan.id ?? 'demo'} plan={plan} onChange={setPlan} onToggleChecklist={toggleChecklist}
+          analysis={currentAnalysis} onSaveInventory={auth && plan.id ? savePlanInventory : undefined} resultsTo={planPath('/results', plan)} />
       : requestedPlanId && analysisId ? !currentAnalysis ? analysisStatus : <section className="empty-state">
         {planError?.id === requestedPlanId ? <><p role="alert" className="error">{planError.message}</p><button className="button secondary" onClick={() => {
           setPlanError(undefined)
