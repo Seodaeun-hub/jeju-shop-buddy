@@ -29,7 +29,7 @@ class ExecutionPlanReader {
     public Optional<Plan> find(UUID id, String ownerEmail) {
         var plan = jdbc.sql("""
                 SELECT p.analysis_id, p.duration_weeks, p.budget_won, p.channel,
-                       p.start_date, p.end_date, p.created_at, p.inventory_review, p.promotion_review,
+                       p.start_date, p.end_date, p.created_at, p.inventory_review, p.promotion_review, p.promotion_draft,
                        p.strategy_snapshot || jsonb_build_object('code', p.strategy_code) AS strategy
                 FROM execution_plans p
                 JOIN sales_analyses a ON a.id = p.analysis_id
@@ -46,7 +46,7 @@ class ExecutionPlanReader {
                                 rs.getString("channel")),
                         rs.getObject("start_date", LocalDate.class), rs.getObject("end_date", LocalDate.class),
                         rs.getObject("created_at", OffsetDateTime.class), rs.getString("inventory_review"),
-                        rs.getString("promotion_review")))
+                        rs.getString("promotion_review"), rs.getString("promotion_draft")))
                 .optional();
         if (plan.isEmpty()) {
             return Optional.empty();
@@ -65,11 +65,13 @@ class ExecutionPlanReader {
                 : List.of(json.readValue(saved.inventoryReview(), InventoryReviewController.Item[].class));
         var promotion = saved.promotionReview() == null ? null
                 : json.readValue(saved.promotionReview(), PromotionReviewController.Review.class);
+        var draft = saved.promotionDraft() == null ? null
+                : json.readValue(saved.promotionDraft(), PromotionDraftController.Draft.class);
         return Optional.of(new Plan(id, saved.analysisId(), saved.strategy(), saved.conditions(),
-                saved.startDate(), saved.endDate(), checklist, saved.createdAt(), items, promotion));
+                saved.startDate(), saved.endDate(), checklist, saved.createdAt(), items, promotion, draft));
     }
 
     private record SavedPlan(UUID analysisId, Suggestion strategy, Conditions conditions,
                              LocalDate startDate, LocalDate endDate, OffsetDateTime createdAt,
-                             String inventoryReview, String promotionReview) {}
+                             String inventoryReview, String promotionReview, String promotionDraft) {}
 }

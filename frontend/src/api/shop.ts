@@ -1,5 +1,5 @@
 import type { Review, ReviewTopic } from '../data/reviews'
-import type { Analysis, InventoryItem, MonthlySales, Plan, ProductSale, PromotionReview, PromotionReviewInput, SalesResult, TimeSeries } from '../data/shop'
+import type { Analysis, InventoryItem, MonthlySales, Plan, ProductSale, PromotionDraft, PromotionDraftInput, PromotionReview, PromotionReviewInput, SalesResult, TimeSeries } from '../data/shop'
 import { formatEvidence } from '../data/strategyEvidence'
 
 export type Area = { code: string; name: string }
@@ -188,6 +188,7 @@ type ChecklistItem = { id: string; title: string; dueDate: string; completed: bo
 type SavedPlan = {
   inventoryItems?: InventoryItem[]
   promotionReview?: PromotionReview
+  promotionDraft?: PromotionDraft
   id: string
   analysisId: string
   strategy: SavedStrategy
@@ -237,6 +238,33 @@ export function saveInventoryReview(auth: string, id: string, items: InventoryIt
 
 export function savePromotionReview(auth: string, id: string, input: PromotionReviewInput) {
   return request<PromotionReview>(`/api/plans/${encodeURIComponent(id)}/promotion-review`, auth, 'PUT', input)
+}
+
+type MenuPhoto = { photoDataUrl: string | null }
+type MenuPhotoStatus = { productName: string; hasPhoto: boolean }
+
+export function createPromotionDraft(auth: string, id: string, input: PromotionDraftInput) {
+  return request<PromotionDraft>(`/api/plans/${encodeURIComponent(id)}/promotion-draft`, auth, 'POST', input)
+}
+
+export function fetchPromotionPhoto(auth: string, id: string, signal: AbortSignal) {
+  return request<MenuPhoto>(`/api/plans/${encodeURIComponent(id)}/promotion-photo`, auth, 'GET', undefined, signal)
+}
+
+function menuPhotoPath(id: string) {
+  return `/api/stores/${encodeURIComponent(id)}/menu-photos`
+}
+
+export function listMenuPhotos(auth: string, id: string, signal: AbortSignal) {
+  return request<MenuPhotoStatus[]>(menuPhotoPath(id), auth, 'GET', undefined, signal)
+}
+
+export function fetchMenuPhoto(auth: string, id: string, productName: string, signal: AbortSignal) {
+  return request<MenuPhoto>(menuPhotoPath(id) + '?' + new URLSearchParams({ productName }), auth, 'GET', undefined, signal)
+}
+
+export function saveMenuPhoto(auth: string, id: string, productName: string, photoDataUrl: string | null) {
+  return request<MenuPhoto>(menuPhotoPath(id), auth, 'PUT', { productName, photoDataUrl })
 }
 
 export function updateChecklistItem(auth: string, planId: string, itemId: string, completed: boolean) {
@@ -304,6 +332,7 @@ export function toPlan(saved: SavedPlan, store: string): Plan {
     analysisId: saved.analysisId,
     inventoryItems: saved.inventoryItems,
     promotionReview: saved.promotionReview,
+    promotionDraft: saved.promotionDraft,
     strategy: strategyIds[strategy.code],
     title: strategy.title,
     store,

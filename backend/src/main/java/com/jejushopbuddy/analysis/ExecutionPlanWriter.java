@@ -105,7 +105,7 @@ class ExecutionPlanWriter {
                     .param("completed", item.completed())
                     .update();
         }
-        return new Plan(id, analysisId, strategy, conditions, start, end, checklist, createdAt, null, null);
+        return new Plan(id, analysisId, strategy, conditions, start, end, checklist, createdAt, null, null, null);
     }
 
     @Transactional
@@ -185,5 +185,6 @@ class ExecutionPlanWriter {
     record Plan(UUID id, UUID analysisId, Suggestion strategy, Conditions conditions, LocalDate startDate,
                 LocalDate endDate, List<ChecklistItem> checklist, OffsetDateTime createdAt,
                 @JsonInclude(JsonInclude.Include.NON_NULL) List<InventoryReviewController.Item> inventoryItems,
-                @JsonInclude(JsonInclude.Include.NON_NULL) PromotionReviewController.Review promotionReview) {}
+                @JsonInclude(JsonInclude.Include.NON_NULL) PromotionReviewController.Review promotionReview,
+                @JsonInclude(JsonInclude.Include.NON_NULL) PromotionDraftController.Draft promotionDraft) {}
 }

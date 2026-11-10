@@ -91,6 +91,14 @@ final class StrategyAgentClient {
                 : post("/internal/chart-questions", payload, tools.jackson.databind.JsonNode.class);
     }
 
+    Optional<String> promotionOpening(String productName) {
+        if (baseUrl.isEmpty()) return Optional.empty();
+        return post("/internal/promotion-copy", java.util.Map.of("productName", productName),
+                tools.jackson.databind.JsonNode.class).map(node -> node.path("opening").asString()).map(String::strip)
+                .filter(line -> !line.isBlank() && line.length() <= 100
+                        && !java.util.regex.Pattern.compile("[\\p{N}#@\\p{Cntrl}]|https?://").matcher(line).find());
+    }
+
     private <T> Optional<T> post(String path, Object payload, Class<T> type) {
         try {
             var request = HttpRequest.newBuilder(URI.create(baseUrl + path)).timeout(Duration.ofSeconds(13))

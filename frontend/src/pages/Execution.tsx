@@ -3,9 +3,10 @@ import { Link } from 'react-router'
 import { Citrus, PageTitle } from '../components/ui'
 import { ExecutionGuideSteps } from '../components/ExecutionGuidePanel'
 import { formatNumber, won } from '../data/shop'
-import type { Analysis, InventoryItem, Plan, PromotionReviewInput } from '../data/shop'
+import type { Analysis, InventoryItem, Plan, PromotionDraftInput, PromotionReviewInput } from '../data/shop'
 import { InventoryReview } from './InventoryReview'
 import { PromotionReview } from './PromotionReview'
+import { PromotionDraftForm } from './PromotionDraftForm'
 import '../styles/execution.css'
 
 function shortDate(date: string) {
@@ -39,10 +40,14 @@ function getDraft(plan: Plan) {
 }
 
 function PromoDraft({ plan }: { plan: Plan }) {
-  const { headline, feature, detail, caption } = getDraft(plan)
+  const saved = plan.promotionDraft
+  const { headline, feature, detail, caption } = saved ?? getDraft(plan)
+  const store = saved?.storeName ?? plan.store
   const canvas = useRef<HTMLCanvasElement>(null)
   const [status, setStatus] = useState('')
-  const instagram = plan.channel === '인스타그램'
+  const [drawnPhoto, setDrawnPhoto] = useState<string | null>()
+  const photoUrl = saved?.photoDataUrl ?? null
+  const instagram = Boolean(saved) || plan.channel === '인스타그램'
 
   useEffect(() => {
     const context = canvas.current?.getContext('2d')
@@ -56,7 +61,7 @@ function PromoDraft({ plan }: { plan: Plan }) {
     context.textAlign = 'center'
     context.fillStyle = '#273a26'
     context.font = `700 45px ${font}`
-    context.fillText(plan.store, 540, 195, 860)
+    context.fillText(store, 540, 195, 860)
     context.fillStyle = '#3e2718'
     context.font = `700 70px ${font}`
     context.fillText(headline, 540, 310, 860)
@@ -69,22 +74,37 @@ function PromoDraft({ plan }: { plan: Plan }) {
     context.font = `700 45px ${font}`
     context.fillText(detail, 540, 606, 860)
 
-    context.fillStyle = '#ed7b18'
-    context.beginPath()
-    context.ellipse(540, 807, 127, 104, 0, 0, 2 * Math.PI)
-    context.fill()
-    context.fillStyle = '#fff1ce'
-    context.beginPath()
-    context.ellipse(480, 765, 16, 27, .8, 0, 2 * Math.PI)
-    context.fill()
-    context.fillStyle = '#2e6539'
-    context.beginPath()
-    context.ellipse(578, 710, 62, 24, -.43, 0, 2 * Math.PI)
-    context.fill()
+    if (saved) {
+      context.font = `700 36px ${font}`
+      context.fillText('할인 후 ' + saved.discountedPrice, 540, 662, 860)
+    }
     context.fillStyle = '#273a26'
     context.font = `700 27px ${font}`
     context.fillText('가게짝꿍 · 홍보 초안', 540, 975, 860)
-  }, [detail, feature, headline, plan.store])
+    if (!photoUrl) {
+      context.fillStyle = '#ed7b18'
+      context.beginPath()
+      context.ellipse(540, 815, 112, 90, 0, 0, 2 * Math.PI)
+      context.fill()
+      context.fillStyle = '#2e6539'
+      context.beginPath()
+      context.ellipse(578, 737, 53, 21, -.43, 0, 2 * Math.PI)
+      context.fill()
+      setDrawnPhoto(null)
+      return
+    }
+    const image = new Image()
+    image.onload = () => {
+      const scale = Math.min(680 / image.width, 245 / image.height)
+      const width = image.width * scale
+      const height = image.height * scale
+      context.drawImage(image, (1080 - width) / 2, 695 + (245 - height) / 2, width, height)
+      setDrawnPhoto(photoUrl)
+    }
+    image.onerror = () => setStatus('저장된 사진을 표시하지 못했어요.')
+    image.src = photoUrl
+    return () => { image.onload = null; image.onerror = null }
+  }, [detail, feature, headline, photoUrl, saved, store])
 
   async function copyCaption() {
     try {
@@ -112,14 +132,15 @@ function PromoDraft({ plan }: { plan: Plan }) {
   }
 
   return <section className="execution-material">
-    <div className="ruled"><h2>{plan.channel} 홍보 초안</h2></div>
+    <div className="ruled"><h2>{saved ? '인스타그램' : plan.channel} 홍보 초안</h2></div>
     <div className="receipt promo-draft">
-      <canvas ref={canvas} width="1080" height="1080" role="img" aria-label={`${plan.store} 홍보 이미지 · ${feature} · ${detail}`} />
+      <canvas ref={canvas} width="1080" height="1080" role="img" aria-label={`${store} 홍보 이미지 · ${feature} · ${detail}`} />
       <div className="promo-copy">
-        <span className="badge">초안</span>
+        <span className="badge">{saved ? saved.copySource === 'GPT' ? 'GPT 문구' : '기본 문구' : '초안'}</span>
+        {saved && <p><strong>게시 예정</strong> · {saved.publishDate} {saved.publishTime.slice(0, 5)} 한국 시간</p>}
         <p>{caption}</p>
         <div className="promo-actions">
-          <button type="button" className="button secondary small" onClick={saveImage}>이미지 저장</button>
+          <button type="button" className="button secondary small" disabled={drawnPhoto !== photoUrl} onClick={saveImage}>이미지 저장</button>
           <button type="button" className="button secondary small" onClick={copyCaption}>문구 복사</button>
         </div>
         {instagram && <a href="https://www.instagram.com/" target="_blank" rel="noreferrer">인스타그램 열기 ↗</a>}
@@ -130,13 +151,15 @@ function PromoDraft({ plan }: { plan: Plan }) {
   </section>
 }
 
-export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveInventory, onSavePromotion, resultsTo }: {
+export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveInventory, onSavePromotion, auth, onSavePromotionDraft, resultsTo }: {
   plan: Plan
   onChange: (value: Plan) => void
   onToggleChecklist: (index: number, completed: boolean) => Promise<void>
   analysis: Analysis
   onSaveInventory?: (items: InventoryItem[]) => Promise<void>
   onSavePromotion?: (input: PromotionReviewInput) => Promise<void>
+  auth?: string
+  onSavePromotionDraft?: (input: PromotionDraftInput) => Promise<void>
   resultsTo: string
 }) {
   const [savingIndex, setSavingIndex] = useState<number>()
@@ -213,13 +236,18 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
       <div className="form-stack execution-aside">
         {plan.strategy === 'promotion' && <PromotionReview analysis={analysis} saved={plan.promotionReview}
           initialBudget={plan.budget} onSave={onSavePromotion} />}
+        {plan.strategy === 'promotion' && auth && onSavePromotionDraft && <>
+          <PromotionDraftForm key={plan.promotionReview?.productName} plan={plan} auth={auth} onSave={onSavePromotionDraft} />
+          {plan.promotionDraft && <PromoDraft plan={plan} />}
+        </>}
         {inventory ? <InventoryReview
           items={plan.inventoryItems ?? []}
           analysis={analysis}
           onSave={onSaveInventory}
           reviewDate={shortDate(plan.tasks[2].date)}
           onChange={(inventoryItems) => onChange({ ...plan, inventoryItems })}
-        /> : !needsPromotionInputs && (!plan.reviewTopic || plan.reviewTopic === 'AFTERNOON_ORDER') && <PromoDraft plan={plan} />}
+        /> : !(plan.id && plan.strategy === 'promotion') && !needsPromotionInputs
+          && (!plan.reviewTopic || plan.reviewTopic === 'AFTERNOON_ORDER') && <PromoDraft plan={plan} />}
         <section>
           <h2>실행 후 확인할 지표</h2>
           <p className="execution-metric">{plan.followUp}</p>

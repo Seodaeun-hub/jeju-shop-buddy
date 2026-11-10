@@ -46,7 +46,9 @@ class PromotionReviewController {
         var review = new Review(productName, price, cost, discount, budget, discountedPrice,
                 discountedPrice - cost, budget / discount);
         int updated = jdbc.sql("""
-                UPDATE execution_plans p SET promotion_review = CAST(:review AS jsonb)
+                UPDATE execution_plans p SET promotion_review = CAST(:review AS jsonb),
+                    promotion_draft = CASE WHEN p.promotion_review = CAST(:review AS jsonb)
+                                          THEN p.promotion_draft ELSE NULL END
                 FROM sales_analyses a, stores s, owners o
                 WHERE p.id = :planId AND p.strategy_code = 'PROMOTION'
                   AND p.analysis_id = a.id AND a.store_id = s.id AND s.owner_id = o.id AND o.email = :email

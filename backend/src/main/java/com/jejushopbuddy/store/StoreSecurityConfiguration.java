@@ -64,13 +64,15 @@ class StoreSecurityConfiguration {
             response.getWriter().write(json.writeValueAsString(error));
         };
         return http.securityMatcher("/api/session", "/api/stores", "/api/stores/{storeId}/analyses",
+                        "/api/stores/{storeId}/menu-photos",
                         "/api/analyses/{analysisId}", "/api/analyses/{analysisId}/time-series", "/api/analyses/{analysisId}/strategies", "/api/analyses/{analysisId}/plans",
                         "/api/analyses/{analysisId}/recommendations", "/api/analyses/{analysisId}/execution-guide",
                         "/api/analyses/{analysisId}/reviews", "/api/analyses/{analysisId}/review-plans",
                         "/api/analyses/{analysisId}/questions",
                         "/api/plans/{planId}", "/api/plans/{planId}/checklist/{itemId}", "/api/plans/{planId}/results",
                         "/api/plans/{planId}/results/{resultId}", "/api/plans/{planId}/inventory-review",
-                        "/api/plans/{planId}/promotion-review")
+                        "/api/plans/{planId}/promotion-review", "/api/plans/{planId}/promotion-draft",
+                        "/api/plans/{planId}/promotion-photo")
                 .authorizeHttpRequests(auth -> auth.anyRequest().access((authentication, context) -> {
                     var request = context.getRequest();
                     boolean read = request.getMethod().equals("GET") || request.getMethod().equals("HEAD");
