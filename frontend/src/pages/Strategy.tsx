@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { Link } from 'react-router'
 import { createPlan, generateRecommendation, strategyIds, toPlan } from '../api/shop'
 import type { SavedStrategy, StrategyEvidence, StrategyResponse } from '../api/shop'
+import { CustomerNoticeDetails, suggestCustomerNotice } from '../components/CustomerNotice'
 import { Citrus, PageTitle } from '../components/ui'
 import { addDays, changeRate, formatNumber, formatRate, monthLabel, strategies, won } from '../data/shop'
 import { bsiSource, marketSource } from '../data/marketSources'
@@ -148,6 +149,8 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
   const [viewedGuideId, setViewedGuideId] = useState<string>()
   const [budget, setBudget] = useState('50000')
   const [channel, setChannel] = useState('인스타그램')
+  const [customerConcern, setCustomerConcern] = useState('')
+  const customerNotice = suggestCustomerNotice(customerConcern)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const pending = useRef(false)
@@ -178,7 +181,7 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
         const plan = await createPlan(saved.auth, saved.analysisId, selectedStrategy.code, choice === 'inventory'
           ? { durationWeeks }
           : { durationWeeks, budgetWon: Number(budget), channel: channel === '인스타그램' ? 'INSTAGRAM' : 'STORE_NOTICE' },
-          saved.response.recommendationId, choice === 'outreach' ? viewedGuideId : undefined)
+          saved.response.recommendationId, choice === 'outreach' ? viewedGuideId : undefined, customerNotice)
         if (mounted.current) onPlan(toPlan(plan, data.store))
       } catch (error) {
         if (mounted.current) setError(error instanceof Error ? error.message : '실행 계획을 저장할 수 없어요.')
@@ -206,6 +209,7 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
       store: data.store,
       demo: data.demo,
       duration,
+      customerNotice,
       startDate,
       endDate,
       timeLabel: demo?.timeLabel,
@@ -272,6 +276,14 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
           <label>예산 한도 (원)<input type="number" min="0" step="1" disabled={saving} max={Number.MAX_SAFE_INTEGER} value={budget} onChange={(event) => setBudget(event.target.value)} required /></label>
           <label>홍보 채널<select disabled={saving} value={channel} onChange={(event) => setChannel(event.target.value)}><option>인스타그램</option><option>매장 안내</option></select></label>
         </>}
+        <label>손님들이 자주 겪는 불편 <span className="muted">(선택)</span>
+          <input value={customerConcern} onChange={(event) => setCustomerConcern(event.target.value)}
+            placeholder="예: 오후에도 주문이 되는지 손님들이 자주 물어봐요" maxLength={200} disabled={saving} />
+        </label>
+        {customerNotice && <section className="notice" aria-label="짝꿍의 안내 제안">
+          <strong>짝꿍의 안내 제안</strong>
+          <CustomerNoticeDetails notice={customerNotice} />
+        </section>}
         <div className="strategy-output">
           <strong>생성할 결과물</strong>
           <span>실행 일정 · 점검표 · {choice === 'inventory' ? '발주량 검토표' : selected.status === 'NEEDS_INPUT' ? '혜택 검토 항목' : '홍보 초안'}</span>

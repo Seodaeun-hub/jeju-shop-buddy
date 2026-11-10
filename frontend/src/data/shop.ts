@@ -136,7 +136,10 @@ export type PromotionDraftInput = {
   caption?: string
 }
 
+export type CustomerNotice = { concern: string; text: string; placement: string }
+
 export type Plan = {
+  customerNotice?: CustomerNotice
   id?: string
   analysisId?: string
   missingInputs?: string[]

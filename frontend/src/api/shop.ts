@@ -1,5 +1,5 @@
 import type { Review, ReviewTopic } from '../data/reviews'
-import type { Analysis, InventoryItem, MonthlySales, Plan, ProductSale, PromotionDraft, PromotionDraftInput, PromotionReview, PromotionReviewInput, PromotionTone, SalesResult, TimeSeries } from '../data/shop'
+import type { Analysis, CustomerNotice, InventoryItem, MonthlySales, Plan, ProductSale, PromotionDraft, PromotionDraftInput, PromotionReview, PromotionReviewInput, PromotionTone, SalesResult, TimeSeries } from '../data/shop'
 import { formatEvidence } from '../data/strategyEvidence'
 
 export type Area = { code: string; name: string }
@@ -135,7 +135,7 @@ export type QuestionTurn = {
     actions: QuestionAction[]
   }
 }
-export type QuestionInput = { clientMessageId: string; conversationId?: string; chart: QuestionChart; question: string; planId?: string }
+export type QuestionInput = { clientMessageId: string; conversationId?: string; chart: QuestionChart; question: string; planId?: string; startFromChart?: boolean }
 export function fetchQuestions(auth: string, id: string, signal: AbortSignal) {
   return request<{ conversationId: string | null; turns: QuestionTurn[] }>(`/api/analyses/${encodeURIComponent(id)}/questions`, auth, 'GET', undefined, signal)
 }
@@ -228,6 +228,7 @@ export type SavedStrategy = {
   followUp: string
   nextAction?: string
   executionGuide?: ExecutionGuide
+  customerNotice?: CustomerNotice
   recommendation?: {
     id: string
     beforeMonth: string
@@ -282,9 +283,9 @@ export function fetchExecutionGuide(auth: string, id: string, channel: Execution
 }
 
 export function createPlan(auth: string, id: string, strategyCode: StrategyCode, conditions: PlanConditions,
-  recommendationId?: string, executionGuideId?: string) {
+  recommendationId?: string, executionGuideId?: string, customerNotice?: CustomerNotice) {
   return request<SavedPlan>(`/api/analyses/${encodeURIComponent(id)}/plans`, auth, 'POST',
-    { strategyCode, conditions, recommendationId, executionGuideId })
+    { strategyCode, conditions, recommendationId, executionGuideId, customerNotice })
 }
 
 export function fetchPlan(auth: string, id: string, signal: AbortSignal) {
@@ -457,6 +458,7 @@ export function toPlan(saved: SavedPlan, store: string): Plan {
     timeLabel: strategy.evidence.find(({ source }) => source === 'TIME_SERIES')?.label,
     followUp: strategy.followUp,
     executionGuide: strategy.executionGuide,
+    customerNotice: strategy.customerNotice,
     recommendation: context && {
       reason: strategy.reason,
       evidence: strategy.evidence.map((item) => formatEvidence(item, context.beforeMonth, context.afterMonth)),

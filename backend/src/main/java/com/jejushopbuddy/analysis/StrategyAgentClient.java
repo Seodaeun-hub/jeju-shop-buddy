@@ -238,7 +238,7 @@ final class StrategyAgentClient {
             }).toList();
             suggestions.add(new Suggestion(candidate.code(), TITLES.get(candidate.code()), card.status(), card.reason(),
                     evidence, candidate.missingInputs().stream().map(INPUT_LABELS::get).toList(),
-                    card.followUp(), null, null, card.nextAction(), null, null));
+                    card.followUp(), null, null, card.nextAction(), null, null, null));
         }
         return new Response(analysis.id(), analysis.beforeMonth(), analysis.afterMonth(), List.copyOf(suggestions),
                 "AGENT", contextIds.stream().map(id -> facts.get(id).toEvidence()).toList());
