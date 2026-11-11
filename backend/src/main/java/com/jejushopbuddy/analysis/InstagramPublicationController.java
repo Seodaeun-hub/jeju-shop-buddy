@@ -306,7 +306,8 @@ class InstagramPublicationController {
                 SELECT s.id AS store_id, p.end_date, p.promotion_draft, p.instagram_publication
                 FROM execution_plans p JOIN sales_analyses a ON a.id=p.analysis_id
                 JOIN stores s ON s.id=a.store_id JOIN owners o ON o.id=s.owner_id
-                WHERE p.id=:id AND p.strategy_code='PROMOTION' AND o.email=:email
+                WHERE p.id=:id AND o.email=:email
+                  AND (p.strategy_code='PROMOTION' OR (p.strategy_code='CUSTOM' AND p.strategy_snapshot @> '{"marketing":true}'))
                 """).param("id", planId).param("email", email)
                 .query((rs, row) -> {
                     String publication = rs.getString("instagram_publication");

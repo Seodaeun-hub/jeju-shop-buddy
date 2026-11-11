@@ -3,7 +3,11 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, model_validator
 
-StrategyCode = Literal["OUTREACH", "PROMOTION", "INVENTORY"]
+StrategyCode = Literal["OUTREACH", "PROMOTION", "INVENTORY", "CUSTOM"]
+ConcernType = Literal[
+    "MARKETING", "INVENTORY", "SALES", "DISCOUNT", "VISITORS",
+    "PROFIT", "REVIEWS", "MENU", "OPERATIONS", "LOYALTY", "OTHER",
+]
 InputCode = Literal[
     "MONTHLY_SALES",
     "TIME_SERIES",
@@ -116,7 +120,7 @@ class StrategyRequest(Contract):
     concern: str
     availability: Availability
     evidence: list[Evidence]
-    strategies: list[Candidate] = Field(min_length=1, max_length=3)
+    strategies: list[Candidate] = Field(min_length=1, max_length=4)
 
     @model_validator(mode="after")
     def check_evidence_and_candidates(self):
@@ -140,13 +144,28 @@ class Recommendation(Contract):
     missingInputs: list[InputCode]
     nextAction: str
     followUp: str
+    title: str | None
+    steps: list[str]
 
 
 class RecommendationDraft(Contract):
     recommendations: list[Recommendation]
 
 
-class StrategyResponse(RecommendationDraft):
+class ModelRecommendation(Recommendation):
+    concernType: ConcernType
+
+
+class ModelRecommendationDraft(Contract):
+    recommendations: list[ModelRecommendation]
+
+
+class StrategyRecommendation(Recommendation):
+    marketing: bool
+
+
+class StrategyResponse(Contract):
+    recommendations: list[StrategyRecommendation]
     schemaVersion: Literal["1.0"]
     analysisId: UUID
     inputFingerprint: str

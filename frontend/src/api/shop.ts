@@ -207,7 +207,7 @@ export async function saveTimeSeries(auth: string, id: string, value: TimeSeries
   await request<SavedAnalysis>(`/api/analyses/${encodeURIComponent(id)}/time-series`, auth, 'PUT', toApiTimeSeries(value))
 }
 
-export type StrategyCode = 'OUTREACH' | 'PROMOTION' | 'INVENTORY'
+export type StrategyCode = 'OUTREACH' | 'PROMOTION' | 'INVENTORY' | 'CUSTOM'
 export type MarketContext = {
   card?: { before: number; after: number }
   bsi?: { before: number; after: number }
@@ -226,6 +226,7 @@ export type StrategyEvidence = {
   after: number
 }
 export type SavedStrategy = {
+  marketing?: boolean
   code: StrategyCode
   title: string
   status: 'RECOMMENDED' | 'AVAILABLE' | 'NEEDS_INPUT'
@@ -236,6 +237,7 @@ export type SavedStrategy = {
   missingInputs: string[]
   followUp: string
   nextAction?: string
+  steps?: string[]
   executionGuide?: ExecutionGuide
   customerNotice?: CustomerNotice
   recommendation?: {
@@ -268,7 +270,7 @@ type SavedPlan = {
   checklist: ChecklistItem[]
 }
 
-export const strategyIds = { OUTREACH: 'outreach', PROMOTION: 'promotion', INVENTORY: 'inventory' } as const
+export const strategyIds = { OUTREACH: 'outreach', PROMOTION: 'promotion', INVENTORY: 'inventory', CUSTOM: 'custom' } as const
 
 export function generateRecommendation(auth: string, id: string, signal: AbortSignal) {
   return request<StrategyResponse>(`/api/analyses/${encodeURIComponent(id)}/recommendations`, auth, 'POST', undefined, signal)
@@ -292,9 +294,9 @@ export function fetchExecutionGuide(auth: string, id: string, channel: Execution
 }
 
 export function createPlan(auth: string, id: string, strategyCode: StrategyCode, conditions: PlanConditions,
-  recommendationId?: string, executionGuideId?: string, customerNotice?: CustomerNotice) {
+  recommendationId?: string, executionGuideId?: string, customerNotice?: CustomerNotice, optionIndex?: number) {
   return request<SavedPlan>(`/api/analyses/${encodeURIComponent(id)}/plans`, auth, 'POST',
-    { strategyCode, conditions, recommendationId, executionGuideId, customerNotice })
+    { strategyCode, conditions, recommendationId, executionGuideId, customerNotice, optionIndex })
 }
 
 export function fetchPlan(auth: string, id: string, signal: AbortSignal) {
@@ -327,8 +329,9 @@ export function regeneratePromotionCaption(auth: string, id: string, tone: Promo
   return request<PromotionDraft>(`/api/plans/${encodeURIComponent(id)}/promotion-draft/caption`, auth, 'POST', {tone})
 }
 
-export function fetchPromotionPhoto(auth: string, id: string, signal: AbortSignal) {
-  return request<MenuPhoto & { defaultTone: PromotionTone | null }>(`/api/plans/${encodeURIComponent(id)}/promotion-photo`, auth, 'GET', undefined, signal)
+export function fetchPromotionPhoto(auth: string, id: string, signal: AbortSignal, subject?: string) {
+  const query = subject ? '?' + new URLSearchParams({ subject }) : ''
+  return request<MenuPhoto & { defaultTone: PromotionTone | null }>(`/api/plans/${encodeURIComponent(id)}/promotion-photo${query}`, auth, 'GET', undefined, signal)
 }
 
 function menuPhotoPath(id: string) {
@@ -463,6 +466,7 @@ export function toPlan(saved: SavedPlan, store: string): Plan {
     inventoryItems: saved.inventoryItems,
     promotionReview: saved.promotionReview,
     promotionDraft: saved.promotionDraft,
+    marketing: strategy.marketing,
     strategy: strategyIds[strategy.code],
     title: strategy.title,
     store,

@@ -42,7 +42,7 @@ class ExecutionPlanWriter {
 
     @Transactional(isolation = Isolation.REPEATABLE_READ)
     public Optional<Plan> create(UUID analysisId, String ownerEmail, String strategyCode, Conditions conditions,
-                                 UUID recommendationId, UUID guideId, SalesStrategies.CustomerNotice customerNotice) {
+                                 UUID recommendationId, Integer optionIndex, UUID guideId, SalesStrategies.CustomerNotice customerNotice) {
         var analysis = reader.find(analysisId, ownerEmail);
         if (analysis.isEmpty()) {
             return Optional.empty();
@@ -50,7 +50,7 @@ class ExecutionPlanWriter {
         var strategy = recommendationId == null
                 ? salesStrategies.from(analysis.get()).strategies().stream()
                     .filter(candidate -> candidate.code().equals(strategyCode)).findFirst().orElseThrow()
-                : recommendations.select(analysis.get(), recommendationId, strategyCode);
+                : recommendations.select(analysis.get(), recommendationId, strategyCode, optionIndex);
         if (guideId != null) {
             strategy = strategy.withExecutionGuide(guideSnapshots.select(analysis.get(), recommendationId, strategyCode, guideId));
         }
@@ -80,7 +80,9 @@ class ExecutionPlanWriter {
 
     private Optional<Plan> persist(UUID id, UUID analysisId, Suggestion strategy, Conditions conditions, LocalDate start,
                                    PromotionReviewController.Review review) {
-        LocalDate end = start.plusWeeks(conditions.durationWeeks()).minusDays(1);
+        boolean noticeCheck = strategy.code().equals("OUTREACH") && strategy.reviewTopic() == null;
+        LocalDate observationStart = noticeCheck ? start.plusDays(2) : start;
+        LocalDate end = observationStart.plusWeeks(conditions.durationWeeks()).minusDays(1);
         ObjectNode snapshot = json.valueToTree(strategy);
         snapshot.remove("code");
 
@@ -100,7 +102,7 @@ class ExecutionPlanWriter {
                 .param("weeks", conditions.durationWeeks())
                 .param("budget", conditions.budgetWon())
                 .param("channel", conditions.channel())
-                .param("startDate", start)
+                .param("startDate", observationStart)
                 .param("endDate", end)
                 .param("review", review == null ? null : json.writeValueAsString(review), Types.VARCHAR)
                 .query((rs, row) -> rs.getObject("created_at", OffsetDateTime.class))
@@ -126,7 +128,7 @@ class ExecutionPlanWriter {
                     .param("completed", item.completed())
                     .update();
         }
-        return Optional.of(new Plan(id, analysisId, strategy, conditions, start, end, checklist, createdAt.get(), null, review, null));
+        return Optional.of(new Plan(id, analysisId, strategy, conditions, observationStart, end, checklist, createdAt.get(), null, review, null));
     }
 
     @Transactional
@@ -163,6 +165,14 @@ class ExecutionPlanWriter {
 
     private static List<ChecklistItem> checklistFor(Suggestion strategy, Conditions conditions,
                                                      LocalDate start, LocalDate end) {
+        if (strategy.code().equals("CUSTOM")) {
+            var items = new ArrayList<ChecklistItem>();
+            for (String step : strategy.steps()) {
+                items.add(item(step, start.plusDays(items.size())));
+            }
+            items.add(item(strategy.followUp(), end));
+            return List.copyOf(items);
+        }
         if (strategy.reviewTopic() != null) {
             var tasks = strategy.reviewTopic().checklist;
             return List.of(item(tasks.get(0), start), item(tasks.get(1), start.plusDays(1)),
@@ -188,7 +198,7 @@ class ExecutionPlanWriter {
                 : timeLabel + " 구간의 주문 가능 시간과 현재 " + channel + " 안내 확인";
         return List.of(item(check, start),
                 item("안내가 다르면 수정할 문구 정리", start.plusDays(1)),
-                item("필요한 경우 " + channel + " 주문 안내 수정", start.plusDays(2)),
+                item("필요한 경우 " + channel + " 주문 안내 수정", start.plusDays(1)),
                 item(strategy.followUp(), end));
     }
 

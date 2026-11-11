@@ -51,7 +51,8 @@ export function App() {
   const analysisId = requestedId ?? lastId
   const auth = account?.auth
   const dashboardPath = (id: string) => '/analysis?' + new URLSearchParams({ id })
-  const strategyPath = analysisId ? '/strategy?' + new URLSearchParams({ id: analysisId }) : '/strategy'
+  const savedStrategyPath = (id: string) => '/strategy?' + new URLSearchParams({ id })
+  const strategyPath = analysisId ? savedStrategyPath(analysisId) : '/strategy'
   const planPath = (route: '/execution' | '/results', value: Plan) => value.id && value.analysisId
     ? route + '?' + new URLSearchParams({ id: value.id, analysisId: value.analysisId }) : route
   const accountPage = pathname === '/login' || pathname === '/signup'
@@ -102,13 +103,13 @@ export function App() {
     setPlanError(undefined)
   }
 
-  function openSavedAnalysis(id: string) {
+  function openSavedAnalysis(id: string, destination = dashboardPath(id)) {
     setLastId(id)
     setLoadedId(undefined)
     setAnalysis(undefined)
     setAnalysisError('')
     setPlan(undefined)
-    navigate(dashboardPath(id))
+    navigate(destination)
   }
 
   function openPlan(value: Plan) {
@@ -229,7 +230,11 @@ export function App() {
     : auth && analysisId && currentAnalysis
       ? <SavedStrategyPage key={analysisId} auth={auth} analysisId={analysisId} data={currentAnalysis} backTo={dashboardPath(analysisId)} onPlan={openPlan} />
       : currentAnalysis?.demo ? <Strategy data={currentAnalysis} onPlan={openPlan} />
-      : analysisId ? analysisStatus : <Placeholder to="/sales" action="매출 입력하기">매출을 분석하면 대응 전략을 볼 수 있어요.</Placeholder>
+      : analysisId ? analysisStatus : auth ? <>
+        <PageTitle title="대응 전략" detail="저장한 매출 분석을 선택하면 그 분석에 맞는 전략을 볼 수 있어요." />
+        <AnalysisSwitcher key={account?.email} auth={auth} onOpen={id => openSavedAnalysis(id, savedStrategyPath(id))} />
+        <Link className="button secondary" to="/sales">새 매출 입력하기 <span aria-hidden="true">→</span></Link>
+      </> : <Placeholder to="/sales" action="매출 입력하기">매출을 분석하면 대응 전략을 볼 수 있어요.</Placeholder>
 
   const planPage = requestedPlanId && !auth
     ? <Navigate to="/login" state={{ returnTo: pathname + search }} replace />

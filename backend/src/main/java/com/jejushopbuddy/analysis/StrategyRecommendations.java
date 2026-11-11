@@ -36,6 +36,10 @@ class StrategyRecommendations {
     }
 
     Suggestion select(AnalysisResponse analysis, UUID id, String code) {
+        return select(analysis, id, code, null);
+    }
+
+    Suggestion select(AnalysisResponse analysis, UUID id, String code, Integer optionIndex) {
         var saved = jdbc.sql("""
                 SELECT input_fingerprint, snapshot FROM strategy_recommendations
                 WHERE id = :id AND analysis_id = :analysisId
@@ -49,6 +53,12 @@ class StrategyRecommendations {
 
         var response = saved.response();
         var context = new RecommendationContext(id, response.beforeMonth(), response.afterMonth(), response.contextEvidence());
+        if (optionIndex != null) {
+            if (optionIndex < 0 || optionIndex >= response.strategies().size()) throw new Unavailable();
+            var option = response.strategies().get(optionIndex);
+            if (!option.code().equals(code)) throw new Unavailable();
+            return option.withRecommendation(context);
+        }
         return response.strategies().stream()
                 .filter(candidate -> candidate.code().equals(code))
                 .findFirst().orElseThrow(Unavailable::new)

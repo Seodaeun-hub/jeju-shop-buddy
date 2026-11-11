@@ -365,18 +365,30 @@ class SalesAnalysisController {
             produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<?> createPlan(@PathVariable String analysisId, @RequestBody JsonNode body, Principal owner) {
         UUID id = parseId(analysisId, "INVALID_ANALYSIS_ID", "분석 ID 형식을 확인해 주세요.", "analysisId");
-        fields(body, Set.of("strategyCode", "conditions", "recommendationId", "executionGuideId", "customerNotice"), null);
+        fields(body, Set.of("strategyCode", "conditions", "recommendationId", "optionIndex", "executionGuideId", "customerNotice"), null);
         var code = body.get("strategyCode");
-        if (code == null || !code.isString() || !Set.of("OUTREACH", "PROMOTION", "INVENTORY").contains(code.stringValue())) {
+        if (code == null || !code.isString() || !Set.of("OUTREACH", "PROMOTION", "INVENTORY", "CUSTOM").contains(code.stringValue())) {
             throw invalid("INVALID_STRATEGY_CODE", "대응 전략을 선택해 주세요.", "strategyCode");
         }
         String strategyCode = code.stringValue();
+        UUID recommendationId = readRecommendationId(body);
+        var option = body.get("optionIndex");
+        Integer optionIndex = null;
+        if (option != null) {
+            if (!option.isIntegralNumber() || !option.canConvertToInt() || option.intValue() < 0 || recommendationId == null) {
+                throw invalid("INVALID_STRATEGY_OPTION", "추천 목록에서 전략을 다시 선택해 주세요.", "optionIndex");
+            }
+            optionIndex = option.intValue();
+        }
+        if ("CUSTOM".equals(strategyCode) && optionIndex == null) {
+            throw invalid("INVALID_STRATEGY_OPTION", "추천 목록에서 맞춤 전략을 다시 선택해 주세요.", "optionIndex");
+        }
         var conditions = planConditions(body.get("conditions"), strategyCode);
         var guide = body.get("executionGuideId");
         UUID guideId = guide == null ? null : parseId(guide.isString() ? guide.stringValue() : "",
                 "INVALID_EXECUTION_GUIDE_ID", "실행 가이드 ID 형식을 확인해 주세요.", "executionGuideId");
-        var result = planWriter.create(id, owner.getName(), strategyCode, conditions, readRecommendationId(body),
-                guideId, readCustomerNotice(body.get("customerNotice")));
+        var result = planWriter.create(id, owner.getName(), strategyCode, conditions, recommendationId,
+                optionIndex, guideId, readCustomerNotice(body.get("customerNotice")));
         if (result.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(new ApiError("ANALYSIS_NOT_FOUND", "매출 분석을 찾을 수 없어요.", null));
@@ -433,9 +445,9 @@ class SalesAnalysisController {
         }
         var budget = node.get("budgetWon");
         var channel = node.get("channel");
-        if (strategyCode.equals("INVENTORY")) {
+        if (Set.of("INVENTORY", "CUSTOM").contains(strategyCode)) {
             if (budget != null || channel != null) {
-                throw invalid(errorCode, "발주량 검토에는 예산과 홍보 채널을 입력하지 않아요.", "conditions");
+                throw invalid(errorCode, "이 전략의 실행 조건에는 실행 기간만 입력해 주세요.", "conditions");
             }
             return new ExecutionPlanWriter.Conditions(weeks.intValue(), null, null);
         }
