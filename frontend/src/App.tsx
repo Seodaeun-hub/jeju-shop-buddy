@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react'
+import { startTransition, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
+import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
 import { createPromotionDraft, fetchAnalysis, fetchOwnerSession, fetchPlan, logoutOwner, ownerSession, type OwnerSession, regeneratePromotionCaption, saveInventoryReview, savePromotionReview, saveTimeSeries, toPlan, updateChecklistItem } from './api/shop'
 import { Dashboard } from './pages/Dashboard'
 import { AnalysisSwitcher } from './components/AnalysisSwitcher'
 import { Home } from './pages/Home'
 import { Account } from './pages/Account'
-import { ExistingStoreIntake, Intake } from './pages/Intake'
+import { Intake } from './pages/Intake'
+import { StoreRegistration } from './pages/StoreRegistration'
 import { MyStores } from './pages/MyStores'
 import { MyPage } from './pages/MyPage'
 import { Execution } from './pages/Execution'
@@ -28,9 +29,49 @@ function Placeholder({ children, to, action }: { children: ReactNode; to: string
   return <section className="empty-state"><h1>{children}</h1><Link className="button primary" to={to}>{action} <span aria-hidden="true">→</span></Link></section>
 }
 
+function AccountMenu({ name, onLogout }: { name: string; onLogout: () => void }) {
+  const menu = useRef<HTMLDetailsElement>(null)
+  const trigger = useRef<HTMLElement>(null)
+  const ownerName = name.trim() || '사장님'
+  const label = ownerName.endsWith('님') ? ownerName : `${ownerName}님`
+
+  useEffect(() => {
+    function closeOutside(event: PointerEvent) {
+      const details = menu.current
+      if (details?.open && event.target instanceof Node && !details.contains(event.target)) details.open = false
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    return () => document.removeEventListener('pointerdown', closeOutside)
+  }, [])
+
+  function closeMenu() {
+    if (menu.current) menu.current.open = false
+    trigger.current?.focus()
+  }
+
+  return <details className="owner-menu" ref={menu} onKeyDown={event => {
+    if (event.key === 'Escape' && menu.current?.open) {
+      event.preventDefault()
+      closeMenu()
+    }
+  }} onBlur={event => {
+    if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false
+  }}>
+    <summary ref={trigger} aria-label={`${label} 계정 메뉴`}>
+      <span className="owner-initial" aria-hidden="true">{Array.from(ownerName)[0]}</span>
+      <span className="owner-name">{label}</span>
+    </summary>
+    <div className="owner-menu-links">
+      <Link to="/my-page" onClick={closeMenu}>마이페이지</Link>
+      <button type="button" onClick={() => { closeMenu(); onLogout() }}>로그아웃</button>
+    </div>
+  </details>
+}
+
 export function App() {
   const [analysis, setAnalysis] = useState<Analysis>()
   const [plan, setPlan] = useState<Plan>()
+  const [workspaceNavOpen, setWorkspaceNavOpen] = useState(() => !window.matchMedia('(max-width: 900px)').matches)
   const navigate = useNavigate()
   const { pathname, search, state } = useLocation()
   const [account, setAccount] = useState<OwnerSession & { auth: string }>()
@@ -41,7 +82,6 @@ export function App() {
   const [analysisError, setAnalysisError] = useState('')
   const [retry, setRetry] = useState(0)
   const params = new URLSearchParams(search)
-  const salesStoreId = params.get('storeId')
   const planRoute = pathname === '/execution' || pathname === '/results'
   const requestedId = pathname === '/analysis' || pathname === '/strategy' ? params.get('id')
     : planRoute ? params.get('analysisId') : null
@@ -89,8 +129,7 @@ export function App() {
 
   function login(session: OwnerSession) {
     setAccount({ ...session, auth: ownerSession })
-    const defaultDestination = pathname === '/signup' ? '/sales' : '/stores'
-    navigate(typeof state?.returnTo === 'string' ? state.returnTo : defaultDestination, { replace: true })
+    navigate(typeof state?.returnTo === 'string' ? state.returnTo : '/stores', { replace: true })
   }
 
   function forgetDeletedAnalysis(id: string) {
@@ -128,14 +167,16 @@ export function App() {
         return
       }
     }
-    setAccount(undefined)
-    setPlanError(undefined)
-    setLastId(undefined)
-    setLoadedId(undefined)
-    setAnalysisError('')
-    setAnalysis(undefined)
-    setPlan(undefined)
-    navigate('/')
+    startTransition(() => {
+      navigate('/')
+      setAccount(undefined)
+      setPlanError(undefined)
+      setLastId(undefined)
+      setLoadedId(undefined)
+      setAnalysisError('')
+      setAnalysis(undefined)
+      setPlan(undefined)
+    })
   }
 
   async function updateTimeSeries(value: TimeSeries) {
@@ -227,14 +268,20 @@ export function App() {
 
   const strategyPage = analysisId && !auth
     ? <Navigate to="/login" state={{ returnTo: pathname + search }} replace />
-    : auth && analysisId && currentAnalysis
-      ? <SavedStrategyPage key={analysisId} auth={auth} analysisId={analysisId} data={currentAnalysis} backTo={dashboardPath(analysisId)} onPlan={openPlan} />
-      : currentAnalysis?.demo ? <Strategy data={currentAnalysis} onPlan={openPlan} />
-      : analysisId ? analysisStatus : auth ? <>
-        <PageTitle title="대응 전략" detail="저장한 매출 분석을 선택하면 그 분석에 맞는 전략을 볼 수 있어요." />
-        <AnalysisSwitcher key={account?.email} auth={auth} onOpen={id => openSavedAnalysis(id, savedStrategyPath(id))} />
-        <Link className="button secondary" to="/sales">새 매출 입력하기 <span aria-hidden="true">→</span></Link>
-      </> : <Placeholder to="/sales" action="매출 입력하기">매출을 분석하면 대응 전략을 볼 수 있어요.</Placeholder>
+    : auth || currentAnalysis?.demo ? <div className="strategy-page">
+      <PageTitle title="대응 전략 선택" detail={analysisId || currentAnalysis?.demo
+        ? '우리 가게에 맞는 방법을 골라보세요.'
+        : '저장한 매출 분석을 선택하면 그 분석에 맞는 전략을 볼 수 있어요.'} />
+      {auth && <AnalysisSwitcher key={account?.email} auth={auth} analysis={currentAnalysis} analysisId={analysisId}
+        currentLabel="추천 기준 분석" onOpen={id => openSavedAnalysis(id, savedStrategyPath(id))} />}
+      {auth && analysisId
+        ? currentAnalysis
+          ? <SavedStrategyPage key={analysisId} auth={auth} analysisId={analysisId} data={currentAnalysis} backTo={dashboardPath(analysisId)} onPlan={openPlan} />
+          : analysisStatus
+        : currentAnalysis?.demo
+          ? <Strategy data={currentAnalysis} onPlan={openPlan} />
+          : <Link className="button secondary" to="/sales">새 매출 입력하기 <span aria-hidden="true">→</span></Link>}
+    </div> : <Placeholder to="/sales" action="매출 입력하기">매출을 분석하면 대응 전략을 볼 수 있어요.</Placeholder>
 
   const planPage = requestedPlanId && !auth
     ? <Navigate to="/login" state={{ returnTo: pathname + search }} replace />
@@ -253,43 +300,72 @@ export function App() {
         }}>다시 불러오기</button></> : <p role="status">저장한 실행 계획을 불러오는 중이에요.</p>}
       </section> : <Placeholder to={strategyPath} action="대응 전략 보기">실행할 전략을 먼저 선택해 주세요.</Placeholder>
 
+  const workspace = !accountPage && pathname !== '/'
+  const activeSection = pathname === '/results' ? '/execution' : pathname
+  const appMenu = <nav className="main-nav" id="workspace-menu" aria-label="가게짝꿍 메뉴" hidden={!workspaceNavOpen}>
+    {navigation.map(({ to, label }) => <Link key={to} to={to === '/analysis' && analysisId ? dashboardPath(analysisId)
+      : to === '/strategy' ? strategyPath : to === '/execution' && plan ? planPath('/execution', plan) : to}
+      onClick={() => { if (window.matchMedia('(max-width: 900px)').matches) setWorkspaceNavOpen(false) }}
+      aria-current={to === activeSection ? 'page' : undefined}>{label}</Link>)}
+  </nav>
+  const main = <main id="main-content" className={accountPage ? 'account-content' : workspace ? 'content workspace-main' : 'content landing-content'}>
+    {logoutError && <p role="alert" className="error">{logoutError}</p>}
+    {sessionPending && !publicPage ? <p role="status">로그인 상태를 확인하고 있어요.</p> : <Routes>
+      <Route path="/" element={<Home />} />
+      <Route path="/login" element={<Account key="login" signup={false} onLogin={login} />} />
+      <Route path="/signup" element={<Account key="signup" signup onLogin={login} />} />
+      <Route path="/my-page" element={account
+        ? <MyPage key={account.email} account={account} onUpdate={session => setAccount({ ...session, auth: ownerSession })} />
+        : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
+      <Route path="/stores" element={account ? <MyStores key={account.email} auth={account.auth} ownerEmail={account.email} onAnalysisDeleted={forgetDeletedAnalysis} /> : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
+      <Route path="/stores/new" element={auth ? <StoreRegistration auth={auth} />
+        : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
+      <Route path="/sales" element={account ? <Intake key={account.email} auth={account.auth} ownerEmail={account.email} onAnalyze={openSavedAnalysis} />
+        : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
+      <Route path="/analysis" element={dashboard} />
+      <Route path="/strategy" element={strategyPage} />
+      <Route path="/execution" element={planPage} />
+      <Route path="/results" element={planPage} />
+      <Route path="*" element={<Placeholder to="/" action="메인으로">요청한 화면을 찾을 수 없어요.</Placeholder>} />
+    </Routes>}
+  </main>
+
   return (
     <>
       <a href="#main-content" className="skip-link">본문으로 건너뛰기</a>
-      {!accountPage && <header className={pathname === '/' ? 'site-header landing-header' : 'site-header'}>
+      {!accountPage && <header className={workspace ? 'site-header workspace-header' : 'site-header landing-header'}>
         <div className="shell header-inner">
-          <Link to="/" className="wordmark"><Citrus /> 가게짝꿍</Link>
-          {!publicPage && <nav className="main-nav" aria-label="가게짝꿍 메뉴">
-            {navigation.map(({ to, label }) => <NavLink key={to} to={to === '/analysis' && analysisId ? dashboardPath(analysisId)
-              : to === '/strategy' ? strategyPath : to === '/execution' && plan ? planPath('/execution', plan) : to} className={pathname === '/results' && to === '/execution' ? 'active' : undefined}>{label}</NavLink>)}
-          </nav>}
+          <div className="header-brand">
+            {workspace && <button className="workspace-nav-toggle workspace-nav-toggle-mobile" type="button"
+              aria-label={workspaceNavOpen ? '메뉴 접기' : '메뉴 열기'} aria-expanded={workspaceNavOpen} aria-controls="workspace-menu"
+              onClick={() => setWorkspaceNavOpen(open => !open)}><span aria-hidden="true" /></button>}
+            <Link to="/" className="wordmark"><Citrus /> 가게짝꿍</Link>
+          </div>
           <div className="header-actions">
-            {pathname === '/' && !account ? (!sessionPending && <><Link to="/login">로그인</Link><Link className="button small secondary" to="/signup">회원가입</Link></>)
-              : <><span className="badge account-greeting">{account ? (account.name ? `${account.name}님, 환영해요!` : '사장님, 환영해요!') : '체험 모드'}</span>{account && <Link to="/my-page">마이페이지</Link>}<button className="text-button" onClick={leavePreview}>{account ? '로그아웃' : '나가기'}</button></>}
+            {account ? <AccountMenu key={pathname} name={account.name} onLogout={leavePreview} />
+              : !sessionPending && (workspace
+                ? <><span className="muted">체험 모드</span><button className="text-button" onClick={leavePreview}>나가기</button></>
+                : <><Link to="/login">로그인</Link><Link className="button small secondary" to="/signup">회원가입</Link></>)}
           </div>
         </div>
       </header>}
-      <main id="main-content" className={accountPage ? 'account-content' : pathname === '/' ? 'content landing-content' : 'shell content'}>
-        {logoutError && <p role="alert" className="error">{logoutError}</p>}
-        {sessionPending && !publicPage ? <p role="status">로그인 상태를 확인하고 있어요.</p> : <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/login" element={<Account key="login" signup={false} onLogin={login} />} />
-          <Route path="/signup" element={<Account key="signup" signup onLogin={login} />} />
-          <Route path="/my-page" element={account
-            ? <MyPage key={account.email} account={account} onUpdate={session => setAccount({ ...session, auth: ownerSession })} />
-            : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
-          <Route path="/stores" element={auth ? <MyStores key={account?.email} auth={auth} onAnalysisDeleted={forgetDeletedAnalysis} /> : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
-          <Route path="/sales" element={auth
-            ? salesStoreId ? <ExistingStoreIntake key={salesStoreId} auth={auth} storeId={salesStoreId} onAnalyze={openSavedAnalysis} />
-              : <Intake auth={auth} onAnalyze={openSavedAnalysis} />
-            : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
-          <Route path="/analysis" element={dashboard} />
-          <Route path="/strategy" element={strategyPage} />
-          <Route path="/execution" element={planPage} />
-          <Route path="/results" element={planPage} />
-          <Route path="*" element={<Placeholder to="/" action="메인으로">요청한 화면을 찾을 수 없어요.</Placeholder>} />
-        </Routes>}
-      </main>
+      {workspace ? <div className={`shell workspace-layout${workspaceNavOpen ? '' : ' workspace-layout-collapsed'}`}>
+        <aside className="workspace-sidebar">
+          <div className="workspace-sidebar-inner">
+            <button className="workspace-sidebar-toggle" type="button" title={workspaceNavOpen ? '메뉴 접기' : '메뉴 열기'}
+              aria-label={workspaceNavOpen ? '메뉴 접기' : '메뉴 열기'} aria-expanded={workspaceNavOpen} aria-controls="workspace-menu"
+              onClick={() => setWorkspaceNavOpen(open => !open)}>
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="3" y="5" width="18" height="14" rx="2" /><path d="M9 5v14" />
+                <path d={workspaceNavOpen ? 'm16 9-3 3 3 3' : 'm13 9 3 3-3 3'} />
+              </svg>
+              {workspaceNavOpen && <span>메뉴 접기</span>}
+            </button>
+            {appMenu}
+          </div>
+        </aside>
+        {main}
+      </div> : main}
     </>
   )
 }

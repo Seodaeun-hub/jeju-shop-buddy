@@ -66,6 +66,7 @@ class StoreSecurityConfiguration {
         };
         return http.securityMatcher("/api/session", "/api/session/signup", "/api/session/profile", "/api/session/password", "/api/stores", "/api/stores/{storeId}/analyses",
                         "/api/stores/{storeId}/menu-photos", "/api/stores/{storeId}/promotion-tone",
+                        "/api/stores/{storeId}/pos-files", "/api/stores/{storeId}/pos-files/{fileId}",
                         "/api/analyses/{analysisId}", "/api/analyses/{analysisId}/time-series", "/api/analyses/{analysisId}/strategies", "/api/analyses/{analysisId}/plans",
                         "/api/analyses/{analysisId}/recommendations", "/api/analyses/{analysisId}/execution-guide",
                         "/api/analyses/{analysisId}/reviews", "/api/analyses/{analysisId}/review-plans",
@@ -73,7 +74,7 @@ class StoreSecurityConfiguration {
                         "/api/plans/{planId}", "/api/plans/{planId}/checklist/{itemId}", "/api/plans/{planId}/results",
                         "/api/plans/{planId}/results/{resultId}", "/api/plans/{planId}/inventory-review",
                         "/api/plans/{planId}/promotion-review", "/api/plans/{planId}/promotion-review/defaults", "/api/plans/{planId}/promotion-draft", "/api/plans/{planId}/promotion-draft/caption",
-                        "/api/plans/{planId}/promotion-photo", "/api/plans/{planId}/instagram-publication", "/api/plans/{planId}/promotion-impact",
+                        "/api/plans/{planId}/promotion-photo", "/api/plans/{planId}/store-notice", "/api/plans/{planId}/instagram-publication", "/api/plans/{planId}/promotion-impact",
                         "/api/plans/{planId}/promotion-impact/next-checklist", "/api/plans/{planId}/promotion-impact/next-explanation",
                         "/api/plans/{planId}/promotion-impact/actuals", "/api/plans/{planId}/promotion-impact/next-plan/{requestId}")
                 .authorizeHttpRequests(auth -> auth

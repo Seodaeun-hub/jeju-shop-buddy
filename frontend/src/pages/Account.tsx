@@ -80,7 +80,7 @@ export function Account({ signup, onLogin }: { signup: boolean; onLogin: (sessio
             </div>
             {error && <p className="error" role="alert">{error}</p>}
             <button className="button primary full" type="submit" disabled={pending}>
-              {signup ? (pending ? '가입 중…' : '가입하고 매장 등록하기') : (pending ? '로그인 중…' : '로그인')}
+              {signup ? (pending ? '가입 중…' : '가입하기') : (pending ? '로그인 중…' : '로그인')}
             </button>
           </form>
         </div>

@@ -30,8 +30,9 @@ async function send(path: string, authorization?: string, method = 'GET', body?:
     if (authorization !== ownerSession) headers.set('Authorization', authorization)
     headers.set('X-Requested-With', 'XMLHttpRequest')
   }
-  if (body !== undefined) headers.set('Content-Type', 'application/json')
-  const response = await fetch(path, { method, headers, body: JSON.stringify(body), signal, cache: 'no-store', credentials: authorization ? 'same-origin' : 'omit' })
+  const multipart = body instanceof FormData
+  if (body !== undefined && !multipart) headers.set('Content-Type', 'application/json')
+  const response = await fetch(path, { method, headers, body: multipart ? body : JSON.stringify(body), signal, cache: 'no-store', credentials: authorization ? 'same-origin' : 'omit' })
     .catch((error: unknown) => {
       if (signal?.aborted) throw error
       throw new Error('서버에 연결할 수 없어요. 잠시 후 다시 시도해 주세요.')
@@ -99,6 +100,25 @@ export const saveStorePromotionTone = (auth: string, id: string, settings: { ton
   request<StorePromotionTone>(storePromotionTonePath(id), auth, 'PUT', settings)
 
 export const listStores = (auth: string, signal?: AbortSignal) => request<Store[]>('/api/stores', auth, 'GET', undefined, signal)
+export type PosFileKind = 'PAYMENT' | 'PRODUCT'
+export type StoredPosFile = { id: string; kind: PosFileKind; filename: string; size: number; uploadedAt: string }
+const posFilesPath = (storeId: string) => `/api/stores/${encodeURIComponent(storeId)}/pos-files`
+const posFilePath = (storeId: string, fileId: string) => `${posFilesPath(storeId)}/${encodeURIComponent(fileId)}`
+export const listPosFiles = (auth: string, storeId: string, signal: AbortSignal) =>
+  request<StoredPosFile[]>(posFilesPath(storeId), auth, 'GET', undefined, signal)
+export function uploadPosFile(auth: string, storeId: string, kind: PosFileKind, file: File) {
+  const body = new FormData()
+  body.append('kind', kind)
+  body.append('file', file)
+  return request<StoredPosFile>(posFilesPath(storeId), auth, 'POST', body)
+}
+export async function readStoredPosFile(auth: string, storeId: string, file: StoredPosFile) {
+  const content = await (await send(posFilePath(storeId, file.id), auth)).blob()
+  return new File([content], file.filename, { type: content.type })
+}
+export const deletePosFile = (auth: string, storeId: string, fileId: string) =>
+  send(posFilePath(storeId, fileId), auth, 'DELETE')
+
 export type StoreAnalysisSummary = {
   id: string
   name?: string | null
@@ -152,10 +172,12 @@ export const listAreas = (signal: AbortSignal) => request<Area[]>('/api/areas', 
 export const registerStore = (auth: string, input: StoreInput) => request<Store>('/api/stores', auth, 'POST', input)
 
 export type ConcernCheck = {
-  status: 'COMPARED' | 'MISSING_DATA' | 'CLARIFICATION_REQUIRED' | 'UNAVAILABLE'
-  detail: string
+  status: 'COMPARED' | 'GUIDANCE' | 'MISSING_DATA' | 'CLARIFICATION_REQUIRED' | 'UNAVAILABLE'
+  question?: string | null
+  detail?: string
   answer?: string
-  metric?: 'AMOUNT' | 'COUNT'
+  metric?: 'AMOUNT' | 'COUNT' | 'PRODUCT'
+  productName?: string | null
   startHour?: number
   endHour?: number
   beforeMonth?: string
@@ -166,8 +188,11 @@ export type ConcernCheck = {
   posMonths?: [string, string]
 }
 
-export function checkConcern(auth: string, id: string, signal: AbortSignal) {
-  return request<ConcernCheck>(`/api/analyses/${encodeURIComponent(id)}/concern-check`, auth, 'POST', undefined, signal)
+export async function checkConcern(auth: string, id: string, signal: AbortSignal) {
+  const response = await request<ConcernCheck | { results: ConcernCheck[] }>(
+    `/api/analyses/${encodeURIComponent(id)}/concern-check`, auth, 'POST', undefined, signal,
+  )
+  return 'results' in response ? response.results : [response]
 }
 
 export async function attachHourlySales(auth: string, id: string, hourlySales: import('../data/pos').HourlySales, signal: AbortSignal) {
@@ -297,6 +322,12 @@ export function createPlan(auth: string, id: string, strategyCode: StrategyCode,
   recommendationId?: string, executionGuideId?: string, customerNotice?: CustomerNotice, optionIndex?: number) {
   return request<SavedPlan>(`/api/analyses/${encodeURIComponent(id)}/plans`, auth, 'POST',
     { strategyCode, conditions, recommendationId, executionGuideId, customerNotice, optionIndex })
+}
+
+export type StoreNoticeDraft = { title: string; message: string }
+
+export function generateStoreNotice(auth: string, planId: string, template: string, values: Record<string, string>, signal: AbortSignal) {
+  return request<StoreNoticeDraft>(`/api/plans/${encodeURIComponent(planId)}/store-notice`, auth, 'POST', { template, values }, signal)
 }
 
 export function fetchPlan(auth: string, id: string, signal: AbortSignal) {

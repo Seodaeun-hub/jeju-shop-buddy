@@ -1,13 +1,7 @@
 .content.landing-content {
   --landing-story-green: #1d402f;
   padding-block: 0;
-  background: var(--paper);
 }
-.landing-content h2 { letter-spacing: -.025em; }
-.landing-content h3 { font-weight: 700; letter-spacing: -.02em; }
-:is(.landing-content, .landing-header) .button { font-weight: 700; }
-.landing-header .button.secondary { border-color: #8b9386; }
-.landing-header .button.secondary:hover { border-color: var(--green); }
 
 .site-header.landing-header {
   position: absolute;
@@ -18,7 +12,7 @@
 }
 .landing-header .wordmark, .landing-header .header-actions > a:not(.button),
 .landing-header .header-actions > .text-button { color: #fffdf7; }
-.landing-header :focus-visible, .landing-intro :focus-visible { outline-color: #f7d19c; }
+.landing-header :focus-visible { outline-color: #f7d19c; }
 
 .landing-hero {
   position: relative;
@@ -204,7 +198,7 @@
   color: #fffdf7;
   animation: landing-intro-in .65s ease-out .78s both;
 }
-.landing-intro-label { color: #fae0b6; font-weight: 700; }
+.landing-intro-label { font-weight: 700; }
 .landing-intro h1, .landing-content h2 {
   font-family: "Jeju Myeongjo", Batang, serif;
   font-weight: 400;
@@ -214,7 +208,6 @@
 .landing-intro h1 { font-size: clamp(2.4rem, 6vw, 5.5rem); }
 .landing-intro > p { max-width: 47ch; word-break: keep-all; text-wrap: pretty; }
 .landing-intro .actions { margin-top: .3rem; }
-.landing-intro .button.primary { background: #f2c68a; border-color: #f2c68a; color: #22382b; }
 .landing-intro:focus-within { animation: none; }
 .landing-scroll-cue {
   position: absolute;
@@ -754,20 +747,21 @@
 }
 .landing-start-content { display: grid; justify-items: center; gap: clamp(1.5rem, 4vw, 3rem); padding-block: 3rem; }
 .landing-start h2 { font-size: clamp(2.65rem, 9vw, 8rem); }
+:is(.landing-intro, .landing-start) .button.primary {
+  border-color: var(--sheet);
+  background: var(--sheet);
+  color: var(--green);
+}
 .landing-start .button.primary {
   min-height: clamp(3.75rem, 6vw, 4.6rem);
   padding-inline: clamp(1.4rem, 4vw, 3rem);
-  border-color: #f5c88d;
-  background: #f5c88d;
-  color: #23382a;
   font-size: clamp(1.12rem, 2.2vw, 1.45rem);
 }
 :is(.landing-intro, .landing-start) .button.primary:hover:not(:disabled) {
-  border-color: #ffe1ae;
-  background: #ffe1ae;
-  color: #23382a;
+  border-color: var(--pale-green);
+  background: var(--pale-green);
 }
-.landing-start .button.primary:focus-visible { outline-color: #f5c88d; }
+:is(.landing-intro, .landing-start) .button.primary:focus-visible { outline-color: var(--sheet); }
 
 @media (max-width: 700px) {
   .landing-feature, .landing-feature:nth-of-type(even) {

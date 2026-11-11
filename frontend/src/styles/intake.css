@@ -1,0 +1,133 @@
+.sales-intake {
+  --sales-border: #dbdfd5;
+  --sales-quiet: #f3f5ef;
+  width: min(100%, 58rem);
+  margin-inline: 0 auto;
+  word-break: keep-all;
+}
+
+.sales-heading {
+  display: grid;
+  gap: .35rem;
+  margin-bottom: 1.4rem;
+}
+
+.sales-heading h1 { font-size: clamp(1.85rem, 3vw, 2.25rem); }
+.sales-heading p { color: var(--muted); font-size: .94rem; }
+
+.sales-form {
+  background: var(--sheet);
+  border: 1px solid var(--sales-border);
+  border-radius: 10px;
+}
+
+.sales-section { padding: 1.35rem clamp(1rem, 4vw, 2rem); }
+.sales-section + .sales-section { border-top: 1px solid var(--sales-border); }
+.sales-section h2 { font-size: 1.19rem; font-weight: 400; letter-spacing: -.025em; }
+.sales-section h3 { font-weight: 400; }
+.sales-section-heading a, .sales-section-heading .text-button {
+  font-size: .88rem;
+  text-decoration-color: #99a69a;
+}
+.sales-section-heading .text-button { padding-inline: 0; }
+
+.sales-store-fields {
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  align-items: start;
+  column-gap: 1rem;
+  margin-top: .9rem;
+}
+
+.sales-store-wide { grid-column: 1 / -1; }
+.sales-intake .sales-store-fields.form-stack > label, .sales-intake .sales-store-fields .address-field > label,
+.sales-intake #sales-context-heading ~ label { font-size: .91rem; font-weight: 400; }
+.sales-form :is(input:not([type="file"]), select, textarea) {
+  border-color: #a8aea2;
+  background: var(--sheet);
+}
+.sales-store-fields .address-field > .text-button { justify-self: start; padding-inline: 0; font-size: .85rem; }
+.sales-store-fields .address-search .button { font-weight: 400; }
+
+.sales-store-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: .15rem .8rem;
+  margin-top: .55rem;
+  overflow-wrap: anywhere;
+}
+.sales-store-summary strong { font-weight: 400; }
+.sales-store-summary p { color: var(--muted); font-size: .9rem; }
+
+.sales-section > .input-tabs {
+  display: flex;
+  gap: 1.5rem;
+  border-color: var(--sales-border);
+}
+.sales-section > .input-tabs button {
+  padding: .52rem .05rem;
+  border-bottom-width: 2px;
+  font-size: .94rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+.sales-section > .input-tabs button[aria-pressed="true"] {
+  color: var(--green);
+  border-color: var(--green);
+}
+
+.sales-pos .pos-file-statuses {
+  gap: 0;
+  margin: 0;
+  border: 1px solid var(--sales-border);
+  border-radius: 7px;
+}
+.sales-pos .pos-file-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .55rem 1rem;
+  padding: .85rem 1rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.sales-pos .pos-file-status + .pos-file-status { border-top: 1px solid var(--sales-border); }
+.sales-pos .pos-file-status > [role="status"] { flex: 1 1 15rem; }
+.sales-pos .pos-file-status strong { font-weight: 400; }
+.sales-pos .pos-file-status small { color: var(--muted); font-size: .84rem; }
+.sales-pos .pos-file-picker.with-filename { flex: 1 1 17rem; justify-content: flex-end; padding: 0; border: 0; }
+.sales-pos .pos-file-picker.with-filename > span { order: -1; flex: 0 1 auto; max-width: 100%; padding: 0; }
+.sales-pos .pos-file-picker .button { border-color: #a8aea2; font-weight: 400; }
+.sales-pos .error { margin-top: .65rem; font-size: .9rem; }
+.sales-optional { margin-left: .3rem; color: var(--muted); font-size: .8rem; font-weight: 400; }
+
+.sales-import-summary { display: grid; gap: .6rem; min-width: 0; }
+.sales-import-summary summary { width: fit-content; color: var(--green); cursor: pointer; font-size: .9rem; }
+.sales-import-summary details > :not(summary) { margin-top: .5rem; }
+.sales-section .input-table thead { background: var(--sales-quiet); }
+.sales-section .input-table :is(th, td) { padding: .6rem .75rem; border: 0; border-bottom: 1px solid var(--sales-border); }
+.sales-section .input-table th { font-size: .88rem; font-weight: 400; }
+.sales-section .input-table td { font-variant-numeric: tabular-nums; }
+.sales-section .input-table :is(th, td):last-child { text-align: right; }
+.sales-section .input-table input { min-height: 2.35rem; }
+.sales-section .chip { border-color: var(--sales-border); min-height: 36px; font-size: .85rem; }
+.sales-section .chip[aria-pressed="true"] { border-color: var(--green); }
+
+.sales-footer {
+  padding: .9rem clamp(1rem, 4vw, 2rem);
+  border-color: var(--sales-border);
+  margin-top: 0;
+}
+.sales-footer .error { margin-right: auto; font-size: .9rem; }
+.sales-footer .error:empty { margin-right: 0; }
+.sales-footer .button { min-width: 8.2rem; background: var(--green); border-color: var(--green); font-weight: 400; }
+.sales-footer .button:hover:not(:disabled) { background: #193a28; }
+
+@media (max-width: 620px) {
+  .sales-store-fields { grid-template-columns: minmax(0, 1fr); }
+  .sales-pos .pos-file-status { align-items: flex-start; }
+  .sales-pos .pos-file-picker.with-filename { justify-content: flex-start; }
+  .sales-section .input-table :is(th, td) { padding-inline: .35rem; }
+}

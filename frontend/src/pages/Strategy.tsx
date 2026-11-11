@@ -4,7 +4,6 @@ import { Link } from 'react-router'
 import { createPlan, generateRecommendation, strategyIds, toPlan } from '../api/shop'
 import type { SavedStrategy, StrategyEvidence, StrategyResponse } from '../api/shop'
 import { CustomerNoticeDetails, suggestCustomerNotice } from '../components/CustomerNotice'
-import { PageTitle } from '../components/ui'
 import { addDays, changeRate, formatNumber, formatRate, monthLabel, strategies, won } from '../data/shop'
 import { bsiSource, marketSource } from '../data/marketSources'
 import { formatEvidence } from '../data/strategyEvidence'
@@ -50,16 +49,13 @@ export function SavedStrategyPage({ auth, analysisId, data, backTo, onPlan }: {
   if (response?.strategies.length) return <Strategy key={response.recommendationId ?? analysisId}
     data={data} backTo={backTo} onPlan={onPlan} saved={{ auth, analysisId, response }} />
 
-  return <>
-    <PageTitle title="대응 전략 선택" detail="우리 가게에 맞는 방법을 골라보세요." />
-    <section className="empty-state">
+  return <section className="empty-state">
       {error ? <><p className="error" role="alert">{error}</p><button className="button secondary" onClick={() => {
         setError('')
         setRetry((value) => value + 1)
       }}>다시 불러오기</button></> : <p role="status">{response ? '조회된 전략이 없어요.' : '저장한 분석의 대응 전략을 불러오는 중이에요.'}</p>}
       <Link className="strategy-back" to={backTo}>← 매출 분석 다시 보기</Link>
-    </section>
-  </>
+  </section>
 }
 
 const taskTemplates: Record<Exclude<StrategyId, 'custom'>, string[]> = {
@@ -150,6 +146,7 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
   const selection = selectedIndex === undefined ? undefined : cards[selectedIndex]
   const choice = selection?.id
   const selected = selection?.card
+  const settingsDialog = useRef<HTMLDialogElement>(null)
   const settingsHeading = useRef<HTMLHeadingElement>(null)
   const [duration, setDuration] = useState('2주')
   const [viewedGuideId, setViewedGuideId] = useState<string>()
@@ -173,8 +170,24 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
   }, [])
 
   useEffect(() => {
-    if (selectedIndex !== undefined && window.matchMedia('(max-width: 1050px)').matches) settingsHeading.current?.focus()
+    const dialog = settingsDialog.current
+    if (selectedIndex === undefined || !dialog || dialog.open) return
+    dialog.showModal()
+    settingsHeading.current?.focus({ preventScroll: true })
   }, [selectedIndex])
+
+  function chooseStrategy(index: number) {
+    setError('')
+    setDuration('2주')
+    setViewedGuideId(undefined)
+    setChannel('인스타그램')
+    setCustomerConcern('')
+    setSelectedIndex(index)
+  }
+
+  function closeSettings() {
+    if (!pending.current) settingsDialog.current?.close()
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -232,7 +245,6 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
   }
 
   return <>
-    <PageTitle title="대응 전략 선택" detail="우리 가게에 맞는 방법을 골라보세요." />
     <section className="strategy-summary" aria-labelledby="strategy-summary-title">
       <div className="strategy-summary-heading">
         <h2 id="strategy-summary-title">짝꿍이 찾은 변화</h2>
@@ -244,7 +256,7 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
         <p>{formatEvidence(bsi, response.beforeMonth, response.afterMonth)} · <a href={bsiSource}>소상공인시장진흥공단</a></p>
       </details>}
     </section>
-    <form className={selected ? 'strategy-layout with-selection' : 'strategy-layout'} onSubmit={submit}>
+    <div className="strategy-layout">
       <section className="strategy-options" aria-labelledby="strategy-options-title">
         <h2 id="strategy-options-title">어떤 전략을 해볼까요?</h2>
         {cards.map(({ id, card }, index) => {
@@ -259,8 +271,8 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
               {recommendedIndex === index && <span className="strategy-recommended">추천</span>}
             </div>
             <button className="button secondary small strategy-choose" type="button" disabled={saving}
-              aria-pressed={selectedCard} aria-labelledby={`strategy-title-${cardId} strategy-action-${cardId}`}
-              onClick={() => { setError(''); setSelectedIndex(index) }}><span id={`strategy-action-${cardId}`}>{selectedCard ? '선택됨' : '선택하기'}</span></button>
+              aria-haspopup="dialog" aria-labelledby={`strategy-title-${cardId} strategy-action-${cardId}`}
+              onClick={() => chooseStrategy(index)}><span id={`strategy-action-${cardId}`}>선택하기</span></button>
             <dl className="strategy-card-summary">
               <div><dt>{recommendedIndex === index ? '추천 이유' : '제안 이유'}</dt><dd>{card.reason}</dd></div>
               <div><dt>지금 확인할 것</dt><dd>{check}</dd></div>
@@ -283,43 +295,55 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
         })}
         <Link className="strategy-back" to={backTo}>← 매출 분석 다시 보기</Link>
       </section>
-      {selected && <section className="form-stack strategy-settings" aria-labelledby="strategy-settings-title">
-        <div className="strategy-settings-heading">
-          <h2 id="strategy-settings-title" tabIndex={-1} ref={settingsHeading}>실행 조건 정하기</h2>
-          <p>{selected.name}</p>
+    </div>
+    {selected && <dialog className="strategy-settings" ref={settingsDialog}
+      aria-labelledby="strategy-settings-title" aria-describedby="strategy-settings-strategy"
+      onCancel={event => { event.preventDefault(); closeSettings() }} onClose={() => setSelectedIndex(undefined)}>
+      <form className="strategy-settings-form" onSubmit={submit}>
+        <header className="strategy-settings-heading">
+          <div>
+            <h2 id="strategy-settings-title" tabIndex={-1} ref={settingsHeading}>실행 조건 정하기</h2>
+            <p id="strategy-settings-strategy">{selected.name}</p>
+          </div>
+          <button className="button secondary small" type="button" disabled={saving} onClick={closeSettings}>닫기</button>
+        </header>
+        <div className="strategy-settings-body form-stack">
+          <label className={choice === 'outreach' ? 'notice-review-period' : undefined}>
+            <span>{choice === 'outreach' ? '안내 수정 후 확인할 기간' : '실행 기간'}</span>
+            <select name="duration" value={duration} onChange={(event) => setDuration(event.target.value)} disabled={saving}>
+              <option>1주</option><option>2주</option><option>4주</option>
+            </select>
+          </label>
+          {choice === 'outreach' && <p className="muted">처음 이틀은 주문 시간과 안내문을 점검하고 수정해요. 이후 선택한 기간 동안 결제 건수나 매출 흐름을 확인해요.</p>}
+          {choice === 'outreach' && saved && <ExecutionGuidePanel
+            auth={saved.auth} analysisId={saved.analysisId} recommendationId={saved.response.recommendationId}
+            onView={setViewedGuideId} />}
+          {choice === 'promotion' && <label>홍보 채널<select disabled={saving} value={channel} onChange={(event) => setChannel(event.target.value)}><option>인스타그램</option><option>매장 안내</option></select></label>}
+          {choice === 'custom' ? <div className="strategy-output">
+            <strong>실행 점검표 미리보기</strong>
+            <ol>{selected.steps?.map(step => <li key={step}>{step}</li>)}</ol>
+            {selected.marketing && <p>실행 관리에서 홍보 문구와 이미지를 만들 수 있어요.</p>}
+          </div> : <>
+            <label className="customer-concern-field">
+              <span>손님들이 자주 겪는 불편 <span className="muted">(선택)</span></span>
+              <input value={customerConcern} onChange={(event) => setCustomerConcern(event.target.value)}
+                placeholder="예: 오후에도 주문이 되는지 손님들이 자주 물어봐요" maxLength={200} disabled={saving} />
+            </label>
+            {customerNotice && <section className="notice" aria-label="짝꿍의 안내 제안">
+              <strong>짝꿍의 안내 제안</strong>
+              <CustomerNoticeDetails notice={customerNotice} />
+            </section>}
+            <div className="strategy-output">
+              <strong>생성할 결과물</strong>
+              <span>{choice === 'outreach' ? '실행 일정 · 주문 안내 점검표 · 안내 문구' : '실행 일정 · 점검표 · ' + (choice === 'inventory' ? '발주량 검토표' : selected.status === 'NEEDS_INPUT' ? '혜택 검토 항목' : '홍보 초안')}</span>
+            </div>
+          </>}
         </div>
-        <label className={choice === 'outreach' ? 'notice-review-period' : undefined}>
-          <span>{choice === 'outreach' ? '안내 수정 후 확인할 기간' : '실행 기간'}</span>
-          <select name="duration" value={duration} onChange={(event) => setDuration(event.target.value)} disabled={saving}>
-            <option>1주</option><option>2주</option><option>4주</option>
-          </select>
-        </label>
-        {choice === 'outreach' && <p className="muted">처음 이틀은 주문 시간과 안내문을 점검하고 수정해요. 이후 선택한 기간 동안 결제 건수나 매출 흐름을 확인해요.</p>}
-        {choice === 'outreach' && saved && <ExecutionGuidePanel
-          auth={saved.auth} analysisId={saved.analysisId} recommendationId={saved.response.recommendationId}
-          onView={setViewedGuideId} />}
-        {choice === 'promotion' && <label>홍보 채널<select disabled={saving} value={channel} onChange={(event) => setChannel(event.target.value)}><option>인스타그램</option><option>매장 안내</option></select></label>}
-        {choice === 'custom' ? <div className="strategy-output">
-          <strong>실행 점검표 미리보기</strong>
-          <ol>{selected.steps?.map(step => <li key={step}>{step}</li>)}</ol>
-          {selected.marketing && <p>실행 관리에서 홍보 문구와 이미지를 만들 수 있어요.</p>}
-        </div> : <>
-        <label className="customer-concern-field">
-          <span>손님들이 자주 겪는 불편 <span className="muted">(선택)</span></span>
-          <input value={customerConcern} onChange={(event) => setCustomerConcern(event.target.value)}
-            placeholder="예: 오후에도 주문이 되는지 손님들이 자주 물어봐요" maxLength={200} disabled={saving} />
-        </label>
-        {customerNotice && <section className="notice" aria-label="짝꿍의 안내 제안">
-          <strong>짝꿍의 안내 제안</strong>
-          <CustomerNoticeDetails notice={customerNotice} />
-        </section>}
-        <div className="strategy-output">
-          <strong>생성할 결과물</strong>
-          <span>{choice === 'outreach' ? '실행 일정 · 주문 안내 점검표 · 안내 문구' : '실행 일정 · 점검표 · ' + (choice === 'inventory' ? '발주량 검토표' : selected.status === 'NEEDS_INPUT' ? '혜택 검토 항목' : '홍보 초안')}</span>
-        </div></>}
-        {error && <p className="error" role="alert">{error}</p>}
-        <button className="button primary strategy-submit" disabled={saving}>{saving ? '계획 저장 중…' : '이 전략으로 계획 만들기'} <span aria-hidden="true">→</span></button>
-      </section>}
-    </form>
+        <footer className="strategy-settings-footer">
+          {error && <p className="error" role="alert">{error}</p>}
+          <button className="button primary strategy-submit" type="submit" disabled={saving}>{saving ? '계획 저장 중…' : '이 전략으로 계획 만들기'} <span aria-hidden="true">→</span></button>
+        </footer>
+      </form>
+    </dialog>}
   </>
 }

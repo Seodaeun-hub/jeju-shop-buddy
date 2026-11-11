@@ -96,6 +96,12 @@ final class StrategyAgentClient {
                 : post("/internal/concern-check", payload, tools.jackson.databind.JsonNode.class);
     }
 
+    Optional<StoreNoticeController.Draft> storeNotice(StoreNoticeController.AgentInput input) {
+        if (baseUrl.isEmpty()) return Optional.empty();
+        return post("/internal/store-notice", input, StoreNoticeController.Draft.class)
+                .filter(draft -> hasText(draft.title()) && hasText(draft.message()));
+    }
+
     Optional<String> nextPromotionExplanation(PromotionImpactController.ExplanationInput input) {
         if (baseUrl.isEmpty()) return Optional.empty();
         return post("/internal/next-promotion-explanation", input, NextPromotionResponse.class)

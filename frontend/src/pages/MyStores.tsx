@@ -4,7 +4,9 @@ import { deleteAnalysis, listStoreAnalyses, listStores } from '../api/shop'
 import type { Store, StoreAnalysisSummary } from '../api/shop'
 import { monthLabel } from '../data/shop'
 import { PageTitle } from '../components/ui'
+import { useStoreSelection } from '../components/useStoreSelection'
 import { MenuPhotos } from './MenuPhotos'
+import { StorePosFiles } from './StorePosFiles'
 import { StorePromotionTone } from './StorePromotionTone'
 import '../styles/my-stores.css'
 
@@ -12,6 +14,7 @@ const storeSections = [
   { id: 'history', label: '분석 이력' },
   { id: 'photos', label: '메뉴 사진 관리' },
   { id: 'tone', label: '홍보 말투 설정' },
+  { id: 'pos-files', label: 'POS 파일 관리' },
 ] as const
 
 function StoreHistory({ auth, store, onAnalysisDeleted }: { auth: string; store: Store; onAnalysisDeleted: (id: string) => void }) {
@@ -66,46 +69,54 @@ function StoreHistory({ auth, store, onAnalysisDeleted }: { auth: string; store:
     }}>다시 불러오기</button></div>
       : !history ? <p role="status">매장의 분석 이력을 불러오는 중이에요.</p>
         : history.length === 0 ? <p>아직 저장한 분석이 없어요. POS 파일을 올려 첫 분석을 시작해 보세요.</p>
-          : history.map((analysis) => <article className="receipt form-stack" key={analysis.id}>
-            <div className="section-top">
-              <div>
-                <h3>{analysis.name || '이름 없는 분석'}</h3>
-                <p>{monthLabel(analysis.beforeMonth)} → {monthLabel(analysis.afterMonth)}</p>
-                <small className="muted">저장일 · {new Date(analysis.createdAt).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' })}</small>
-              </div>
+          : history.map((analysis) => <details className="receipt analysis-history-entry" name="store-analysis-history" key={analysis.id}>
+            <summary className="analysis-history-summary">
+              <span className="analysis-history-meta">
+                <strong>{analysis.name || '이름 없는 분석'}</strong>
+                <span className="muted">
+                  <span>{monthLabel(analysis.beforeMonth)} → {monthLabel(analysis.afterMonth)}</span>
+                  <time dateTime={analysis.createdAt}>저장일 · {new Date(analysis.createdAt).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' })}</time>
+                </span>
+              </span>
+              <span className="muted analysis-history-count">실행 계획 {analysis.plans.length}개</span>
+            </summary>
+            <div className="form-stack analysis-history-body">
               <div className="actions">
                 <Link className="button secondary small" to={'/analysis?' + new URLSearchParams({ id: analysis.id })}>매출 분석 열기</Link>
                 <button type="button" className="text-button" disabled={Boolean(deleting)}
                   onClick={() => void removeAnalysis(analysis)}>{deleting === analysis.id ? '삭제 중…' : '분석 삭제'}</button>
               </div>
-            </div>
-            {analysis.concern && <p>{analysis.concern}</p>}
-            {!analysis.plans.length ? <p className="muted">저장된 실행 계획이 없어요.</p> : <ul className="form-stack">
-              {analysis.plans.map((plan) => {
-                const query = new URLSearchParams({ id: plan.id, analysisId: analysis.id })
-                return <li key={plan.id} className="ruled-block">
-                  <div className="section-top">
-                    <div><strong>{plan.title || '실행 계획'}</strong><p className="muted">{plan.startDate} ~ {plan.endDate}</p></div>
-                    <div className="actions">
-                      <Link className="button secondary small" to={'/execution?' + query}>실행 계획 열기</Link>
-                      {plan.hasResult ? <Link className="button secondary small" to={'/results?' + query}>실행 결과 열기</Link>
-                        : <span className="muted">저장된 결과 없음</span>}
+              {analysis.concern && <p>{analysis.concern}</p>}
+              {!analysis.plans.length ? <p className="muted">저장된 실행 계획이 없어요.</p> : <ul className="form-stack">
+                {analysis.plans.map((plan) => {
+                  const query = new URLSearchParams({ id: plan.id, analysisId: analysis.id })
+                  return <li key={plan.id} className="ruled-block">
+                    <div className="section-top">
+                      <div><strong>{plan.title || '실행 계획'}</strong><p className="muted">{plan.startDate} ~ {plan.endDate}</p></div>
+                      <div className="actions">
+                        <Link className="button secondary small" to={'/execution?' + query}>실행 계획 열기</Link>
+                        {plan.hasResult ? <Link className="button secondary small" to={'/results?' + query}>실행 결과 열기</Link>
+                          : <span className="muted">저장된 결과 없음</span>}
+                      </div>
                     </div>
-                  </div>
-                </li>
-              })}
-            </ul>}
-          </article>)}
+                  </li>
+                })}
+              </ul>}
+            </div>
+          </details>)}
   </section>
 }
 
-export function MyStores({ auth, onAnalysisDeleted }: { auth: string; onAnalysisDeleted: (id: string) => void }) {
+export function MyStores({ auth, ownerEmail, onAnalysisDeleted }: {
+  auth: string
+  ownerEmail: string
+  onAnalysisDeleted: (id: string) => void
+}) {
   const [params, setParams] = useSearchParams()
   const [stores, setStores] = useState<Store[]>()
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
-  const selectedId = params.get('storeId') ?? stores?.[0]?.id
-  const selected = stores?.find(({ id }) => id === selectedId)
+  const selected = useStoreSelection(ownerEmail, stores, params.get('storeId'), true)
   const section = storeSections.find(item => item.id === params.get('section'))?.id ?? 'history'
 
   function storeQuery(storeId: string, activeSection: typeof section) {
@@ -132,7 +143,7 @@ export function MyStores({ auth, onAnalysisDeleted }: { auth: string; onAnalysis
           {!selected && <option value="" disabled>매장을 선택해 주세요</option>}
           {stores.map(store => <option key={store.id} value={store.id}>{store.name} · {store.areaName}</option>)}
         </select></label> : <h2>등록한 매장</h2>}
-        <Link className="button secondary" to="/sales">새 매장 등록</Link>
+        <Link className="button secondary" to="/stores/new">새 매장 등록</Link>
       </div>
       {error ? <div role="alert" className="error">{error} <button type="button" className="text-button" onClick={() => {
         setError('')
@@ -147,6 +158,7 @@ export function MyStores({ auth, onAnalysisDeleted }: { auth: string; onAnalysis
             preventScrollReset aria-current={section === id ? 'page' : undefined}>{label}</Link>)}
         </nav>
         {section === 'history' && <StoreHistory key={selected.id} auth={auth} store={selected} onAnalysisDeleted={onAnalysisDeleted} />}
+        {section === 'pos-files' && <StorePosFiles key={selected.id} auth={auth} storeId={selected.id} />}
         {section === 'photos' && <MenuPhotos key={selected.id} auth={auth} storeId={selected.id} />}
         {section === 'tone' && <section className="store-tone-panel" aria-label="홍보 말투 설정">
           <StorePromotionTone key={selected.id} auth={auth} storeId={selected.id} />

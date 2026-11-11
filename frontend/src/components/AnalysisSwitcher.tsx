@@ -48,11 +48,12 @@ function AnalysisOptions({ auth, storeId, analysisId, onOpen }: {
   </select></label>
 }
 
-export function AnalysisSwitcher({ auth, analysis, analysisId, onOpen }: {
+export function AnalysisSwitcher({ auth, analysis, analysisId, onOpen, currentLabel = '현재 보는 분석' }: {
   auth: string
   analysis?: Analysis
   analysisId?: string
   onOpen: (id: string) => void
+  currentLabel?: string
 }) {
   const [stores, setStores] = useState<Store[]>()
   const [storeChoice, setStoreChoice] = useState<{ id: string; analysisId?: string }>()
@@ -71,16 +72,7 @@ export function AnalysisSwitcher({ auth, analysis, analysisId, onOpen }: {
     return () => controller.abort()
   }, [auth, retry])
 
-  return <section className="receipt form-stack analysis-switcher" aria-label="매출 분석 선택">
-    {analysis && <div className="analysis-current">
-      <span className="badge">{analysis.demo ? '시연 예시' : '현재 보는 분석'}</span>
-      <dl>
-        {!analysis.demo && <div><dt>분석 이름</dt><dd>{analysis.name || '이름 없는 분석'}</dd></div>}
-        <div><dt>매장명</dt><dd>{analysis.store}</dd></div>
-        {before && after && <div><dt>비교 기간</dt><dd>{comparePeriod(before.month, after.month)}</dd></div>}
-        {analysis.createdAt && <div><dt>저장일</dt><dd><time dateTime={analysis.createdAt}>{savedAt.format(new Date(analysis.createdAt))}</time></dd></div>}
-      </dl>
-    </div>}
+  const selectors = <>
     {error ? <div role="alert" className="error">{error} <button type="button" className="text-button" onClick={() => {
       setError('')
       setRetry(value => value + 1)
@@ -96,5 +88,21 @@ export function AnalysisSwitcher({ auth, analysis, analysisId, onOpen }: {
           onOpen(id)
         }} />}
       </div>}
+  </>
+
+  return <section className="analysis-switcher" aria-label="매출 분석 선택">
+    {analysis && <div className="analysis-current">
+      <span className="analysis-current-label">{analysis.demo ? '시연 예시' : currentLabel}</span>
+      <dl>
+        {!analysis.demo && <div><dt>분석 이름</dt><dd>{analysis.name || '이름 없는 분석'}</dd></div>}
+        <div><dt>매장명</dt><dd>{analysis.store}</dd></div>
+        {before && after && <div><dt>비교 기간</dt><dd>{comparePeriod(before.month, after.month)}</dd></div>}
+        {analysis.createdAt && <div><dt>저장일</dt><dd><time dateTime={analysis.createdAt}>{savedAt.format(new Date(analysis.createdAt))}</time></dd></div>}
+      </dl>
+    </div>}
+    {analysis ? <details className="analysis-switcher-controls">
+      <summary>다른 분석 보기</summary>
+      {selectors}
+    </details> : selectors}
   </section>
 }
