@@ -6,10 +6,15 @@ import { monthLabel } from '../data/shop'
 import { PageTitle } from '../components/ui'
 import { MenuPhotos } from './MenuPhotos'
 import { StorePromotionTone } from './StorePromotionTone'
+import '../styles/my-stores.css'
+
+const storeSections = [
+  { id: 'history', label: '분석 이력' },
+  { id: 'photos', label: '메뉴 사진 관리' },
+  { id: 'tone', label: '홍보 말투 설정' },
+] as const
 
 function StoreHistory({ auth, store, onAnalysisDeleted }: { auth: string; store: Store; onAnalysisDeleted: (id: string) => void }) {
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [toneOpen, setToneOpen] = useState(false)
   const [history, setHistory] = useState<StoreAnalysisSummary[]>()
   const [deleting, setDeleting] = useState<string>()
   const [deleteError, setDeleteError] = useState('')
@@ -50,17 +55,9 @@ function StoreHistory({ auth, store, onAnalysisDeleted }: { auth: string; store:
 
   return <section className="form-stack" aria-labelledby="analysis-history">
     <div className="section-top ruled">
-      <div><h2 id="analysis-history">{store.name} 분석 이력</h2><p className="muted">{store.areaName} · {store.address}</p></div>
-      <div className="actions">
-        <button type="button" className="button secondary" aria-expanded={toneOpen}
-          onClick={() => setToneOpen(!toneOpen)}>홍보 말투 설정</button>
-        <button type="button" className="button secondary" aria-expanded={menuOpen}
-          onClick={() => setMenuOpen(!menuOpen)}>메뉴 사진 관리</button>
-        <Link className="button primary" to={'/sales?' + new URLSearchParams({ storeId: store.id })}>새 POS 올리기</Link>
-      </div>
+      <h2 id="analysis-history">분석 이력</h2>
+      <Link className="button primary" to={'/sales?' + new URLSearchParams({ storeId: store.id })}>새 POS 올리기</Link>
     </div>
-    {toneOpen && <StorePromotionTone auth={auth} storeId={store.id} />}
-    {menuOpen && <MenuPhotos auth={auth} storeId={store.id} />}
     {deleteError && <p role="alert" className="error">{deleteError}</p>}
     {deleteMessage && <p role="status">{deleteMessage}</p>}
     {error ? <div role="alert" className="error">{error} <button type="button" className="text-button" onClick={() => {
@@ -109,6 +106,13 @@ export function MyStores({ auth, onAnalysisDeleted }: { auth: string; onAnalysis
   const [retry, setRetry] = useState(0)
   const selectedId = params.get('storeId') ?? stores?.[0]?.id
   const selected = stores?.find(({ id }) => id === selectedId)
+  const section = storeSections.find(item => item.id === params.get('section'))?.id ?? 'history'
+
+  function storeQuery(storeId: string, activeSection: typeof section) {
+    const query = new URLSearchParams({ storeId })
+    if (activeSection !== 'history') query.set('section', activeSection)
+    return query
+  }
 
   useEffect(() => {
     const controller = new AbortController()
@@ -121,10 +125,13 @@ export function MyStores({ auth, onAnalysisDeleted }: { auth: string; onAnalysis
   }, [auth, retry])
 
   return <>
-    <PageTitle title="내 매장" detail="매장을 선택하면 지난 매출 분석과 실행 계획을 다시 볼 수 있어요." />
-    <div className="form-stack">
-      <div className="section-top ruled">
-        <h2>등록한 매장</h2>
+    <PageTitle title="내 매장" />
+    <div className="form-stack my-stores">
+      <div className="store-picker">
+        {stores?.length ? <label>매장 선택<select value={selected?.id ?? ''} onChange={event => setParams(storeQuery(event.target.value, section))}>
+          {!selected && <option value="" disabled>매장을 선택해 주세요</option>}
+          {stores.map(store => <option key={store.id} value={store.id}>{store.name} · {store.areaName}</option>)}
+        </select></label> : <h2>등록한 매장</h2>}
         <Link className="button secondary" to="/sales">새 매장 등록</Link>
       </div>
       {error ? <div role="alert" className="error">{error} <button type="button" className="text-button" onClick={() => {
@@ -132,12 +139,19 @@ export function MyStores({ auth, onAnalysisDeleted }: { auth: string; onAnalysis
         setRetry((value) => value + 1)
       }}>다시 불러오기</button></div>
         : !stores ? <p role="status">매장을 불러오는 중이에요.</p>
-          : stores.length === 0 ? <p>등록한 매장이 없어요. 새 매장을 등록해 주세요.</p>
-            : <label>매장 선택<select value={selected?.id ?? ''} onChange={(event) => setParams({ storeId: event.target.value })}>
-              {!selected && <option value="" disabled>매장을 선택해 주세요</option>}
-              {stores.map((store) => <option key={store.id} value={store.id}>{store.name} · {store.areaName}</option>)}
-            </select></label>}
-      {selected && <StoreHistory key={selected.id} auth={auth} store={selected} onAnalysisDeleted={onAnalysisDeleted} />}
+          : stores.length === 0 && <p>등록한 매장이 없어요. 새 매장을 등록해 주세요.</p>}
+      {selected && <>
+        <p className="muted store-address">{selected.address}</p>
+        <nav className="store-sections" aria-label="선택한 매장 관리">
+          {storeSections.map(({ id, label }) => <Link key={id} to={'?' + storeQuery(selected.id, id)}
+            preventScrollReset aria-current={section === id ? 'page' : undefined}>{label}</Link>)}
+        </nav>
+        {section === 'history' && <StoreHistory key={selected.id} auth={auth} store={selected} onAnalysisDeleted={onAnalysisDeleted} />}
+        {section === 'photos' && <MenuPhotos key={selected.id} auth={auth} storeId={selected.id} />}
+        {section === 'tone' && <section className="store-tone-panel" aria-label="홍보 말투 설정">
+          <StorePromotionTone key={selected.id} auth={auth} storeId={selected.id} />
+        </section>}
+      </>}
     </div>
   </>
 }
