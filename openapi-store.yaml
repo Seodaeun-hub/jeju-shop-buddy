@@ -2153,7 +2153,7 @@ components:
             description: 원 단위 월별 매출 합계
     AnalysisProductSales:
       type: array
-      description: 상품 주문 시트에서 결제 완료 건의 수량을 품목별로 합산한 값. 분석의 비교 두 달과 같은 순서다.
+      description: 상품 주문의 결제 완료 건을 품목별로 합산한 수량과 선택 실판매금액. 분석의 비교 두 달과 같은 순서다.
       items:
         type: object
         additionalProperties: false
@@ -2168,6 +2168,18 @@ components:
             minimum: 1
             maximum: 9007199254740991
             description: 상품 주문에서 해당 품목의 가장 최근 가격 기록일에 확인된 단일 상품가격
+          beforeRevenue:
+            type: integer
+            format: int64
+            minimum: 0
+            maximum: 9007199254740991
+            description: 비교 기준 월의 품목별 실판매금액 합계. 자료가 없으면 생략한다.
+          afterRevenue:
+            type: integer
+            format: int64
+            minimum: 0
+            maximum: 9007199254740991
+            description: 비교 대상 월의 품목별 실판매금액 합계. 자료가 없으면 생략한다.
     AnalysisTimeSeries:
       type: object
       additionalProperties: false

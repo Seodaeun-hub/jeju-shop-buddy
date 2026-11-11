@@ -306,6 +306,8 @@ CREATE TABLE analysis_product_sales (
     before_quantity bigint NOT NULL CHECK (before_quantity BETWEEN 0 AND 9007199254740991),
     after_quantity bigint NOT NULL CHECK (after_quantity BETWEEN 0 AND 9007199254740991),
     price_won bigint CHECK (price_won BETWEEN 1 AND 9007199254740991),
+    before_revenue bigint CHECK (before_revenue BETWEEN 0 AND 9007199254740991),
+    after_revenue bigint CHECK (after_revenue BETWEEN 0 AND 9007199254740991),
     PRIMARY KEY (analysis_id, product_name)
 );
 

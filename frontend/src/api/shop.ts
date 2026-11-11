@@ -176,7 +176,7 @@ export type ConcernCheck = {
   question?: string | null
   detail?: string
   answer?: string
-  metric?: 'AMOUNT' | 'COUNT' | 'PRODUCT'
+  metric?: 'AMOUNT' | 'COUNT' | 'PRODUCT' | 'PRODUCT_REVENUE'
   productName?: string | null
   startHour?: number
   endHour?: number

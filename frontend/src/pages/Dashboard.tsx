@@ -183,7 +183,8 @@ function ConcernResult({ result, onUpload, checking }: {
   const input = useRef<HTMLInputElement>(null)
   const { status, before, after, beforeMonth, afterMonth, startHour, endHour, changeRate, posMonths } = result
   const compared = status === 'COMPARED' && before != null && after != null && beforeMonth && afterMonth
-  const metric = result.metric === 'COUNT' ? '결제 건수' : result.metric === 'PRODUCT' ? '판매량' : '매출액'
+  const metric = result.metric === 'COUNT' ? '결제 건수' : result.metric === 'PRODUCT' ? '판매량'
+    : result.metric === 'PRODUCT_REVENUE' ? '실판매금액' : '매출액'
   const format = result.metric === 'COUNT' ? (value: number) => `${formatNumber(value)}건`
     : result.metric === 'PRODUCT' ? (value: number) => `${formatNumber(value)}개` : won
   const headline = result.answer ?? (status === 'MISSING_DATA' ? '확인할 자료가 더 필요해요.'
