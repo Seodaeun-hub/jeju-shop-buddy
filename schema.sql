@@ -157,8 +157,14 @@ CREATE TABLE execution_plans (
     promotion_impact JSONB CHECK (promotion_impact IS NULL OR (strategy_code = 'PROMOTION' AND jsonb_typeof(promotion_impact) = 'object')),
     instagram_scheduled_at TIMESTAMPTZ,
     instagram_publication_started_at TIMESTAMPTZ,
-    instagram_publication JSONB CHECK (instagram_publication IS NULL OR (strategy_code = 'PROMOTION' AND jsonb_typeof(instagram_publication) = 'object')),
-    promotion_draft JSONB CHECK (promotion_draft IS NULL OR (strategy_code = 'PROMOTION' AND jsonb_typeof(promotion_draft) = 'object')),
+    instagram_publication JSONB CONSTRAINT ck_execution_plans_instagram_publication CHECK (instagram_publication IS NULL OR (
+        jsonb_typeof(instagram_publication) = 'object'
+        AND (strategy_code = 'PROMOTION' OR (strategy_code = 'CUSTOM' AND strategy_snapshot @> '{"marketing": true}'))
+    )),
+    promotion_draft JSONB CONSTRAINT ck_execution_plans_promotion_draft CHECK (promotion_draft IS NULL OR (
+        jsonb_typeof(promotion_draft) = 'object'
+        AND (strategy_code = 'PROMOTION' OR (strategy_code = 'CUSTOM' AND strategy_snapshot @> '{"marketing": true}'))
+    )),
     duration_weeks SMALLINT NOT NULL,
     budget_won BIGINT,
     channel VARCHAR(16),
@@ -169,7 +175,7 @@ CREATE TABLE execution_plans (
     CONSTRAINT fk_execution_plans_analysis FOREIGN KEY (analysis_id)
         REFERENCES sales_analyses (id) ON DELETE RESTRICT,
     CONSTRAINT ck_execution_plans_strategy_code CHECK (
-        strategy_code IN ('OUTREACH', 'PROMOTION', 'INVENTORY')
+        strategy_code IN ('OUTREACH', 'PROMOTION', 'INVENTORY', 'CUSTOM')
     ),
     CONSTRAINT ck_execution_plans_strategy_snapshot CHECK (
         jsonb_typeof(strategy_snapshot) = 'object'
@@ -179,7 +185,7 @@ CREATE TABLE execution_plans (
     CONSTRAINT ck_execution_plans_channel CHECK (channel IN ('INSTAGRAM', 'STORE_NOTICE')),
     CONSTRAINT ck_execution_plans_strategy_conditions CHECK (
         (strategy_code IN ('OUTREACH', 'PROMOTION') AND budget_won IS NOT NULL AND channel IS NOT NULL)
-        OR (strategy_code = 'INVENTORY' AND budget_won IS NULL AND channel IS NULL)
+        OR (strategy_code IN ('INVENTORY', 'CUSTOM') AND budget_won IS NULL AND channel IS NULL)
     ),
     CONSTRAINT ck_execution_plans_dates CHECK (
         isfinite(start_date)

@@ -4,7 +4,7 @@ import { Link } from 'react-router'
 import { createPlan, generateRecommendation, strategyIds, toPlan } from '../api/shop'
 import type { SavedStrategy, StrategyEvidence, StrategyResponse } from '../api/shop'
 import { CustomerNoticeDetails, suggestCustomerNotice } from '../components/CustomerNotice'
-import { Citrus, PageTitle } from '../components/ui'
+import { PageTitle } from '../components/ui'
 import { addDays, changeRate, formatNumber, formatRate, monthLabel, strategies, won } from '../data/shop'
 import { bsiSource, marketSource } from '../data/marketSources'
 import { formatEvidence } from '../data/strategyEvidence'
@@ -15,12 +15,14 @@ import '../styles/strategy.css'
 type StrategyId = Plan['strategy']
 const initialBudget = 50_000
 type StrategyCard = {
+  marketing?: boolean
   name: string
   observation: string
   evidence?: { text: string; source: StrategyEvidence['source'] }[]
   reason: string
   followUp: string
   nextAction?: string
+  steps?: string[]
   status?: SavedStrategy['status']
 }
 
@@ -60,9 +62,9 @@ export function SavedStrategyPage({ auth, analysisId, data, backTo, onPlan }: {
   </>
 }
 
-const taskTemplates: Record<StrategyId, string[]> = {
+const taskTemplates: Record<Exclude<StrategyId, 'custom'>, string[]> = {
   promotion: ['혜택과 예산 확정', '행사 소식 올리기', '중간 결제 건수 점검', '행사 종료 및 매출 자료 준비'],
-  outreach: ['소개할 메뉴와 소식 정하기', '홍보 문구 확인하기', '가게 소식 올리기', '게시 결과 확인하기'],
+  outreach: ['실제 주문 가능 시간 확인', '매장 입구와 메뉴판 안내 확인', '안내가 다르면 문구 수정', '안내 후 매출 흐름 확인'],
   inventory: ['점검할 품목과 재고 확인', '최근 사용량과 입고 예정량 기록', '다음 발주량 검토', '사용량과 남은 재고 다시 확인'],
 }
 
@@ -127,62 +129,70 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
   saved?: { auth: string; analysisId: string; response: StrategyResponse }
 }) {
   const demo = saved ? undefined : getStrategyEvidence(data)
-  const serverCards = saved?.response.strategies
-  const recommended = serverCards?.find(({ status }) => status === 'RECOMMENDED')
   const cards: { id: StrategyId; card: StrategyCard }[] = saved
     ? saved.response.strategies.map((strategy) => ({
       id: strategyIds[strategy.code],
       card: {
         name: strategy.title,
+        marketing: strategy.marketing,
         observation: formatEvidence(strategy.evidence[0], saved.response.beforeMonth, saved.response.afterMonth),
         evidence: strategy.evidence.map((item) => ({
           source: item.source,
           text: formatEvidence(item, saved.response.beforeMonth, saved.response.afterMonth),
         })),
-        reason: strategy.reason, followUp: strategy.followUp, nextAction: strategy.nextAction,
+        reason: strategy.reason, followUp: strategy.followUp, nextAction: strategy.nextAction, steps: strategy.steps,
         status: strategy.status,
       },
     }))
     : strategies.map(({ id }) => ({ id, card: demo!.cards[id] }))
-  const recommendation = recommended ? strategyIds[recommended.code] : demo?.recommendation
-  const [choice, setChoice] = useState<StrategyId>(recommendation ?? cards[0].id)
+  const recommendedIndex = cards.findIndex(({ id, card }) => saved ? card.status === 'RECOMMENDED' : id === demo?.recommendation)
+  const [selectedIndex, setSelectedIndex] = useState<number>()
+  const selection = selectedIndex === undefined ? undefined : cards[selectedIndex]
+  const choice = selection?.id
+  const selected = selection?.card
+  const settingsHeading = useRef<HTMLHeadingElement>(null)
+  const [duration, setDuration] = useState('2주')
   const [viewedGuideId, setViewedGuideId] = useState<string>()
-  const [budget, setBudget] = useState(String(initialBudget))
-  const planBudget = choice === 'promotion' ? initialBudget : Number(budget)
+  const planBudget = choice === 'promotion' ? initialBudget : 0
   const [channel, setChannel] = useState('인스타그램')
+  const planChannel = choice === 'outreach' ? '매장 안내' : channel
   const [customerConcern, setCustomerConcern] = useState('')
   const customerNotice = suggestCustomerNotice(customerConcern)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const pending = useRef(false)
   const mounted = useRef(false)
-  const selected = cards.find(({ id }) => id === choice)?.card ?? cards[0].card
-  const summary = demo?.summary ?? (cards.find(({ id }) => id === recommendation) ?? cards[0]).card.observation
+  const summary = demo?.summary ?? (cards[recommendedIndex] ?? cards[0]).card.observation
   const response = saved?.response
   const bsi = response?.contextEvidence?.find(({ source }) => source === 'JEJU_BSI')
+  const hasPosPrices = data.productSales?.some(product => product.priceWon != null)
 
   useEffect(() => {
     mounted.current = true
     return () => { mounted.current = false }
   }, [])
 
+  useEffect(() => {
+    if (selectedIndex !== undefined && window.matchMedia('(max-width: 1050px)').matches) settingsHeading.current?.focus()
+  }, [selectedIndex])
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const fields = new FormData(event.currentTarget)
-    const duration = String(fields.get('duration'))
+    if (!choice || !selected) return
     const durationWeeks = Number.parseInt(duration, 10)
     if (saved) {
       if (pending.current) return
-      const selectedStrategy = saved.response.strategies.find(({ code }) => strategyIds[code] === choice)
+      const selectedStrategy = selectedIndex === undefined ? undefined : saved.response.strategies[selectedIndex]
       if (!selectedStrategy) return
       pending.current = true
       setSaving(true)
       setError('')
       try {
-        const plan = await createPlan(saved.auth, saved.analysisId, selectedStrategy.code, choice === 'inventory'
+        const plan = await createPlan(saved.auth, saved.analysisId, selectedStrategy.code, choice === 'inventory' || choice === 'custom'
           ? { durationWeeks }
-          : { durationWeeks, budgetWon: planBudget, channel: channel === '인스타그램' ? 'INSTAGRAM' : 'STORE_NOTICE' },
-          saved.response.recommendationId, choice === 'outreach' ? viewedGuideId : undefined, customerNotice)
+          : { durationWeeks, budgetWon: planBudget, channel: planChannel === '인스타그램' ? 'INSTAGRAM' : 'STORE_NOTICE' },
+          saved.response.recommendationId, choice === 'outreach' ? viewedGuideId : undefined,
+          choice === 'custom' ? undefined : customerNotice, choice === 'custom' ? selectedIndex : undefined)
         if (mounted.current) onPlan(toPlan(plan, data.store))
       } catch (error) {
         if (mounted.current) setError(error instanceof Error ? error.message : '실행 계획을 저장할 수 없어요.')
@@ -192,17 +202,16 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
       }
       return
     }
+    if (choice === 'custom') return
     const days = durationWeeks * 7
-    const startDate = '2021-06-01'
+    const preparationDate = '2021-06-01'
+    const startDate = choice === 'outreach' ? addDays(preparationDate, 2) : preparationDate
     const endDate = addDays(startDate, days - 1)
-    const offsets = [0, 1, Math.floor(days / 2), days - 1]
+    const offsets = choice === 'outreach' ? [0, 1, 1, days + 1] : [0, 1, Math.floor(days / 2), days - 1]
     const taskLabels = [...taskTemplates[choice]]
     if (choice === 'promotion') {
       taskLabels[1] = channel === '인스타그램' ? '인스타그램에 소식 올리기' : '매장에 행사 안내 붙이기'
       taskLabels[2] = '중간 ' + (demo?.timeLabel ? demo.timeMetric : '행사 시간대 매출액') + ' 점검'
-    } else if (choice === 'outreach') {
-      taskLabels[2] = channel === '인스타그램' ? '인스타그램에 소식 올리기' : '매장에 안내 붙이기'
-      if (channel === '매장 안내') taskLabels[3] = '안내 후 매출 확인하기'
     }
     onPlan({
       strategy: choice,
@@ -216,63 +225,48 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
       timeLabel: demo?.timeLabel,
       followUp: selected.followUp,
       budget: choice === 'inventory' ? 0 : planBudget,
-      channel: choice === 'inventory' ? '' : channel,
-      tasks: taskLabels.map((label, index) => ({ label, date: addDays(startDate, offsets[index]) })),
+      channel: choice === 'inventory' ? '' : planChannel,
+      tasks: taskLabels.map((label, index) => ({ label, date: addDays(preparationDate, offsets[index]) })),
       done: [],
     })
   }
 
   return <>
     <PageTitle title="대응 전략 선택" detail="우리 가게에 맞는 방법을 골라보세요." />
-    <section className="receipt summary-strip strategy-summary" aria-label="짝꿍이 찾은 변화">
-      <Citrus stamp />
-      <strong>짝꿍이 찾은 변화</strong>
-      {response?.recommendationSource && <span className="badge">
-        {response.recommendationSource === 'AGENT' ? 'AI 추천' : '기본 추천'}
-      </span>}
-      <span className="strategy-summary-detail">{summary}</span>
-      {demo?.change && <strong className="strategy-summary-change">{demo.change}</strong>}
+    <section className="strategy-summary" aria-labelledby="strategy-summary-title">
+      <div className="strategy-summary-heading">
+        <h2 id="strategy-summary-title">짝꿍이 찾은 변화</h2>
+        {response?.recommendationSource && <span>{response.recommendationSource === 'AGENT' ? 'AI 추천' : '기본 추천'}</span>}
+      </div>
+      <p className="strategy-summary-detail">{summary} {demo?.change && <strong>{demo.change}</strong>}</p>
+      {response && bsi && <details className="strategy-market-context">
+        <summary>제주 경기동향 참고</summary>
+        <p>{formatEvidence(bsi, response.beforeMonth, response.afterMonth)} · <a href={bsiSource}>소상공인시장진흥공단</a></p>
+      </details>}
     </section>
-    {response && bsi && <div className="strategy-market-context">
-      <p className="strategy-summary-detail">경기 참고 · {formatEvidence(bsi, response.beforeMonth, response.afterMonth)}</p>
-      <details className="source-details">
-        <summary>자료 출처 보기</summary>
-        <a href={bsiSource}>소상공인시장진흥공단</a>
-      </details>
-    </div>}
-    <form className="split planning strategy-layout" onSubmit={submit}>
-      <fieldset className="strategy-options" disabled={saving}>
-        <legend>어떤 전략을 해볼까요?</legend>
-        {cards.map(({ id, card }) => {
-          const selectedCard = choice === id
-          return <div key={id} className={selectedCard ? 'strategy-option highlight' : 'strategy-option'}>
-            <label>
-              <input type="radio" name="strategy" value={id} checked={selectedCard} onChange={() => setChoice(id)} />
-              <strong>{card.name}</strong>
-              {recommendation === id && <span className="badge strategy-recommended">추천</span>}
-              {selectedCard && id !== 'inventory' && card.status === 'NEEDS_INPUT' && <span className="badge">추가 확인 필요</span>}
-            </label>
-            <p className="strategy-card-fact">
-              {id === 'outreach' ? card.evidence?.find(({ source }) => source === 'TIME_SERIES')?.text ?? card.observation : card.observation}
-            </p>
-            {selectedCard && id === 'outreach' && <div className="strategy-quick-actions">
-              <strong>먼저 할 일</strong>
-              <ol>
-                <li>실제 주문 가능 시간과 마감 시간 확인하기</li>
-                <li>매장 입구와 메뉴판의 안내가 맞는지 확인하기</li>
-                <li>안내가 다르면 실제 주문 시간으로 고치기</li>
-              </ol>
-            </div>}
-            {selectedCard && id === 'promotion' && <p className="strategy-card-fact">
-              {data.productSales?.some(product => product.priceWon != null)
-                ? 'POS에 있는 판매가는 실행 계획에서 불러와요.'
-                : '판매가는 실행 계획에서 확인해 주세요.'}
-            </p>}
-            {selectedCard && id === 'inventory' && <p className="strategy-card-fact">
-              계획을 만든 뒤 발주량 검토표를 작성할 수 있어요.
-            </p>}
+    <form className={selected ? 'strategy-layout with-selection' : 'strategy-layout'} onSubmit={submit}>
+      <section className="strategy-options" aria-labelledby="strategy-options-title">
+        <h2 id="strategy-options-title">어떤 전략을 해볼까요?</h2>
+        {cards.map(({ id, card }, index) => {
+          const cardId = id === 'custom' ? `custom-${index}` : id
+          const selectedCard = selectedIndex === index
+          const check = id === 'custom' ? card.nextAction : id === 'outreach' ? '실제 주문 가능 시간과 마감 시간이 매장 안내와 같은지 확인해요.'
+            : id === 'promotion' ? (hasPosPrices ? '혜택을 줄 시간대와 메뉴를 확인해요.' : '혜택을 줄 시간대와 메뉴 판매가를 확인해요.')
+              : '이번에 발주량을 검토할 품목을 확인해요.'
+          return <article key={cardId} className={selectedCard ? 'strategy-choice is-selected' : 'strategy-choice'}>
+            <div className="strategy-choice-heading">
+              <h3 id={`strategy-title-${cardId}`}>{card.name}</h3>
+              {recommendedIndex === index && <span className="strategy-recommended">추천</span>}
+            </div>
+            <button className="button secondary small strategy-choose" type="button" disabled={saving}
+              aria-pressed={selectedCard} aria-labelledby={`strategy-title-${cardId} strategy-action-${cardId}`}
+              onClick={() => { setError(''); setSelectedIndex(index) }}><span id={`strategy-action-${cardId}`}>{selectedCard ? '선택됨' : '선택하기'}</span></button>
+            <dl className="strategy-card-summary">
+              <div><dt>{recommendedIndex === index ? '추천 이유' : '제안 이유'}</dt><dd>{card.reason}</dd></div>
+              <div><dt>지금 확인할 것</dt><dd>{check}</dd></div>
+            </dl>
             <details className="source-details strategy-rationale">
-              <summary>제안 이유와 근거 보기</summary>
+              <summary>근거와 출처 보기</summary>
               <dl className="reason strategy-evidence">
                 <dt>확인한 변화</dt>
                 <dd>{card.evidence?.length ? <ul className="strategy-evidence-list">
@@ -281,27 +275,35 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
                     {source === 'JEJU_BSI' && <> · <a href={bsiSource}>소상공인시장진흥공단</a></>}
                   </li>)}
                 </ul> : card.observation}</dd>
-                <dt>{recommendation === id ? '추천 이유' : '제안 이유'}</dt><dd>{card.reason}</dd>
-                {card.nextAction && <><dt>먼저 할 일</dt><dd>{card.nextAction}</dd></>}
+                {id !== 'custom' && card.nextAction && <><dt>이어서 할 일</dt><dd>{card.nextAction}</dd></>}
                 <dt>실행 후 확인</dt><dd>{card.followUp}</dd>
               </dl>
             </details>
-            {saved && id === 'outreach' && <ExecutionGuidePanel
-              key={saved.response.recommendationId ?? saved.analysisId}
-              auth={saved.auth} analysisId={saved.analysisId} recommendationId={saved.response.recommendationId}
-              onView={setViewedGuideId} />}
-          </div>
+          </article>
         })}
         <Link className="strategy-back" to={backTo}>← 매출 분석 다시 보기</Link>
-      </fieldset>
-      <section className="form-stack strategy-settings">
-        <div className="ruled"><h2>실행 조건 정하기</h2></div>
-        <p className="strategy-selected">{selected.name}</p>
-        <label>실행 기간<select name="duration" defaultValue="2주" disabled={saving}><option>1주</option><option>2주</option><option>4주</option></select></label>
-        {choice !== 'inventory' && <>
-          {choice === 'outreach' && <label>예산 한도 (원)<input type="number" min="0" step="1" disabled={saving} max={Number.MAX_SAFE_INTEGER} value={budget} onChange={(event) => setBudget(event.target.value)} required /></label>}
-          <label>홍보 채널<select disabled={saving} value={channel} onChange={(event) => setChannel(event.target.value)}><option>인스타그램</option><option>매장 안내</option></select></label>
-        </>}
+      </section>
+      {selected && <section className="form-stack strategy-settings" aria-labelledby="strategy-settings-title">
+        <div className="strategy-settings-heading">
+          <h2 id="strategy-settings-title" tabIndex={-1} ref={settingsHeading}>실행 조건 정하기</h2>
+          <p>{selected.name}</p>
+        </div>
+        <label className={choice === 'outreach' ? 'notice-review-period' : undefined}>
+          <span>{choice === 'outreach' ? '안내 수정 후 확인할 기간' : '실행 기간'}</span>
+          <select name="duration" value={duration} onChange={(event) => setDuration(event.target.value)} disabled={saving}>
+            <option>1주</option><option>2주</option><option>4주</option>
+          </select>
+        </label>
+        {choice === 'outreach' && <p className="muted">처음 이틀은 주문 시간과 안내문을 점검하고 수정해요. 이후 선택한 기간 동안 결제 건수나 매출 흐름을 확인해요.</p>}
+        {choice === 'outreach' && saved && <ExecutionGuidePanel
+          auth={saved.auth} analysisId={saved.analysisId} recommendationId={saved.response.recommendationId}
+          onView={setViewedGuideId} />}
+        {choice === 'promotion' && <label>홍보 채널<select disabled={saving} value={channel} onChange={(event) => setChannel(event.target.value)}><option>인스타그램</option><option>매장 안내</option></select></label>}
+        {choice === 'custom' ? <div className="strategy-output">
+          <strong>실행 점검표 미리보기</strong>
+          <ol>{selected.steps?.map(step => <li key={step}>{step}</li>)}</ol>
+          {selected.marketing && <p>실행 관리에서 홍보 문구와 이미지를 만들 수 있어요.</p>}
+        </div> : <>
         <label className="customer-concern-field">
           <span>손님들이 자주 겪는 불편 <span className="muted">(선택)</span></span>
           <input value={customerConcern} onChange={(event) => setCustomerConcern(event.target.value)}
@@ -313,11 +315,11 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
         </section>}
         <div className="strategy-output">
           <strong>생성할 결과물</strong>
-          <span>실행 일정 · 점검표 · {choice === 'inventory' ? '발주량 검토표' : selected.status === 'NEEDS_INPUT' ? '혜택 검토 항목' : '홍보 초안'}</span>
-        </div>
+          <span>{choice === 'outreach' ? '실행 일정 · 주문 안내 점검표 · 안내 문구' : '실행 일정 · 점검표 · ' + (choice === 'inventory' ? '발주량 검토표' : selected.status === 'NEEDS_INPUT' ? '혜택 검토 항목' : '홍보 초안')}</span>
+        </div></>}
         {error && <p className="error" role="alert">{error}</p>}
         <button className="button primary strategy-submit" disabled={saving}>{saving ? '계획 저장 중…' : '이 전략으로 계획 만들기'} <span aria-hidden="true">→</span></button>
-      </section>
+      </section>}
     </form>
   </>
 }

@@ -32,11 +32,11 @@ function drawPhotoPost(context: CanvasRenderingContext2D, draft: PromotionDraft,
 
   context.font = `700 61px ${font}`
   const price = draft.discountedPrice
-  context.fillText(price, 70, 934, 490)
-  const priceWidth = Math.min(context.measureText(price).width, 490)
+  if (price) context.fillText(price, 70, 934, 490)
+  const priceWidth = price ? Math.min(context.measureText(price).width, 490) + 25 : 0
   context.font = `600 39px ${font}`
   context.fillStyle = '#f5debb'
-  context.fillText('·  ' + draft.feature, 70 + priceWidth + 25, 934, 915 - priceWidth)
+  context.fillText(price ? '·  ' + draft.feature : draft.feature, 70 + priceWidth, 934, 940 - priceWidth)
 
   context.fillStyle = '#fff1da'
   context.font = `400 34px ${font}`

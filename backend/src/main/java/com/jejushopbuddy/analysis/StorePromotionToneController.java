@@ -81,9 +81,19 @@ class StorePromotionToneController {
             return compact + details;
         }
 
-        private static boolean containsAvoidedPhrase(String text, String avoidPhrases) {
+        String marketingCaption(String subject, String store, String avoidPhrases) {
+            String opening = switch (this) {
+                case PLAIN -> "가게 소식을 전합니다.";
+                case FRIENDLY -> "오늘도 가게에서 반갑게 만나요.";
+                case SHORT -> "";
+            };
+            if (containsAvoidedPhrase(opening, avoidPhrases)) opening = "";
+            return subject + (opening.isEmpty() ? "" : "\n" + opening) + "\n\n" + store;
+        }
+
+        static boolean containsAvoidedPhrase(String text, String avoidPhrases) {
             String normalized = text.toLowerCase(Locale.ROOT);
-            for (String entry : avoidPhrases.split("[,\\r\\n]+")) {
+            for (String entry : (avoidPhrases == null ? "" : avoidPhrases).split("[,\\r\\n]+")) {
                 String phrase = entry.strip().toLowerCase(Locale.ROOT);
                 if (!phrase.isEmpty() && normalized.contains(phrase)) return true;
             }

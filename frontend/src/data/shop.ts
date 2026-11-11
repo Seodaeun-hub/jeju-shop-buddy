@@ -131,7 +131,8 @@ export type PromotionDraft = {
 }
 
 export type PromotionDraftInput = {
-  review: PromotionReview
+  review?: PromotionReview
+  subject?: string
   publishDate: string
   publishTime: string
   photoDataUrl?: string
@@ -142,6 +143,7 @@ export type PromotionDraftInput = {
 export type CustomerNotice = { concern: string; text: string; placement: string }
 
 export type Plan = {
+  marketing?: boolean
   customerNotice?: CustomerNotice
   id?: string
   analysisId?: string
@@ -154,7 +156,7 @@ export type Plan = {
   inventoryItems?: InventoryItem[]
   promotionReview?: PromotionReview
   promotionDraft?: PromotionDraft
-  strategy: (typeof strategies)[number]['id']
+  strategy: (typeof strategies)[number]['id'] | 'custom'
   title: string
   store: string
   demo: boolean

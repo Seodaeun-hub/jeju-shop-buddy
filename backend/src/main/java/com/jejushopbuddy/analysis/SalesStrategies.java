@@ -114,31 +114,32 @@ final class SalesStrategies {
     record Suggestion(String code, String title, String status, String reason, List<Evidence> evidence,
                       List<String> missingInputs, String followUp, List<StoreReviewService.Review> reviewEvidence,
                       ReviewTopic reviewTopic, String nextAction, RecommendationContext recommendation,
-                      StrategyAgentClient.GuideResponse executionGuide, CustomerNotice customerNotice) {
+                      StrategyAgentClient.GuideResponse executionGuide, CustomerNotice customerNotice, List<String> steps,
+                      Boolean marketing) {
         Suggestion(String code, String title, String status, String reason, List<Evidence> evidence,
                    List<String> missingInputs, String followUp) {
-            this(code, title, status, reason, evidence, missingInputs, followUp, null, null, null, null, null, null);
+            this(code, title, status, reason, evidence, missingInputs, followUp, null, null, null, null, null, null, null, null);
         }
 
         Suggestion(String code, String title, String status, String reason, List<Evidence> evidence,
                    List<String> missingInputs, String followUp, List<StoreReviewService.Review> reviewEvidence,
                    ReviewTopic reviewTopic) {
-            this(code, title, status, reason, evidence, missingInputs, followUp, reviewEvidence, reviewTopic, null, null, null, null);
+            this(code, title, status, reason, evidence, missingInputs, followUp, reviewEvidence, reviewTopic, null, null, null, null, null, null);
         }
 
         Suggestion withRecommendation(RecommendationContext context) {
             return new Suggestion(code, title, status, reason, evidence, missingInputs, followUp,
-                    reviewEvidence, reviewTopic, nextAction, context, executionGuide, customerNotice);
+                    reviewEvidence, reviewTopic, nextAction, context, executionGuide, customerNotice, steps, marketing);
         }
 
         Suggestion withExecutionGuide(StrategyAgentClient.GuideResponse guide) {
             return new Suggestion(code, title, status, reason, evidence, missingInputs, followUp,
-                    reviewEvidence, reviewTopic, nextAction, recommendation, guide, customerNotice);
+                    reviewEvidence, reviewTopic, nextAction, recommendation, guide, customerNotice, steps, marketing);
         }
 
         Suggestion withCustomerNotice(CustomerNotice notice) {
             return new Suggestion(code, title, status, reason, evidence, missingInputs, followUp,
-                    reviewEvidence, reviewTopic, nextAction, recommendation, executionGuide, notice);
+                    reviewEvidence, reviewTopic, nextAction, recommendation, executionGuide, notice, steps, marketing);
         }
     }
 

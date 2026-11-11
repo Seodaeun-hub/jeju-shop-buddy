@@ -209,7 +209,8 @@ final class StrategyAgentClient {
         promotion.addAll(List.of("ITEM_PRICE_AND_ORDER_COST", "DISCOUNT_BUDGET"));
         return List.of(new Candidate("OUTREACH", "AVAILABLE", List.of()),
                 new Candidate("PROMOTION", "NEEDS_INPUT", promotion),
-                new Candidate("INVENTORY", "NEEDS_INPUT", List.of("ON_HAND_STOCK", "EXPECTED_USAGE", "INCOMING_STOCK")));
+                new Candidate("INVENTORY", "NEEDS_INPUT", List.of("ON_HAND_STOCK", "EXPECTED_USAGE", "INCOMING_STOCK")),
+                new Candidate("CUSTOM", "AVAILABLE", List.of()));
     }
 
     private static Response mapResponse(AnalysisResponse analysis, String fingerprint, List<Candidate> candidates,
@@ -217,13 +218,15 @@ final class StrategyAgentClient {
         require(response != null && VERSION.equals(response.schemaVersion()) && analysis.id().equals(response.analysisId())
                 && fingerprint.equals(response.inputFingerprint()) && "OK".equals(response.status())
                 && response.requiredInputs() != null && response.requiredInputs().isEmpty()
-                && response.recommendations() != null && response.recommendations().size() == candidates.size());
+                && response.recommendations() != null && !response.recommendations().isEmpty()
+                && response.recommendations().size() <= 12);
         var contextIds = facts.values().stream().filter(fact -> fact.type().equals("JEJU_BSI")).map(Fact::id).toList();
         require(contextIds.equals(response.contextEvidenceIds()));
         var seen = new HashSet<String>();
+        var customTitles = new HashSet<String>();
         var suggestions = new ArrayList<Suggestion>();
         for (var card : response.recommendations()) {
-            require(card != null && seen.add(card.strategyCode()));
+            require(card != null && ("CUSTOM".equals(card.strategyCode()) || seen.add(card.strategyCode())));
             var candidate = candidates.stream().filter(item -> item.code().equals(card.strategyCode()))
                     .findFirst().orElseThrow(() -> new IllegalArgumentException("Unknown strategy"));
             require(candidate.status().equals(card.status()) || (suggestions.isEmpty()
@@ -236,9 +239,18 @@ final class StrategyAgentClient {
                 require(fact != null && allowedEvidence(candidate.code(), fact.type()));
                 return fact.toEvidence();
             }).toList();
-            suggestions.add(new Suggestion(candidate.code(), TITLES.get(candidate.code()), card.status(), card.reason(),
+            boolean custom = candidate.code().equals("CUSTOM");
+            var steps = card.steps() == null ? List.<String>of() : card.steps();
+            if (custom) {
+                require(singleLine(card.title(), 80) && customTitles.add(card.title().strip())
+                        && steps.size() >= 2 && steps.size() <= 4 && new HashSet<>(steps).size() == steps.size()
+                        && steps.stream().allMatch(step -> singleLine(step, 150)));
+            }
+            suggestions.add(new Suggestion(candidate.code(), custom ? card.title().strip() : TITLES.get(candidate.code()),
+                    card.status(), card.reason(),
                     evidence, candidate.missingInputs().stream().map(INPUT_LABELS::get).toList(),
-                    card.followUp(), null, null, card.nextAction(), null, null, null));
+                    card.followUp(), null, null, card.nextAction(), null, null, null, custom ? steps : null,
+                    custom && Boolean.TRUE.equals(card.marketing()) ? Boolean.TRUE : null));
         }
         return new Response(analysis.id(), analysis.beforeMonth(), analysis.afterMonth(), List.copyOf(suggestions),
                 "AGENT", contextIds.stream().map(id -> facts.get(id).toEvidence()).toList());
@@ -246,7 +258,7 @@ final class StrategyAgentClient {
 
     private static boolean allowedEvidence(String code, String type) {
         return switch (code) {
-            case "OUTREACH" -> Set.of("MONTHLY_SALES", "TIME_SERIES", "MARKET_CARD_SALES").contains(type);
+            case "OUTREACH", "CUSTOM" -> Set.of("MONTHLY_SALES", "TIME_SERIES", "MARKET_CARD_SALES").contains(type);
             case "PROMOTION" -> Set.of("MONTHLY_SALES", "TIME_SERIES").contains(type);
             default -> "MONTHLY_SALES".equals(type);
         };
@@ -258,6 +270,10 @@ final class StrategyAgentClient {
 
     private static boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private static boolean singleLine(String value, int limit) {
+        return hasText(value) && value.length() <= limit && value.codePoints().noneMatch(Character::isISOControl);
     }
 
     private static String availability(Object value) {
@@ -299,7 +315,8 @@ final class StrategyAgentClient {
     private record AgentResponse(String schemaVersion, UUID analysisId, String inputFingerprint, String status,
                                  List<String> contextEvidenceIds, List<String> requiredInputs, List<AgentCard> recommendations) {}
     private record AgentCard(String strategyCode, String status, String reason, List<String> evidenceIds,
-                             List<String> missingInputs, String nextAction, String followUp) {}
+                             List<String> missingInputs, String nextAction, String followUp, String title, List<String> steps,
+                             Boolean marketing) {}
 
     record Generated(String inputFingerprint, Response response) {}
 

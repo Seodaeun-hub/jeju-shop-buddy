@@ -1781,6 +1781,9 @@ components:
       properties:
         code:
           $ref: '#/components/schemas/StrategyCode'
+        marketing:
+          type: boolean
+          description: 실행 관리에서 메뉴나 가게 소식의 홍보물을 만들 수 있는 맞춤 전략입니다.
         title:
           type: string
         status:
@@ -1797,6 +1800,12 @@ components:
         nextAction:
           type: string
           description: AI 추천에서 먼저 확인하거나 입력할 내용
+        steps:
+          type: array
+          description: 맞춤 전략을 실행할 때 점검표에 넣는 행동
+          minItems: 2
+          maxItems: 4
+          items: { type: string, maxLength: 150 }
         recommendation:
           type: object
           description: 선택한 AI 추천의 원본 ID와 비교 기간, 경기 참고 지표
@@ -1861,7 +1870,7 @@ components:
           description: afterMonth의 값. 금액과 건수는 정수이며 BSI는 소수일 수 있다.
     StrategyCode:
       type: string
-      enum: [OUTREACH, PROMOTION, INVENTORY]
+      enum: [OUTREACH, PROMOTION, INVENTORY, CUSTOM]
     CustomerNotice:
       type: object
       additionalProperties: false
@@ -1885,6 +1894,10 @@ components:
           type: string
           format: uuid
           description: AI 추천을 선택할 때 받은 추천 ID
+        optionIndex:
+          type: integer
+          minimum: 0
+          description: AI 추천 목록에서 선택한 항목의 순서. 첫 항목은 0이다.
         strategyCode:
           $ref: '#/components/schemas/StrategyCode'
         conditions:
@@ -1899,6 +1912,16 @@ components:
         - properties:
             strategyCode:
               enum: [INVENTORY]
+            conditions:
+              type: object
+              not:
+                anyOf:
+                  - required: [budgetWon]
+                  - required: [channel]
+        - required: [recommendationId, optionIndex]
+          properties:
+            strategyCode:
+              enum: [CUSTOM]
             conditions:
               type: object
               not:
