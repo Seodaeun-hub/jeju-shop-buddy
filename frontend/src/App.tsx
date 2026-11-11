@@ -4,13 +4,14 @@ import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from
 import { createPromotionDraft, fetchAnalysis, fetchOwnerSession, fetchPlan, loginOwner, logoutOwner, ownerSession, signupOwner, type OwnerSession, regeneratePromotionCaption, saveInventoryReview, savePromotionReview, saveTimeSeries, toPlan, updateChecklistItem } from './api/shop'
 import { Dashboard } from './pages/Dashboard'
 import { AnalysisSwitcher } from './components/AnalysisSwitcher'
+import { Home } from './pages/Home'
 import { ExistingStoreIntake, Intake } from './pages/Intake'
 import { MyStores } from './pages/MyStores'
 import { MyPage } from './pages/MyPage'
 import { Execution } from './pages/Execution'
 import { Results } from './pages/Results'
 import { SavedStrategyPage, Strategy } from './pages/Strategy'
-import { example, monthLabel } from './data/shop'
+import { monthLabel } from './data/shop'
 import type { Analysis, InventoryItem, Plan, PromotionDraftInput, PromotionReviewInput, PromotionTone, TimeSeries } from './data/shop'
 import { Citrus, PageTitle } from './components/ui'
 
@@ -24,33 +25,6 @@ const navigation = [
 
 function Placeholder({ children, to, action }: { children: ReactNode; to: string; action: string }) {
   return <section className="empty-state"><h1>{children}</h1><Link className="button primary" to={to}>{action} <span aria-hidden="true">→</span></Link></section>
-}
-
-function Home({ onDemo }: { onDemo: () => void }) {
-  return (
-    <>
-      <section className="hero">
-        <div>
-          <p className="eyebrow">제주 소상공인을 위한 매출 짝꿍</p>
-          <h1>매출이 줄었을 때,<br />무엇부터 해볼까요?</h1>
-          <p className="hero-description">우리 가게 매출과 제주 상권을 함께 보고, 오늘 할 일을 정해요.</p>
-          <div className="actions">
-            <Link to="/sales" className="button primary">가게짝꿍 시작하기 <span aria-hidden="true">→</span></Link>
-            <button className="button secondary" onClick={onDemo}>분석 예시 보기</button>
-          </div>
-        </div>
-        <div className="receipt hero-receipt">
-          <div className="section-top"><h2>짝꿍의 한눈 요약</h2><Citrus stamp /></div>
-          <div className="receipt-line"><span>우리 가게</span><strong className="down">−8.64%</strong></div>
-          <div className="receipt-line"><span>상권 카드 이용액</span><strong className="up">+7.34%</strong></div>
-          <p className="muted">가상 매장 분석 예시</p>
-        </div>
-      </section>
-      <ol className="home-steps">
-        <li><span>01</span> 매출 입력</li><li><span>02</span> 상권과 비교</li><li><span>03</span> 실행 계획 만들기</li>
-      </ol>
-    </>
-  )
 }
 
 function Account({ signup, onLogin }: { signup: boolean; onLogin: (session: OwnerSession) => void }) {
@@ -178,15 +152,6 @@ export function App() {
     setAnalysisError('')
     setPlan(undefined)
     navigate(dashboardPath(id))
-  }
-
-  function openAnalysis(value: Analysis) {
-    setLastId(undefined)
-    setLoadedId(undefined)
-    setAnalysisError('')
-    setAnalysis(value)
-    setPlan(undefined)
-    navigate('/analysis')
   }
 
   function openPlan(value: Plan) {
@@ -329,7 +294,7 @@ export function App() {
   return (
     <>
       <a href="#main-content" className="skip-link">본문으로 건너뛰기</a>
-      <header className="site-header">
+      <header className={pathname === '/' ? 'site-header landing-header' : 'site-header'}>
         <div className="shell header-inner">
           <Link to="/" className="wordmark"><Citrus /> 가게짝꿍</Link>
           {!publicPage && <nav className="main-nav" aria-label="가게짝꿍 메뉴">
@@ -343,10 +308,10 @@ export function App() {
           </div>
         </div>
       </header>
-      <main id="main-content" className="shell content">
+      <main id="main-content" className={pathname === '/' ? 'content landing-content' : 'shell content'}>
         {logoutError && <p role="alert" className="error">{logoutError}</p>}
         {sessionPending && !publicPage ? <p role="status">로그인 상태를 확인하고 있어요.</p> : <Routes>
-          <Route path="/" element={<Home onDemo={() => openAnalysis(example)} />} />
+          <Route path="/" element={<Home />} />
           <Route path="/login" element={<Account key="login" signup={false} onLogin={login} />} />
           <Route path="/signup" element={<Account key="signup" signup onLogin={login} />} />
           <Route path="/my-page" element={account
