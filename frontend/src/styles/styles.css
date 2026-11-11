@@ -1,3 +1,35 @@
+@font-face {
+  font-family: "Jeju Gothic";
+  src: url("../assets/fonts/JejuGothic-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Jeju Myeongjo";
+  src: url("../assets/fonts/JejuMyeongjo-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+.landing-content, .landing-header, .account-content {
+  --display-font: "Jeju Gothic", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --paper: #f8f6f0;
+  --sheet: #fffdf9;
+  --ink: #252923;
+  --muted: #5d6258;
+  --line: #dedbd2;
+  --rule: #cbc8bd;
+  --green: #254933;
+  --pale-green: #edf1e9;
+  --peach: #f7e9da;
+  color: var(--ink);
+  font-family: var(--display-font);
+  font-synthesis: weight;
+  line-height: 1.65;
+}
+
 :root {
   font-family: "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
   color: #24211c;
@@ -103,9 +135,7 @@ h1, h2, h3, legend, .wordmark, .main-nav a {
 .home-steps span, .up { color: var(--green); }
 .down, .error { color: var(--orange); }
 .muted { color: var(--muted); font-size: .91rem; }
-.account { max-width: 610px; margin: 2.2rem auto 0; display: grid; gap: 1rem; }
 .account-fields { opacity: .76; }
-.account-switch { text-align: center; border-top: 1px solid var(--line); padding-top: .7rem; }
 .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.4rem; }
 .split > :last-child { padding-left: 1.4rem; border-left: 1px solid var(--line); }
 .form-stack { display: grid; gap: .95rem; align-content: start; min-width: 0; }
@@ -205,7 +235,6 @@ h1, h2, h3, legend, .wordmark, .main-nav a {
   .dashboard-aside { border-top: 1px solid var(--line); padding-top: .85rem; }
   .hero { gap: 1.5rem; }
   .home-steps li { padding: .6rem .45rem; font-size: .88rem; }
-  .account { margin-top: .75rem; }
 }
 
 @media (max-width: 420px) {
