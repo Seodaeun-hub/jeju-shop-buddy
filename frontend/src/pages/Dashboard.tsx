@@ -1,5 +1,6 @@
 import { ChartQuestions } from '../components/ChartQuestions'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { MonthlySalesChart } from '../components/MonthlySalesChart'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router'
 import { Citrus } from '../components/ui'
@@ -13,6 +14,7 @@ import { TimeDialog } from './Intake'
 import '../styles/dashboard.css'
 
 const bsiFormat = new Intl.NumberFormat('ko-KR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format
+type DashboardInsight = 'bsi' | 'time' | 'concern' | 'products'
 
 type Topic = {
   chart: QuestionChart
@@ -51,7 +53,7 @@ function MarketChart({ storeRate, marketRate }: { storeRate: number | null; mark
 function BsiChart({ months, values }: { months: [string, string]; values: [number, number] }) {
   const difference = values[1] - values[0]
   return <>
-    <strong className={`bsi ${difference < 0 ? 'down' : 'up'}`}>{values.map(bsiFormat).join(' → ')}</strong>
+    <strong className="bsi">{values.map(bsiFormat).join(' → ')}</strong>
     <p className="muted">제주 전체 소상공인 체감 BSI · {difference > 0 ? '+' : ''}{bsiFormat(difference)}p</p>
     <ul className="bsi-chart" aria-label="월별 제주 소상공인 체감 BSI">
       {months.map((month, index) => <li key={month}>
@@ -139,7 +141,7 @@ function Questions({ topic, period, onClose }: { topic: Topic; period: string; o
 }
 
 function AskButton({ onClick, label }: { onClick: (button: HTMLButtonElement) => void; label: string }) {
-  return <button type="button" className="button small dashboard-ask" aria-label={label} onClick={(event) => onClick(event.currentTarget)}>이 차트 질문</button>
+  return <button type="button" className="text-button dashboard-ask" aria-label={label} onClick={(event) => onClick(event.currentTarget)}>이 차트 질문</button>
 }
 
 function reviewExampleConcern(concern: string, before: Analysis['monthly'][number], after: Analysis['monthly'][number], series?: TimeSeries) {
@@ -173,6 +175,45 @@ function reviewExampleConcern(concern: string, before: Analysis['monthly'][numbe
   return { status: '추가 확인 필요', detail: '현재 매출 자료만으로 이 고민을 판단하기 어려워요.' }
 }
 
+function ConcernResult({ result, onUpload, checking }: {
+  result: ConcernCheck
+  onUpload: (file: File, months: [string, string]) => void
+  checking: boolean
+}) {
+  const input = useRef<HTMLInputElement>(null)
+  const { status, before, after, beforeMonth, afterMonth, startHour, endHour, changeRate, posMonths } = result
+  const compared = status === 'COMPARED' && before != null && after != null && beforeMonth && afterMonth
+  const metric = result.metric === 'COUNT' ? '결제 건수' : result.metric === 'PRODUCT' ? '판매량'
+    : result.metric === 'PRODUCT_REVENUE' ? '실판매금액' : '매출액'
+  const format = result.metric === 'COUNT' ? (value: number) => `${formatNumber(value)}건`
+    : result.metric === 'PRODUCT' ? (value: number) => `${formatNumber(value)}개` : won
+  const headline = result.answer ?? (status === 'MISSING_DATA' ? '확인할 자료가 더 필요해요.'
+    : status === 'CLARIFICATION_REQUIRED' ? '어떤 점이 궁금한지 조금 더 알려 주세요.'
+      : status === 'UNAVAILABLE' ? '지금은 고민을 확인하지 못했어요.' : undefined)
+
+  return <li className="dashboard-concern-result">
+    {result.question && <p className="dashboard-concern-question">{result.question}</p>}
+    {headline && <p><strong>{headline}</strong></p>}
+    {compared && <div>
+      <p>{result.productName && `${result.productName} `}{metric} 비교
+        {startHour != null && endHour != null ? ` · ${startHour}:00~${endHour}:00` : ''}</p>
+      <p>{monthLabel(beforeMonth)} {format(before)} → {monthLabel(afterMonth)} {format(after)}
+        {changeRate != null ? ` · ${formatRate(changeRate)}` : ' · 기준값이 0이라 증감률은 계산할 수 없어요.'}</p>
+    </div>}
+    {result.detail && <p className="muted">{result.detail}</p>}
+    {status === 'MISSING_DATA' && posMonths && <>
+      <button className="button secondary small" type="button" disabled={checking} onClick={() => input.current?.click()}>
+        POS 다시 올리기
+      </button>
+      <input ref={input} type="file" accept=".xlsx,.csv" hidden onChange={event => {
+        const file = event.currentTarget.files?.[0]
+        event.currentTarget.value = ''
+        if (file) onUpload(file, posMonths)
+      }} />
+    </>}
+  </li>
+}
+
 export function Dashboard({ data, auth, analysisId, onSaveTimeSeries, strategyTo }: {
   data: Analysis
   auth?: string
@@ -185,11 +226,15 @@ export function Dashboard({ data, auth, analysisId, onSaveTimeSeries, strategyTo
   const [chartEntry, setChartEntry] = useState<number>()
   const nextChartEntry = useRef(0)
   const [timeOpen, setTimeOpen] = useState(false)
+  const returnToTimeInsight = useRef(false)
+  const [activeInsight, setActiveInsight] = useState<DashboardInsight>()
+  const insightDialog = useRef<HTMLDialogElement>(null)
+  const insightTrigger = useRef<HTMLButtonElement>(null)
+  const dashboardGrid = useRef<HTMLDivElement>(null)
   const chatPanel = useRef<HTMLDivElement>(null)
   const questionTrigger = useRef<HTMLButtonElement>(null)
   const chatLauncher = useRef<HTMLButtonElement>(null)
   const [before, after] = data.monthly.slice(-2)
-  const monthlyMax = Math.max(1, ...data.monthly.map(({ amount }) => amount))
   const period = `${monthLabel(before.month)} → ${monthLabel(after.month)}`
   const delta = changeRate(before.amount, after.amount)
   const [context, setContext] = useState<MarketContext | null>()
@@ -214,32 +259,32 @@ export function Dashboard({ data, auth, analysisId, onSaveTimeSeries, strategyTo
   const series = data.timeSeries
   const concern = data.concern.trim()
   const exampleConcern = data.demo && concern ? reviewExampleConcern(concern, before, after, series) : undefined
-  const [concernCheck, setConcernCheck] = useState<ConcernCheck>()
+  const [concernResults, setConcernResults] = useState<ConcernCheck[]>([])
   const [checkingConcern, setCheckingConcern] = useState(false)
   const [posAttachError, setPosAttachError] = useState('')
-  const posInput = useRef<HTMLInputElement>(null)
   const concernRequest = useRef<AbortController>(null)
   useEffect(() => () => concernRequest.current?.abort(), [])
 
-  async function verifyConcern(file?: File) {
+  async function verifyConcern(upload?: { file: File; months: [string, string] }) {
     if (!analysisId || !auth || concernRequest.current) return
     const controller = new AbortController()
     concernRequest.current = controller
     setCheckingConcern(true)
     setPosAttachError('')
     try {
-      if (file && concernCheck?.posMonths) {
-        const months = concernCheck.posMonths
+      if (upload) {
+        const { file, months } = upload
         const imported = await importPos(file, months)
         if (controller.signal.aborted) return
         const hourlySales = Object.fromEntries(months.map(month => [month, imported.hourlySales[month]]))
         await attachHourlySales(auth, analysisId, hourlySales, controller.signal)
       }
-      setConcernCheck(await checkConcern(auth, analysisId, controller.signal))
+      const results = await checkConcern(auth, analysisId, controller.signal)
+      if (!controller.signal.aborted) setConcernResults(results)
     } catch (error) {
       if (!controller.signal.aborted) {
-        if (file) setPosAttachError(error instanceof Error ? error.message : 'POS 파일을 추가할 수 없어요.')
-        else setConcernCheck({ status: 'UNAVAILABLE', detail: '고민 확인에 실패했어요. 다시 시도해 주세요.' })
+        if (upload) setPosAttachError(error instanceof Error ? error.message : 'POS 파일을 추가할 수 없어요.')
+        else setConcernResults([{ status: 'UNAVAILABLE', detail: '고민 확인에 실패했어요. 다시 시도해 주세요.' }])
       }
     } finally {
       if (!controller.signal.aborted) {
@@ -257,6 +302,15 @@ export function Dashboard({ data, auth, analysisId, onSaveTimeSeries, strategyTo
     ? series?.metric === 'count' ? '결제가 줄어든 시간대' : '매출이 줄어든 시간대'
     : `시간대별 ${series ? unit : '매출 분석'}`
   const formatTime = series?.metric === 'count' ? (value: number) => `${formatNumber(value)}건` : won
+  const timeChartProps = { labels: [monthLabel(before.month), monthLabel(after.month)] as [string, string], format: formatTime, highlight: biggestDrop }
+  const productSales = data.productSales ?? []
+  const [bestSellingProduct] = [...productSales].sort((first, second) => second.after - first.after)
+  const insights: { id: DashboardInsight; label: string; preview: string }[] = [
+    { id: 'time', label: '시간대별 변화', preview: biggestDrop ? `${biggestDrop.label} · ${formatTime(biggestDrop.before - biggestDrop.after)} 감소` : series ? '감소한 시간대 없음' : '시간대별 자료 추가' },
+    { id: 'bsi', label: '제주 경기동향', preview: bsi ? `${bsiFormat(bsi.before)} → ${bsiFormat(bsi.after)}` : missingContext ?? '비교 자료 없음' },
+    { id: 'products', label: '품목별 판매량', preview: bestSellingProduct ? `${bestSellingProduct.productName} · ${formatNumber(bestSellingProduct.after)}개` : '상품 주문 자료 없음' },
+    ...(concern ? [{ id: 'concern' as const, label: '사장님이 적은 고민', preview: concern }] : []),
+  ]
   const monthlyTopic: Topic = {
     chart: 'MONTHLY_SALES',
     title: '월별 매출',
@@ -292,9 +346,33 @@ export function Dashboard({ data, auth, analysisId, onSaveTimeSeries, strategyTo
   const saved = Boolean(auth && analysisId)
   const suggestedTopic = series ? timeTopic : market ? comparisonTopic : monthlyTopic
 
+  useLayoutEffect(() => {
+    const dialog = insightDialog.current
+    if (activeInsight && !timeOpen && dialog && !dialog.open) {
+      insightTrigger.current?.focus()
+      dialog.showModal()
+    }
+  }, [activeInsight, timeOpen])
+
+  function editTimeFromInsight() {
+    returnToTimeInsight.current = true
+    insightDialog.current?.close()
+    setActiveInsight(undefined)
+    setTimeOpen(true)
+  }
+
+  function closeTimeEditor() {
+    setTimeOpen(false)
+    if (returnToTimeInsight.current) {
+      returnToTimeInsight.current = false
+      setActiveInsight('time')
+    }
+  }
+
   function openTopic(topic: Topic, button: HTMLButtonElement, fromChart = true) {
     setChartEntry(fromChart ? ++nextChartEntry.current : undefined)
-    questionTrigger.current = button
+    questionTrigger.current = activeInsight ? insightTrigger.current : button
+    insightDialog.current?.close()
     setQuestion(topic)
     setChatOpen(true)
     requestAnimationFrame(() => chatPanel.current?.focus())
@@ -310,106 +388,145 @@ export function Dashboard({ data, auth, analysisId, onSaveTimeSeries, strategyTo
   }, [])
 
   useEffect(() => {
-    if (!chatOpen || timeOpen) return
+    if (!chatOpen || timeOpen || activeInsight) return
     function onEscape(event: KeyboardEvent) {
       if (event.key === 'Escape' && !event.defaultPrevented) closeTopic()
     }
     window.addEventListener('keydown', onEscape)
     return () => window.removeEventListener('keydown', onEscape)
-  }, [chatOpen, timeOpen, closeTopic])
+  }, [activeInsight, chatOpen, timeOpen, closeTopic])
+
+  useLayoutEffect(() => {
+    const panels = dashboardGrid.current?.querySelectorAll<HTMLElement>('[data-dashboard-chart]')
+    if (!panels || typeof IntersectionObserver === 'undefined') return
+
+    const observer = new IntersectionObserver((entries) => {
+      for (const { isIntersecting, target } of entries) {
+        if (!isIntersecting || !(target instanceof HTMLElement)) continue
+        target.dataset.chartMotion = 'visible'
+        observer.unobserve(target)
+      }
+    }, { rootMargin: '0px 0px -36px 0px' })
+
+    panels.forEach(panel => {
+      panel.dataset.chartMotion = 'pending'
+      observer.observe(panel)
+    })
+    return () => {
+      observer.disconnect()
+      panels.forEach(panel => { delete panel.dataset.chartMotion })
+    }
+  }, [])
 
   return <>
-    <div className="split dashboard analysis-dashboard">
-      <div className="dashboard-main form-stack">
-        {concern && <section className="notice dashboard-concern" aria-label="사장님이 적은 고민">
-          <strong>사장님이 적은 고민</strong>
-          <p className="dashboard-concern-text">{concern}</p>
-          {exampleConcern && <p><strong>{exampleConcern.status}</strong> · {exampleConcern.detail}</p>}
-          {analysisId && auth && <button className="button secondary small" type="button" disabled={checkingConcern}
-            onClick={() => void verifyConcern()}>{checkingConcern ? '고민을 확인하고 있어요…' : 'AI로 고민 확인'}</button>}
-          {concernCheck && <div role="status">
-            {concernCheck.status === 'COMPARED' && concernCheck.beforeMonth && concernCheck.afterMonth
-              && concernCheck.before != null && concernCheck.after != null ? <>
-                {concernCheck.answer && <p><strong>{concernCheck.answer}</strong></p>}
-                <p><strong>{concernCheck.metric === 'COUNT' ? '결제 건수' : '매출액'} 비교</strong>
-                  {concernCheck.startHour != null && concernCheck.endHour != null
-                    ? ` · ${concernCheck.startHour}:00~${concernCheck.endHour}:00` : ' · 하루 전체'}</p>
-                <p>{monthLabel(concernCheck.beforeMonth)} {concernCheck.metric === 'COUNT' ? `${formatNumber(concernCheck.before)}건` : won(concernCheck.before)}
-                  {' → '}{monthLabel(concernCheck.afterMonth)} {concernCheck.metric === 'COUNT' ? `${formatNumber(concernCheck.after)}건` : won(concernCheck.after)}
-                  {' · '}{concernCheck.after < concernCheck.before ? '감소' : concernCheck.after > concernCheck.before ? '증가' : '변화 없음'}
-                  {' · '}{formatRate(concernCheck.changeRate ?? null)}</p>
-                <p>{concernCheck.after < concernCheck.before
-                  ? '어떤 대응을 해볼 수 있을지 같이 살펴봐요.'
-                  : '다른 시간대나 전체 매출 흐름도 같이 살펴봐요.'}</p>
-              </> : <>
-                <p><strong>{concernCheck.status === 'MISSING_DATA' ? '아직 이 고민을 판단하기 어려워요.'
-                  : concernCheck.status === 'CLARIFICATION_REQUIRED' ? '어떤 변화를 확인할지 조금만 더 알려 주세요.'
-                  : '지금은 고민을 확인하지 못했어요.'}</strong></p>
-                <p>{concernCheck.detail}</p>
-              </>}
-          </div>}
-          {concernCheck?.status === 'MISSING_DATA' && concernCheck.posMonths && analysisId && auth && <>
-            <button className="button secondary small" type="button" disabled={checkingConcern}
-              onClick={() => posInput.current?.click()}>POS 다시 올리기</button>
-            <input ref={posInput} type="file" accept=".xlsx,.csv" hidden onChange={event => {
-              const file = event.currentTarget.files?.[0]
-              event.currentTarget.value = ''
-              if (file) void verifyConcern(file)
-            }} />
-          </>}
-          {posAttachError && <p className="error" role="alert">{posAttachError}</p>}
-        </section>}
-        <div className="metrics dashboard-metrics">
-          <div><span>{monthLabel(after.month)} 매출</span><strong>{won(after.amount)}</strong></div>
-          <div><span>우리 가게 매출 변화</span><strong className={delta === null ? 'muted' : delta < 0 ? 'down' : 'up'}>{formatRate(delta)}</strong></div>
-          <div><span>상권 카드 이용액 변화</span><strong className={market?.rate == null ? 'muted' : market.rate < 0 ? 'down' : 'up'}>{market ? formatRate(market.rate) : missingContext ?? '비교 자료 없음'}</strong></div>
+    <div className="analysis-dashboard" ref={dashboardGrid}>
+    <section className="dashboard-overview" aria-label="매출 요약">
+      <dl className="dashboard-totals">
+        <div className="dashboard-kpi dashboard-kpi-primary">
+          <dt>우리 가게 매출</dt>
+          <dd>{won(after.amount)}</dd>
+          <dd className="dashboard-kpi-note">{monthLabel(after.month)}</dd>
         </div>
-        <section className="ruled-block">
-          <div className="section-top">
-            <h2>우리 가게와 상권 비교</h2>
-            {(market || saved) && <AskButton label="상권 비교 차트 질문" onClick={(button) => openTopic(comparisonTopic, button)} />}
-          </div>
-          {market ? <>
-            <MarketChart storeRate={delta} marketRate={market.rate} />
-            <p className="dashboard-source">상권 카드 이용액 {won(market.before)} → {won(market.after)}</p>
-            <p className="muted">{data.area} · {data.industry}</p>
-            <details className="source-details">
-              <summary>자료 출처 보기</summary>
-              <a href={marketSource}>제주데이터허브</a>
-            </details>
-          </> : <p className="muted dashboard-source">{missingContext ?? '같은 지역·업종의 두 달치 카드 이용 자료가 없어요.'}</p>}
-        </section>
-        <section className="ruled-block">
-          <div className="section-top"><h2>우리 가게 월별 매출</h2><AskButton label="월별 매출 차트 질문" onClick={(button) => openTopic(monthlyTopic, button)} /></div>
-          <ul className="chart-rows dashboard-months" aria-label="월별 매출 비교">
-            {data.monthly.map(({ month, amount }) => <li key={month}>
-              <span>{monthLabel(month)}</span>
-              <span className="chart-track" aria-hidden="true"><span className={month === after.month ? '' : 'earlier'} style={{ width: `${(amount / monthlyMax) * 100}%` }} /></span>
-              <strong>{won(amount)}</strong>
-            </li>)}
-          </ul>
-        </section>
-        <section className="ruled-block">
-          <div className="section-top"><h2>{timeTitle}</h2>{(series || saved) && <AskButton label="시간대 차트 질문" onClick={(button) => openTopic(timeTopic, button)} />}</div>
+        <div className="dashboard-kpi">
+          <dt>우리 가게 매출 변화</dt>
+          <dd className={delta === null ? 'muted' : delta < 0 ? 'down' : delta > 0 ? 'up' : ''}>{formatRate(delta)}</dd>
+          <dd className="dashboard-kpi-note">{monthLabel(before.month)} 대비{delta === null ? ' · 기준 매출 0원' : delta < 0 ? ' 감소' : delta > 0 ? ' 증가' : ' 변화 없음'}</dd>
+        </div>
+        <div className="dashboard-kpi">
+          <dt>같은 기간 상권 변화</dt>
+          <dd className={!market || market.rate === null ? 'muted' : market.rate < 0 ? 'down' : market.rate > 0 ? 'up' : ''}>
+            {market ? formatRate(market.rate) : context === undefined ? '불러오는 중' : '비교 자료 없음'}
+          </dd>
+          <dd className="dashboard-kpi-note">같은 지역·업종 카드 이용액</dd>
+        </div>
+      </dl>
+      <Link className="button primary small dashboard-next" to={strategyTo}>대응 전략 보기 <span aria-hidden="true">→</span></Link>
+    </section>
+      <section className="dashboard-panel dashboard-monthly-chart" data-dashboard-chart>
+        <div className="section-top"><h2>우리 가게 월별 매출</h2><AskButton label="월별 매출 차트 질문" onClick={(button) => openTopic(monthlyTopic, button)} /></div>
+        <MonthlySalesChart monthly={data.monthly} />
+      </section>
+      <section className="dashboard-panel dashboard-market" data-dashboard-chart>
+        <div className="section-top">
+          <h2>상권과 비교</h2>
+          {(market || saved) && <AskButton label="상권 비교 차트 질문" onClick={(button) => openTopic(comparisonTopic, button)} />}
+        </div>
+        {market ? <>
+          <p className="muted">{data.area} · {data.industry}</p>
+          <MarketChart storeRate={delta} marketRate={market.rate} />
+          <details className="source-details dashboard-market-details">
+            <summary>상권 금액과 출처 보기</summary>
+            <p>{won(market.before)} → {won(market.after)}</p>
+            <a href={marketSource}>제주데이터허브</a>
+          </details>
+        </> : <p className="muted dashboard-source">{missingContext ?? '같은 지역·업종의 두 달치 카드 이용 자료가 없어요.'}</p>}
+      </section>
+      <div className="dashboard-insights" role="group" aria-label="세부 분석">
+        {insights.map(({ id, label, preview }) => <button key={id} type="button" className="dashboard-insight-trigger"
+          aria-haspopup="dialog" aria-controls="dashboard-insight-dialog"
+          onClick={(event) => {
+            insightTrigger.current = event.currentTarget
+            setActiveInsight(id)
+          }}>
+          <span className="dashboard-insight-label">{label}</span>
+          <span className="dashboard-insight-preview">{preview}</span>
+        </button>)}
+      </div>
+    </div>
+    <dialog id="dashboard-insight-dialog" ref={insightDialog} className="time-dialog dashboard-detail-dialog"
+      aria-labelledby="dashboard-insight-title" onClose={(event) => {
+        if (!event.currentTarget.open) setActiveInsight(undefined)
+      }}>
+      <div className="section-top dashboard-insight-heading">
+        <h2 id="dashboard-insight-title">{activeInsight === 'time' ? timeTitle : insights.find(({ id }) => id === activeInsight)?.label}</h2>
+        <button className="button secondary small" type="button" autoFocus onClick={() => insightDialog.current?.close()}>닫기</button>
+      </div>
+      {activeInsight === 'bsi' && <section className="dashboard-bsi" data-chart-motion="visible">
+        <div className="dashboard-panel-actions"><AskButton label="제주 경기동향 차트 질문" onClick={(button) => openTopic(bsiTopic, button)} /></div>
+        {bsi
+          ? <BsiChart months={[before.month, after.month]} values={[bsi.before, bsi.after]} />
+          : <p className="muted">{missingContext ?? '비교한 두 달의 제주 체감 BSI 자료가 없어요.'}</p>}
+      </section>}
+      {activeInsight === 'time' && <section className="dashboard-time" data-chart-motion="visible">
+          {(series || saved) && <div className="dashboard-panel-actions"><AskButton label="시간대 차트 질문" onClick={(button) => openTopic(timeTopic, button)} /></div>}
+          {biggestDrop && <p className="dashboard-time-finding">
+            <strong>{biggestDrop.label}</strong>에 감소 폭이 가장 컸어요. {formatTime(biggestDrop.before)} → {formatTime(biggestDrop.after)}
+          </p>}
           {series ? <>
-            <TimeChart series={series} labels={[monthLabel(before.month), monthLabel(after.month)]} format={formatTime} highlight={biggestDrop} />
-            <button type="button" className="button secondary small" onClick={() => setTimeOpen(true)}>시간대별 자료 수정</button>
+            <TimeChart series={series} {...timeChartProps} />
+            <div className="dashboard-panel-actions">
+              <button type="button" className="text-button dashboard-detail-link" onClick={editTimeFromInsight}>시간대별 자료 수정</button>
+            </div>
           </> : <div className="empty-state compact dashboard-empty">
             <strong>어느 시간대에 매출이 달라졌는지 보고 싶으세요?</strong>
             <p>POS 파일을 선택하거나 두 달의 시간대별 합계를 직접 입력해 주세요.</p>
-            <button type="button" className="button secondary" onClick={() => setTimeOpen(true)}>시간대별 자료 추가</button>
+            <button type="button" className="button secondary" onClick={editTimeFromInsight}>시간대별 자료 추가</button>
           </div>}
-        </section>
-        <section className="ruled-block">
-          <div className="section-top"><h2>품목별 판매량</h2></div>
-          {data.productSales?.length ? <>
-            <p className="muted">토스포스 상품 주문 시트 · 결제 완료 수량 합계</p>
-            <table className="input-table" aria-label="품목별 판매량 비교">
+      </section>}
+        {activeInsight === 'concern' && concern && <section className="dashboard-concern">
+          <div className="section-top dashboard-concern-heading">
+            <div><p className="dashboard-concern-text">{concern}</p></div>
+            {analysisId && auth && <button className="button secondary small" type="button" disabled={checkingConcern}
+              onClick={() => void verifyConcern()}>{checkingConcern ? '고민을 확인하고 있어요…' : 'AI에게 고민 확인하기'}</button>}
+          </div>
+          {exampleConcern && <p><strong>{exampleConcern.status}</strong> · {exampleConcern.detail}</p>}
+          <div className="dashboard-concern-results" aria-live="polite" aria-busy={checkingConcern}>
+            {concernResults.length > 0 && <ol aria-label="고민별 답변">
+              {concernResults.map((result, index) => <ConcernResult key={index} result={result} checking={checkingConcern}
+                onUpload={(file, months) => void verifyConcern({ file, months })} />)}
+            </ol>}
+          </div>
+          {posAttachError && <p className="error" role="alert">{posAttachError}</p>}
+        </section>}
+      {activeInsight === 'products' && <section className="dashboard-products">
+          {productSales.length ? <>
+              <p className="muted">토스포스 상품 주문 시트 · 결제 완료 수량 합계</p>
+              <div className="dashboard-product-table"><table className="input-table" aria-label="품목별 판매량 비교">
               <thead><tr>
                 <th scope="col">품목</th><th scope="col">{monthLabel(before.month)}</th>
                 <th scope="col">{monthLabel(after.month)}</th><th scope="col">수량 변화</th>
               </tr></thead>
-              <tbody>{data.productSales.map(({ productName, before, after }) => {
+              <tbody>{productSales.map(({ productName, before, after }) => {
                 const difference = after - before
                 return <tr key={productName}>
                   <th scope="row">{productName}</th>
@@ -419,27 +536,10 @@ export function Dashboard({ data, auth, analysisId, onSaveTimeSeries, strategyTo
                   </td>
                 </tr>
               })}</tbody>
-            </table>
-          </> : <p className="muted">상품 주문 시트가 포함된 POS 엑셀로 분석하면 품목별 판매량을 볼 수 있어요.</p>}
-        </section>
-      </div>
-      <aside className="dashboard-aside form-stack">
-        <section className="receipt dashboard-receipt">
-          <div className="section-top"><h2>짝꿍의 한눈 요약</h2><Citrus stamp /></div>
-          <p className="dashboard-summary">{biggestDrop
-            ? <><strong>{biggestDrop.label}</strong>에 {unit} 감소 폭이 가장 컸어요.</>
-            : summary}</p>
-          {biggestDrop && <p className="muted">{formatTime(biggestDrop.before)} → {formatTime(biggestDrop.after)}</p>}
-        </section>
-        <section className="ruled-block dashboard-bsi">
-          <div className="section-top"><h2>제주 경기동향</h2><AskButton label="제주 경기동향 차트 질문" onClick={(button) => openTopic(bsiTopic, button)} /></div>
-          {bsi
-            ? <BsiChart months={[before.month, after.month]} values={[bsi.before, bsi.after]} />
-            : <p className="muted">{missingContext ?? '비교한 두 달의 제주 체감 BSI 자료가 없어요.'}</p>}
-        </section>
-        <Link className="button primary full dashboard-next" to={strategyTo}>대응 전략 보기 <span aria-hidden="true">→</span></Link>
-      </aside>
-    </div>
+              </table></div>
+          </> : <p className="muted">상품 주문 자료가 포함된 POS 엑셀이나 상품 주문 CSV를 올리면 품목별 판매량을 볼 수 있어요.</p>}
+      </section>}
+    </dialog>
     <div className="dashboard-chat-widget">
       <div id="dashboard-chat-panel" className="dashboard-chat-window" ref={chatPanel}
         hidden={!chatOpen} tabIndex={-1}>
@@ -457,9 +557,9 @@ export function Dashboard({ data, auth, analysisId, onSaveTimeSeries, strategyTo
         궁금한 건 짝꿍에게 질문하세요!
       </span>}
     </div>
-    {timeOpen && <TimeDialog monthly={data.monthly} initial={series} onClose={() => setTimeOpen(false)} onSave={async (value) => {
+    {timeOpen && <TimeDialog monthly={data.monthly} initial={series} onClose={closeTimeEditor} onSave={async (value) => {
       await onSaveTimeSeries(value)
-      setTimeOpen(false)
+      closeTimeEditor()
       if (!saved && question?.chart === 'TIME_SERIES') {
         setQuestion(undefined)
         if (chatOpen) closeTopic()

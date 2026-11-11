@@ -23,7 +23,14 @@ export type Analysis = {
   demo: boolean
 }
 
-export type ProductSale = { productName: string; before: number; after: number; priceWon?: number }
+export type ProductSale = {
+  productName: string
+  before: number
+  after: number
+  priceWon?: number
+  beforeRevenue?: number
+  afterRevenue?: number
+}
 
 export const timeSlots = ['오후 2시 전', '오후 2~5시', '오후 5시 이후']
 

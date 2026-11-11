@@ -4,6 +4,8 @@ import { fetchInstagramPublication, type InstagramPublicationStatus } from '../a
 import { CustomerNoticeDetails } from '../components/CustomerNotice'
 import { Citrus, PageTitle } from '../components/ui'
 import { ExecutionGuideSteps } from '../components/ExecutionGuidePanel'
+import { StoreNotice } from '../components/StoreNotice'
+import { ExecutionPlanSwitcher } from '../components/ExecutionPlanSwitcher'
 import { drawPromotionCard } from '../data/promotionCard'
 import { formatNumber, won } from '../data/shop'
 import type { Analysis, InventoryItem, Plan, PromotionDraftInput, PromotionReviewInput, PromotionTone } from '../data/shop'
@@ -262,7 +264,7 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
   const dateRange = `${plan.startDate.replaceAll('-', '.')} ~ ${plan.endDate.replaceAll('-', '.')}`
   const noticeFollowUp = plan.strategy === 'outreach' && plan.tasks.some(task => task.date < plan.startDate)
 
-  return <>
+  return <div className="execution-page">
     <PageTitle title="실행 계획 · 진행 관리" detail={`${plan.store}${plan.demo ? ' · 시연 예시' : ''}`} />
     <section className="receipt execution-summary" aria-labelledby="execution-current-title">
       <div className="execution-summary-mark"><Citrus /></div>
@@ -279,29 +281,44 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
         </p>
       </div>
     </section>
-    {plan.recommendation && <section className="receipt ruled-block" aria-label="저장된 AI 추천">
-      <h2>선택한 AI 추천</h2>
-      <dl className="reason">
-        <dt>추천 이유</dt><dd>{plan.recommendation.reason}</dd>
-        <dt>확인한 변화</dt>
-        <dd><ul>{plan.recommendation.evidence.map((item) => <li key={item}>{item}</li>)}</ul></dd>
-        {plan.recommendation.contextEvidence.length > 0 && <>
-          <dt>경기 참고</dt>
-          <dd><ul>{plan.recommendation.contextEvidence.map((item) => <li key={item}>{item}</li>)}</ul></dd>
-        </>}
-      </dl>
-    </section>}
-    {plan.customerNotice && <section className="receipt ruled-block" aria-label="손님 안내 제안">
-      <h2>손님 안내 제안</h2>
-      <p>{plan.customerNotice.concern}</p>
-      <CustomerNoticeDetails notice={plan.customerNotice} />
-    </section>}
-    {plan.executionGuide && <section className="receipt ruled-block execution-guide" aria-label="저장된 실행 가이드">
-      <h2>저장된 실행 가이드</h2>
-      <p>{plan.executionGuide.channel === 'NAVER' ? '네이버 안내' : '매장 안내'}</p>
-      <ExecutionGuideSteps guide={plan.executionGuide} />
-    </section>}
-    <div className="split planning execution-layout">
+    {auth && analysis.storeId && plan.analysisId && plan.id &&
+      <ExecutionPlanSwitcher auth={auth} storeId={analysis.storeId} analysisId={plan.analysisId} planId={plan.id} />}
+    {(plan.recommendation || plan.customerNotice || plan.executionGuide) &&
+      <details className="execution-reference receipt">
+        <summary>{[
+          plan.recommendation && '추천 이유',
+          plan.customerNotice && '손님 안내 제안',
+          plan.executionGuide && '저장된 실행 가이드',
+        ].filter(Boolean).join(' · ')}</summary>
+        <div className="execution-reference-body">
+          {plan.recommendation && <section className="execution-plan-card" aria-labelledby="execution-recommendation">
+            <h2 id="execution-recommendation">AI가 이 계획을 추천한 이유</h2>
+            <p className="execution-recommendation-reason">{plan.recommendation.reason}</p>
+            {(plan.recommendation.evidence.length > 0 || plan.recommendation.contextEvidence.length > 0) &&
+              <details className="source-details execution-recommendation-evidence">
+                <summary>추천 근거 보기</summary>
+                {plan.recommendation.evidence.length > 0 && <ul>
+                  {plan.recommendation.evidence.map(item => <li key={item}>{item}</li>)}
+                </ul>}
+                {plan.recommendation.contextEvidence.length > 0 && <>
+                  <h3>경기 참고</h3>
+                  <ul>{plan.recommendation.contextEvidence.map(item => <li key={item}>{item}</li>)}</ul>
+                </>}
+              </details>}
+          </section>}
+          {plan.customerNotice && <section className="execution-plan-card execution-customer-notice" aria-labelledby="execution-customer-notice">
+            <h2 id="execution-customer-notice">손님 안내 제안</h2>
+            <CustomerNoticeDetails notice={plan.customerNotice} />
+            <p className="execution-notice-concern"><strong>손님이 겪은 불편</strong> {plan.customerNotice.concern}</p>
+          </section>}
+          {plan.executionGuide && <section className="execution-plan-card execution-guide" aria-label="저장된 실행 가이드">
+            <h2>저장된 실행 가이드</h2>
+            <p>{plan.executionGuide.channel === 'NAVER' ? '네이버 안내' : '매장 안내'}</p>
+            <ExecutionGuideSteps guide={plan.executionGuide} />
+          </section>}
+        </div>
+      </details>}
+    <div className="execution-layout">
       <section className="execution-checklist-card" aria-labelledby="execution-checklist-title">
         <div className="execution-checklist-header">
           <h2 id="execution-checklist-title">실행 일정과 점검표</h2>
@@ -376,16 +393,21 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
           items={plan.inventoryItems ?? []}
           analysis={analysis}
           onSave={onSaveInventory}
-          reviewDate={shortDate(plan.tasks[2].date)}
+          reviewDate={shortDate(plan.tasks[2]?.date ?? plan.endDate)}
           onChange={(inventoryItems) => onChange({ ...plan, inventoryItems })}
-        /> : plan.strategy !== 'custom' && !(plan.id && hasPromotionMaterials) && !needsPromotionInputs
-          && (!plan.reviewTopic || plan.reviewTopic === 'AFTERNOON_ORDER') && <PromoDraft plan={plan} />}
-        <section>
+        /> : plan.strategy === 'outreach' ? <StoreNotice
+          key={`${plan.id ?? 'demo'}:${plan.customerNotice?.text ?? ''}`}
+          store={plan.store}
+          suggestion={plan.customerNotice}
+          auth={auth}
+          planId={plan.id}
+        /> : plan.strategy === 'promotion' && !plan.id && !needsPromotionInputs && <PromoDraft plan={plan} />}
+        <section className="receipt execution-outcome form-stack">
           <h2>실행 후 확인할 지표</h2>
           <p className="execution-metric">{plan.followUp}</p>
+          <Link className="button secondary full execution-results" to={resultsTo}>실행 결과 확인 <span aria-hidden="true">→</span></Link>
         </section>
-        <Link className="button secondary full execution-results" to={resultsTo}>실행 결과 확인 <span aria-hidden="true">→</span></Link>
       </div>
     </div>
-  </>
+  </div>
 }

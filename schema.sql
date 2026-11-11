@@ -63,6 +63,17 @@ CREATE TABLE stores (
     )
 );
 
+CREATE TABLE store_pos_files (
+    id UUID PRIMARY KEY,
+    store_id UUID NOT NULL REFERENCES stores (id) ON DELETE CASCADE,
+    kind VARCHAR(7) NOT NULL CHECK (kind IN ('PAYMENT', 'PRODUCT')),
+    filename VARCHAR(255) NOT NULL CHECK (filename ~ '[^[:space:]]'),
+    content BYTEA NOT NULL CHECK (octet_length(content) BETWEEN 1 AND 10485760),
+    uploaded_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX ix_store_pos_files_store_uploaded ON store_pos_files (store_id, uploaded_at DESC, id DESC);
+
 CREATE TABLE sales_analyses (
     id UUID PRIMARY KEY,
     store_id UUID NOT NULL,
@@ -295,6 +306,8 @@ CREATE TABLE analysis_product_sales (
     before_quantity bigint NOT NULL CHECK (before_quantity BETWEEN 0 AND 9007199254740991),
     after_quantity bigint NOT NULL CHECK (after_quantity BETWEEN 0 AND 9007199254740991),
     price_won bigint CHECK (price_won BETWEEN 1 AND 9007199254740991),
+    before_revenue bigint CHECK (before_revenue BETWEEN 0 AND 9007199254740991),
+    after_revenue bigint CHECK (after_revenue BETWEEN 0 AND 9007199254740991),
     PRIMARY KEY (analysis_id, product_name)
 );
 

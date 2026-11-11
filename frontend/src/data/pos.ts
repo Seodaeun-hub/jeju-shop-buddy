@@ -18,6 +18,7 @@ export type PosImport = {
 
 const columns = ['결제기준일자', '결제시각', '결제건수', '결제금액', '결제상태'] as const
 const productColumns = ['주문기준일자', '결제상태', '상품명', '수량'] as const
+const productRevenueColumn = /^실판매금액(?:\(.+\))?$/
 const maxFileSize = 10 * 1024 * 1024
 
 function readMonth(value: Cell) {
@@ -83,8 +84,11 @@ export async function readProductSales(file: File, beforeMonth: string, afterMon
   if (indices.includes(-1)) throw new Error('Invalid product order columns')
 
   const priceIndex = header.indexOf('상품가격')
+  const revenueIndex = header.findIndex(column => productRevenueColumn.test(column))
+  const revenueMonths = new Set<string>()
   const products = new Map<string, ProductSale>()
   const prices = new Map<string, { date: string; values: Set<number> }>()
+  const incompleteRevenue = new Map<string, Set<string>>()
   for (const row of rows.slice(headerIndex + 1)) {
     if (row.every((cell) => !String(cell ?? '').trim())) continue
     const [date, state, name, quantity] = indices.map((index) => row[index])
@@ -104,6 +108,19 @@ export async function readProductSales(file: File, beforeMonth: string, afterMon
     const period = month === beforeMonth ? 'before' : 'after'
     totals[period] += count
     if (!Number.isSafeInteger(totals[period])) throw new Error('Product quantity total overflow')
+    if (revenueIndex >= 0) {
+      const revenue = readTotal(row[revenueIndex])
+      const field = period === 'before' ? 'beforeRevenue' : 'afterRevenue'
+      if (revenue === undefined) {
+        const months = incompleteRevenue.get(productName) ?? new Set<string>()
+        months.add(month)
+        incompleteRevenue.set(productName, months)
+      } else {
+        revenueMonths.add(month)
+        totals[field] = (totals[field] ?? 0) + revenue
+        if (!Number.isSafeInteger(totals[field])) throw new Error('Product revenue total overflow')
+      }
+    }
     products.set(productName, totals)
     const price = readTotal(row[priceIndex])
     if (price && count > 0) {
@@ -114,6 +131,13 @@ export async function readProductSales(file: File, beforeMonth: string, afterMon
   }
   for (const [name, { values }] of prices) {
     if (values.size === 1) products.get(name)!.priceWon = [...values][0]
+  }
+  for (const product of products.values()) {
+    const missing = incompleteRevenue.get(product.productName)
+    if (!revenueMonths.has(beforeMonth) || missing?.has(beforeMonth)) delete product.beforeRevenue
+    else product.beforeRevenue ??= 0
+    if (!revenueMonths.has(afterMonth) || missing?.has(afterMonth)) delete product.afterRevenue
+    else product.afterRevenue ??= 0
   }
   return [...products.values()].sort((a, b) => b.after - a.after || b.before - a.before
     || a.productName.localeCompare(b.productName, 'ko'))
@@ -137,7 +161,7 @@ export async function importPromotionProduct(file: File, product: string, start:
   const headerIndex = rows.findIndex(row => row.some(cell => String(cell ?? '').trim()))
   const header = rows[headerIndex]?.map(cell => String(cell ?? '').replace(/\s/g, '')) ?? []
   const indices = [...productColumns.map(column => header.indexOf(column)),
-    header.findIndex(column => /^실판매금액(?:\(.+\))?$/.test(column))]
+    header.findIndex(column => productRevenueColumn.test(column))]
   if (indices.includes(-1)) {
     throw new Error('상품 주문에 주문기준일자·결제상태·상품명·수량·실판매금액 열이 있는지 확인해 주세요.')
   }

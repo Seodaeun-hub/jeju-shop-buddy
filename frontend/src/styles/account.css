@@ -79,7 +79,6 @@
 
 .account-form .button.primary {
   min-height: clamp(3.1rem, 6.9svh, 3.6rem);
-  font-weight: 700;
   font-size: clamp(1.05rem, 1.42vw, 1.3rem);
   margin-top: .2rem;
   border-color: #254933;

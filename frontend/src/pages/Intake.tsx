@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Link } from 'react-router'
-import { Citrus, PageTitle } from '../components/ui'
-import { industryOptions, listAreas, listStores, registerStore, saveAnalysis } from '../api/shop'
-import type { Area, Store, StoreInput } from '../api/shop'
-import { AddressField } from '../components/AddressField'
-import { example, formatNumber, monthLabel, timeSlots, won } from '../data/shop'
+import { Link, useSearchParams } from 'react-router'
+import { listPosFiles, listStores, readStoredPosFile, saveAnalysis } from '../api/shop'
+import type { StoredPosFile, Store } from '../api/shop'
+import { useStoreSelection } from '../components/useStoreSelection'
+import { formatNumber, monthLabel, timeSlots, won } from '../data/shop'
 import { importPos, readProductSales } from '../data/pos'
 import type { PosImport } from '../data/pos'
 import type { MonthlySales, TimeSeries } from '../data/shop'
+import '../styles/intake.css'
 
 const concerns = [
   ['매출이 줄었어요', '지난달보다 매출이 줄었어요.'],
@@ -17,12 +17,12 @@ const concerns = [
   ['홍보 방법이 고민돼요', '우리 가게를 어떻게 홍보할지 고민돼요.'],
 ]
 
-const industryGroups = [...new Set(industryOptions.map(({ group }) => group))]
-
-const administrativeAreaAliases = new Map([
-  ['제주시 도두일동', '제주시 도두동'],
-  ['제주시 도두이동', '제주시 도두동'],
-])
+function toggleConcernExample(concern: string, example: string) {
+  const lines = concern.split('\n')
+  if (lines.includes(example)) return lines.filter(line => line !== example).join('\n')
+  const next = [concern.trimEnd(), example].filter(Boolean).join('\n')
+  return next.length <= 1000 ? next : concern
+}
 
 type InputRow = { id: number; month: string; amount: string }
 type InputMode = 'manual' | 'upload'
@@ -46,7 +46,7 @@ function InputTabs({ mode, onChange, manualLabel }: {
   </div>
 }
 
-type ImportedFile = PosImport & { filename: string; productFilename?: string }
+type ImportedFile = PosImport & { filename: string; paymentFileId?: string; productFilename?: string; productFileId?: string }
 
 function PosFilePicker({ label, filename, placeholder, accept, disabled, onSelect }: {
   label: string
@@ -70,26 +70,63 @@ function PosFilePicker({ label, filename, placeholder, accept, disabled, onSelec
   </div>
 }
 
-function PosUpload({ value, onChange, compareMonths, disabled, onProductReadingChange }: {
+function StoredFilePicker({ label, files, selectedId, disabled, placeholder, onSelect }: {
+  label: string
+  files: StoredPosFile[]
+  selectedId?: string
+  disabled: boolean
+  placeholder: string
+  onSelect: (file: StoredPosFile) => void
+}) {
+  return <label className="stored-file-picker">{label}
+    <select value={selectedId ?? ''} disabled={disabled || !files.length} onChange={event => {
+      const file = files.find(item => item.id === event.target.value)
+      if (file) onSelect(file)
+    }}>
+      <option value="" disabled>{placeholder}</option>
+      {files.map(file => <option key={file.id} value={file.id}>
+        {file.filename} · {new Date(file.uploadedAt).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' })}
+      </option>)}
+    </select>
+  </label>
+}
+
+function PosUpload({ value, onChange, compareMonths, disabled, onProductReadingChange, auth, storeId }: {
   value?: ImportedFile
   onChange: (value: ImportedFile | undefined) => void
   compareMonths?: [string, string]
   disabled?: boolean
   onProductReadingChange?: (reading: boolean) => void
+  auth?: string
+  storeId?: string
 }) {
   const [reading, setReading] = useState<{ kind: 'payment' | 'product'; filename: string }>()
   const [error, setError] = useState('')
+  const [storedFiles, setStoredFiles] = useState<StoredPosFile[]>()
+  const [storedFilesError, setStoredFilesError] = useState('')
+  const [retry, setRetry] = useState(0)
   const request = useRef(0)
   useEffect(() => () => { request.current++ }, [])
 
-  async function selectFile(file: File) {
+  useEffect(() => {
+    if (!auth || !storeId) return
+    const controller = new AbortController()
+    listPosFiles(auth, storeId, controller.signal).then(files => {
+      if (!controller.signal.aborted) setStoredFiles(files)
+    }).catch(() => {
+      if (!controller.signal.aborted) setStoredFilesError('저장된 POS 파일 목록을 불러올 수 없어요.')
+    })
+    return () => controller.abort()
+  }, [auth, storeId, retry])
+
+  async function selectFile(filename: string, load: () => File | Promise<File>, paymentFileId?: string) {
     const id = ++request.current
     onChange(undefined)
     setError('')
-    setReading({ kind: 'payment', filename: file.name })
+    setReading({ kind: 'payment', filename })
     try {
-      const data = await importPos(file, compareMonths)
-      if (id === request.current) onChange({ ...data, filename: file.name })
+      const data = await importPos(await load(), compareMonths)
+      if (id === request.current) onChange({ ...data, filename, paymentFileId })
     } catch (error) {
       if (id === request.current) setError(error instanceof Error ? error.message : 'POS 파일을 읽을 수 없어요.')
     } finally {
@@ -97,19 +134,19 @@ function PosUpload({ value, onChange, compareMonths, disabled, onProductReadingC
     }
   }
 
-  async function selectProductFile(file: File, payment: ImportedFile) {
+  async function selectProductFile(filename: string, load: () => File | Promise<File>, payment: ImportedFile, productFileId?: string) {
     const id = ++request.current
     setError('')
-    setReading({ kind: 'product', filename: file.name })
+    setReading({ kind: 'product', filename })
     onProductReadingChange?.(true)
     try {
-      const productSales = await readProductSales(file, ...payment.months)
+      const productSales = await readProductSales(await load(), ...payment.months)
       if (!productSales.length) throw new Error('비교 기간에 해당하는 상품 주문이 없어요.')
       if (id === request.current) {
-        onChange({ ...payment, productSales, productWarning: undefined, productFilename: file.name })
+        onChange({ ...payment, productSales, productWarning: undefined, productFilename: filename, productFileId })
       }
     } catch {
-      if (id === request.current) setError(file.name + ' 파일을 읽지 못했어요. 상품 주문 CSV의 형식과 비교 기간을 확인해 주세요.')
+      if (id === request.current) setError(filename + ' 파일을 읽지 못했어요. 저장 여부, CSV 형식과 비교 기간을 확인해 주세요.')
     } finally {
       if (id === request.current) {
         setReading(undefined)
@@ -120,13 +157,20 @@ function PosUpload({ value, onChange, compareMonths, disabled, onProductReadingC
 
   const productCount = value?.productSales?.length ?? 0
   const priceCount = value?.productSales?.filter(item => item.priceWon != null).length ?? 0
-  const canAddProductCsv = value && /\.csv$/i.test(value.filename)
+  const canAddProductCsv = value && (/\.csv$/i.test(value.filename) || !productCount || value.productFilename)
   const pickerDisabled = Boolean(disabled || reading)
+  const paymentFiles = storedFiles?.filter(file => file.kind === 'PAYMENT') ?? []
+  const productFiles = storedFiles?.filter(file => file.kind === 'PRODUCT') ?? []
+  const savedFilePlaceholder = (files: StoredPosFile[]) => storedFilesError ? '파일 목록을 불러오지 못했어요'
+    : !storedFiles ? '파일 목록 불러오는 중…'
+      : files.length ? '저장된 파일을 선택해 주세요' : '이 매장에 저장된 파일이 없어요'
 
-  return <div className="upload-preview">
-    <span className="upload-arrow" aria-hidden="true">↑</span>
-    <strong>토스포스 결제 내역 선택</strong>
-    <p>Excel (.xlsx) · 결제 내역 CSV (.csv) · 최대 10MB</p>
+  return <div className={compareMonths ? "upload-preview" : "sales-pos"}>
+    {compareMonths && <>
+      <span className="upload-arrow" aria-hidden="true">↑</span>
+      <strong>토스포스 결제 내역 선택</strong>
+      <p>Excel (.xlsx) · 결제 내역 CSV (.csv) · 최대 10MB</p>
+    </>}
     <div className="pos-file-statuses">
       <div className="pos-file-status">
         <div role="status">
@@ -135,16 +179,19 @@ function PosUpload({ value, onChange, compareMonths, disabled, onProductReadingC
             : value ? <>
               <span className="badge">집계 완료</span>
               <small>{compareMonths ? '시간대별 결제 건수' : '월별 매출 · 시간대별 결제 건수'}</small>
-            </> : <small>서로 다른 두 달 이상의 결제 내역을 올려 주세요.</small>}
+            </> : <small>토스포스 결제 CSV 또는 엑셀 · 최대 10MB</small>}
         </div>
         <PosFilePicker label={value ? '결제 파일 교체' : '결제 파일 선택'}
           filename={reading?.kind === 'payment' ? reading.filename : value?.filename}
-          placeholder="결제 CSV 또는 엑셀 파일" accept=".xlsx,.csv"
-          disabled={pickerDisabled} onSelect={selectFile} />
+          placeholder={compareMonths ? "결제 CSV 또는 엑셀 파일" : undefined} accept=".xlsx,.csv"
+          disabled={pickerDisabled} onSelect={file => void selectFile(file.name, () => file)} />
+        {auth && storeId && <StoredFilePicker label="저장된 결제 내역 불러오기" files={paymentFiles} disabled={pickerDisabled}
+          selectedId={value?.paymentFileId} placeholder={savedFilePlaceholder(paymentFiles)}
+          onSelect={file => void selectFile(file.filename, () => readStoredPosFile(auth, storeId, file), file.id)} />}
       </div>
       {!compareMonths && <div className="pos-file-status">
         <div role="status">
-          <strong>상품 주문</strong>
+          <strong>상품 주문 <span className="sales-optional">선택</span></strong>
           {reading?.kind === 'product' ? <small>집계 중</small>
             : productCount ? <>
               {!value?.productFilename && <small>엑셀의 상품 주문 시트</small>}
@@ -155,11 +202,22 @@ function PosUpload({ value, onChange, compareMonths, disabled, onProductReadingC
               : value.productWarning ?? '비교 기간에 해당하는 상품 주문이 없어요.'}</small>}
         </div>
         {canAddProductCsv && <PosFilePicker label={value.productFilename ? '상품 주문 파일 교체' : '파일 추가'}
-          filename={reading?.kind === 'product' ? reading.filename : value.productFilename}
-          accept=".csv" disabled={pickerDisabled} onSelect={file => void selectProductFile(file, value)} />}
+            filename={reading?.kind === 'product' ? reading.filename : value.productFilename}
+            accept=".csv" disabled={pickerDisabled} onSelect={file => void selectProductFile(file.name, () => file, value)} />}
+        {auth && storeId && (!value || canAddProductCsv) && <StoredFilePicker label="저장된 상품 주문 불러오기"
+          files={productFiles} disabled={pickerDisabled || !value} selectedId={value?.productFileId}
+          placeholder={value ? savedFilePlaceholder(productFiles) : '결제 내역을 먼저 선택해 주세요'}
+          onSelect={file => { if (value) void selectProductFile(file.filename, () => readStoredPosFile(auth, storeId, file), value, file.id) }} />}
       </div>}
     </div>
     {error && <p role="alert" className="error">{error}</p>}
+    {auth && storeId && <div className="pos-library-note">
+      {storedFilesError && <p role="alert">{storedFilesError} <button type="button" className="text-button" onClick={() => {
+        setStoredFilesError('')
+        setRetry(value => value + 1)
+      }}>다시 불러오기</button></p>}
+      <Link to={'/stores?' + new URLSearchParams({ storeId, section: 'pos-files' })}>내 매장 POS 파일 관리</Link>
+    </div>}
     {value && !reading && !compareMonths && <small>분석 시작을 누르면 집계된 자료를 저장해요.</small>}
   </div>
 }
@@ -293,57 +351,70 @@ export function TimeDialog({ monthly, initial, onClose, onSave }: {
   </dialog>
 }
 
-export function ExistingStoreIntake({ auth, storeId, onAnalyze }: { auth: string; storeId: string; onAnalyze: (id: string) => void }) {
-  const [store, setStore] = useState<Store>()
+export function Intake({ auth, ownerEmail, onAnalyze }: { auth: string; ownerEmail: string; onAnalyze: (id: string) => void }) {
+  const [params, setParams] = useSearchParams()
+  const [stores, setStores] = useState<Store[]>()
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
+  const [saving, setSaving] = useState(false)
+  const storeId = params.get('storeId')
+  const selected = useStoreSelection(ownerEmail, stores, storeId)
 
   useEffect(() => {
     const controller = new AbortController()
-    listStores(auth, controller.signal).then((stores) => {
-      if (controller.signal.aborted) return
-      const match = stores.find(({ id }) => id === storeId)
-      if (match) setStore(match)
-      else setError('내 매장 목록에서 이 매장을 찾을 수 없어요.')
+    listStores(auth, controller.signal).then(value => {
+      if (!controller.signal.aborted) setStores(value)
     }).catch((failure: Error) => {
       if (!controller.signal.aborted) setError(failure.message)
     })
     return () => controller.abort()
-  }, [auth, storeId, retry])
+  }, [auth, retry])
 
-  if (store) return <Intake auth={auth} existingStore={store} onAnalyze={onAnalyze} />
-  return <section className="empty-state">
-    {error ? <>
+  return <div className="sales-intake">
+    <header className="sales-heading">
+      <h1>매출 입력</h1>
+      <p>매장을 고른 뒤 POS 파일을 올리거나 월별 매출을 직접 입력하세요.</p>
+    </header>
+    {error ? <section className="empty-state">
       <p role="alert" className="error">{error}</p>
       <button type="button" className="button secondary" onClick={() => {
         setError('')
-        setRetry((value) => value + 1)
+        setRetry(value => value + 1)
       }}>다시 불러오기</button>
-      <Link to="/stores">내 매장으로 돌아가기</Link>
-    </> : <p role="status">선택한 매장을 불러오는 중이에요.</p>}
-  </section>
+    </section> : !stores ? <p role="status">등록한 매장을 불러오는 중이에요.</p>
+      : stores.length === 0 ? <section className="empty-state">
+        <p>등록한 매장이 없어요. 내 매장에서 먼저 매장을 등록해 주세요.</p>
+        <Link className="button primary" to="/stores">내 매장으로 이동</Link>
+      </section> : <div className="form-stack">
+        <section className="sales-form sales-section form-stack" aria-label="매출을 입력할 매장">
+          <div className="store-picker">
+            <label>매장 선택<select value={selected?.id ?? ''} disabled={saving}
+              onChange={event => setParams({ storeId: event.target.value }, { replace: true })}>
+              <option value="" disabled>매장을 선택해 주세요</option>
+              {stores.map(store => <option key={store.id} value={store.id}>{store.name} · {store.areaName}</option>)}
+            </select></label>
+            {selected && <Link className="button secondary" to={'/stores?' + new URLSearchParams({ storeId: selected.id })}>분석 이력 보기</Link>}
+          </div>
+          {selected ? <p className="muted store-address">{selected.address}</p>
+            : storeId && <p role="alert" className="error">선택한 매장을 찾을 수 없어요. 목록에서 매장을 골라 주세요.</p>}
+        </section>
+        {selected && <SalesForm key={selected.id} auth={auth} storeId={selected.id} saving={saving} onSaving={setSaving} onAnalyze={onAnalyze} />}
+      </div>}
+  </div>
 }
 
-export function Intake({ auth, onAnalyze, existingStore }: { auth: string; onAnalyze: (id: string) => void; existingStore?: Store }) {
-  const registeredStores = useRef(new Map<string, string>())
+function SalesForm({ auth, storeId, saving, onSaving, onAnalyze }: {
+  auth: string
+  storeId: string
+  saving: boolean
+  onSaving: (saving: boolean) => void
+  onAnalyze: (id: string) => void
+}) {
   const submitting = useRef(false)
-  const [saving, setSaving] = useState(false)
-  const [areas, setAreas] = useState<Area[]>()
-  const [areaError, setAreaError] = useState('')
-  const [areaRetry, setAreaRetry] = useState(0)
   const nextId = useRef(2)
   const [rows, setRows] = useState<InputRow[]>([{ id: 0, month: '', amount: '' }, { id: 1, month: '', amount: '' }])
-  const [store, setStore] = useState('')
-  const [address, setAddress] = useState('')
-  const [areaCode, setAreaCode] = useState('')
-  const [searchedArea, setSearchedArea] = useState<string>()
-  const resolvedAreaCode = areaCode || areas?.find(({ name }) => name === searchedArea)?.code || ''
-  const resolvedArea = areas?.find(({ code }) => code === resolvedAreaCode)?.name
-  const [industry, setIndustry] = useState('')
-  const [customIndustry, setCustomIndustry] = useState('')
   const [analysisName, setAnalysisName] = useState('')
   const [concern, setConcern] = useState('')
-  const [selectedConcern, setSelectedConcern] = useState('')
   const [mode, setMode] = useState<InputMode>('upload')
   const [error, setError] = useState('')
   const [timeOpen, setTimeOpen] = useState(false)
@@ -353,29 +424,17 @@ export function Intake({ auth, onAnalyze, existingStore }: { auth: string; onAna
   const monthly = mode === 'upload' ? pos?.monthly : monthlyValues(rows)
   const period = monthly?.slice(-2).map(({ month }) => month).join('/')
 
-  useEffect(() => {
-    if (existingStore) return
-    const controller = new AbortController()
-    listAreas(controller.signal).then(setAreas).catch((error: Error) => {
-      if (!controller.signal.aborted) setAreaError(error.message)
-    })
-    return () => controller.abort()
-  }, [areaRetry, existingStore])
-
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (submitting.current || productReading) return
-    if (!monthly || (!existingStore && (!store.trim() || !address.trim() || !resolvedAreaCode || !industry
-        || (industry === 'OTHER' && !customIndustry.trim())))) {
-      setError(existingStore ? '서로 다른 두 달 이상의 매출을 확인해 주세요.'
-        : '가게 정보, 제주 읍·면·동, 서로 다른 두 달 이상의 매출을 확인해 주세요.')
+    if (!monthly) {
+      setError('서로 다른 두 달 이상의 매출을 확인해 주세요.')
       return
     }
     submitting.current = true
-    setSaving(true)
+    onSaving(true)
     setError('')
     try {
-      const storeId = existingStore?.id ?? await saveNewStore()
       const timeSeries = mode === 'upload' ? pos?.timeSeries : extra?.period === period ? extra?.value : undefined
       const saved = await saveAnalysis(auth, storeId, monthly, concern.trim(), analysisName.trim(), timeSeries,
         mode === 'upload' ? pos?.productSales : undefined, mode === 'upload' ? pos?.hourlySales : undefined)
@@ -384,37 +443,8 @@ export function Intake({ auth, onAnalyze, existingStore }: { auth: string; onAna
       setError(error instanceof Error ? error.message : '매출을 저장할 수 없어요.')
     } finally {
       submitting.current = false
-      setSaving(false)
+      onSaving(false)
     }
-  }
-
-  async function saveNewStore() {
-    const input: StoreInput = {
-      name: store.trim(), address: address.trim(), areaCode: resolvedAreaCode,
-      addressSource: searchedArea && searchedArea === resolvedArea ? 'SEARCH' : 'MANUAL',
-      industryCode: industry,
-      customIndustryName: industry === 'OTHER' ? customIndustry.trim() : undefined,
-    }
-    const key = JSON.stringify(input)
-    const registered = registeredStores.current.get(key)
-    if (registered) return registered
-    const { id } = await registerStore(auth, input)
-    registeredStores.current.set(key, id)
-    return id
-  }
-
-  function loadExample() {
-    setStore(example.store)
-    setAddress(example.address ?? '')
-    setSearchedArea(undefined)
-    setAreaCode('JEJU_AEWOL')
-    setIndustry('KOREAN_RESTAURANT')
-    setConcern(example.concern)
-    setSelectedConcern('')
-    setRows(example.monthly.map(({ month, amount }) => ({ id: nextId.current++, month, amount: String(amount) })))
-    setExtra(undefined)
-    setError('')
-    setMode('manual')
   }
 
   function updateRow(id: number, field: 'month' | 'amount', value: string) {
@@ -422,71 +452,26 @@ export function Intake({ auth, onAnalyze, existingStore }: { auth: string; onAna
   }
 
   return <>
-    <PageTitle title={existingStore ? '새 매출 분석' : '매장 등록 · 매출 입력'} detail={existingStore
-      ? '선택한 매장에 새 매출 분석을 추가해요.' : '가게 정보와 매출을 입력하면 짝꿍이 분석해드려요.'} />
-    <form onSubmit={submit}>
-      <div className="split">
-        <section className="form-stack">
-          {existingStore ? <>
-            <div className="section-top ruled"><h2>01 선택한 매장</h2>
-              <Link to={'/stores?' + new URLSearchParams({ storeId: existingStore.id })}>분석 이력 보기</Link>
-            </div>
-            <div className="receipt"><strong>{existingStore.name}</strong><p className="muted">{existingStore.areaName} · {existingStore.address}</p></div>
-          </> : <>
-          <div className="section-top ruled"><h2>01 가게 정보</h2><button type="button" className="text-button" disabled={productReading} onClick={loadExample}>예시값 채우기</button></div>
-          <Link to="/stores">이미 등록한 매장에서 분석하기</Link>
-          <label>가게 이름<input required maxLength={100} value={store} onChange={(event) => setStore(event.target.value)} placeholder="가게 이름을 입력하세요" /></label>
-          <label>업종<select required value={industry} onChange={(event) => setIndustry(event.target.value)}>
-            <option value="">업종을 선택해 주세요</option>
-            {industryGroups.map((group) => <optgroup key={group} label={group}>
-              {industryOptions.filter((option) => option.group === group).map(({ label, code }) => <option key={code} value={code}>{label}</option>)}
-            </optgroup>)}
-            <option value="OTHER">기타 (직접 입력)</option>
-          </select></label>
-          {industry === 'OTHER' && <label>업종명 직접 입력<input required maxLength={100} value={customIndustry} onChange={(event) => setCustomIndustry(event.target.value)} placeholder="예: 꽃집" /></label>}
-          <AddressField address={address} area={searchedArea} onChange={(value, district) => {
-            setAddress(value)
-            setSearchedArea(district && (administrativeAreaAliases.get(district) ?? district))
-            setAreaCode('')
-          }} />
-          <label>제주 읍·면·동<select required value={resolvedAreaCode} disabled={!areas}
-            onChange={(event) => setAreaCode(event.target.value)}>
-            <option value="">{areas ? '지역을 선택해 주세요' : areaError ? '지역 목록을 불러오지 못했어요' : '지역 목록 불러오는 중…'}</option>
-            {areas?.map(({ code, name }) => <option key={code} value={code}>{name}</option>)}
-          </select></label>
-          {areaError && <div role="alert" className="error">{areaError} <button type="button" className="text-button" onClick={() => {
-            setAreaError('')
-            setAreaRetry((value) => value + 1)
-          }}>다시 불러오기</button></div>}
-          </>}
-          <label>요즘 어떤 점이 고민인가요? <span className="muted">선택</span><textarea rows={3} value={concern} onChange={(event) => setConcern(event.target.value)} /></label>
-          <div className="chips">{concerns.map(([label, value]) => <button className="chip" key={label} type="button" aria-pressed={selectedConcern === label} onClick={() => {
-            if (selectedConcern === label) {
-              setSelectedConcern('')
-              if (concern === value) setConcern('')
-              return
-            }
-            setSelectedConcern(label)
-            setConcern(value)
-          }}>{label}</button>)}</div>
-        </section>
-        <section className="form-stack">
-          <div className="section-top ruled"><h2>02 매출 입력</h2></div>
-          <label>분석 이름 (선택)<input value={analysisName} onChange={event => setAnalysisName(event.target.value)}
-            placeholder="예: 봄철 점심 매출 비교" maxLength={100} disabled={saving} /></label>
+    <form className="sales-form" onSubmit={submit}>
+      <section className="sales-section form-stack" aria-labelledby="sales-data-heading">
+        <h2 id="sales-data-heading">매출 자료</h2>
           <InputTabs mode={mode} onChange={(next) => { if (!saving && !productReading) { setError(''); setMode(next) } }} manualLabel="월별 매출 직접 입력" />
           {mode === 'upload' ? <>
-            <PosUpload value={pos} onChange={setPos} disabled={saving} onProductReadingChange={setProductReading} />
-            {pos && <>
+            <PosUpload value={pos} onChange={setPos} disabled={saving} onProductReadingChange={setProductReading} auth={auth} storeId={storeId} />
+            {pos && <div className="sales-import-summary">
+              <h3>월별 매출 미리보기</h3>
               <table className="input-table" aria-label="월별 매출 미리보기">
                 <thead><tr><th scope="col">연도와 월</th><th scope="col">결제 완료 매출</th></tr></thead>
                 <tbody>{pos.monthly.map(({ month, amount }) => <tr key={month}>
                   <th scope="row">{monthLabel(month)}</th><td>{won(amount)}</td>
                 </tr>)}</tbody>
               </table>
-              <p className="muted">가장 최근 두 달의 시간대를 비교해요. 취소된 결제는 집계에서 제외했어요.</p>
-              <PosTimeSummary series={pos.timeSeries} months={pos.months} />
-            </>}
+              <details>
+                <summary>시간대별 결제 건수 보기</summary>
+                <p className="muted">가장 최근 두 달을 비교하며 취소된 결제는 집계에서 제외해요.</p>
+                <PosTimeSummary series={pos.timeSeries} months={pos.months} />
+              </details>
+            </div>}
           </> : <>
             <table className="input-table"><thead><tr><th scope="col">연도와 월</th><th scope="col">매출액 (원)</th>{rows.length > 2 && <th scope="col">삭제</th>}</tr></thead>
               <tbody>{rows.map((row, index) => <tr key={row.id}>
@@ -495,17 +480,32 @@ export function Intake({ auth, onAnalyze, existingStore }: { auth: string; onAna
                 {rows.length > 2 && <td><button className="text-button" type="button" aria-label={`${index + 1}번째 월 삭제`} onClick={() => setRows(rows.filter(({ id }) => id !== row.id))}>×</button></td>}
               </tr>)}</tbody>
             </table>
-            <button className="button secondary fit" type="button" onClick={() => setRows([...rows, { id: nextId.current++, month: '', amount: '' }])}>+ 월 추가</button>
-            <div className="notice with-icon"><Citrus /><div><strong>월별 매출 2개월이면 시작할 수 있어요.</strong><p>시간대별 변화가 궁금하면 자료를 추가해 주세요.</p></div></div>
-            <button type="button" className="button secondary fit" onClick={() => {
-              if (monthly) { setError(''); setTimeOpen(true) } else setError('비교할 두 달의 월별 매출을 먼저 입력해 주세요.')
-            }}>{extra && extra.period === period ? '시간대별 자료 수정' : '시간대별 자료 추가'}</button>
+            <div className="actions">
+              <button className="button secondary small" type="button" onClick={() => setRows([...rows, { id: nextId.current++, month: '', amount: '' }])}>+ 월 추가</button>
+              <button type="button" className="button secondary small" onClick={() => {
+                if (monthly) { setError(''); setTimeOpen(true) } else setError('비교할 두 달의 월별 매출을 먼저 입력해 주세요.')
+              }}>{extra && extra.period === period ? '시간대별 자료 수정' : '시간대별 자료 추가'}</button>
+            </div>
           </>}
-        </section>
-      </div>
-      <div className="form-footer">
+      </section>
+      <section className="sales-section form-stack" aria-labelledby="sales-context-heading">
+        <h2 id="sales-context-heading">분석 정보 <span className="sales-optional">선택</span></h2>
+        <label>분석 이름<input value={analysisName} onChange={event => setAnalysisName(event.target.value)}
+          placeholder="예: 봄철 점심 매출 비교" maxLength={100} disabled={saving} /></label>
+        <label>요즘 어떤 점이 고민인가요?
+          <textarea rows={3} value={concern} maxLength={1000} onChange={(event) => setConcern(event.target.value)} />
+          <small className="muted">고민이 여러 가지라면 줄을 나눠 적어도 돼요.</small>
+        </label>
+        <div className="chips">{concerns.map(([label, value]) => {
+          const selected = concern.split('\n').includes(value)
+          return <button className="chip" key={label} type="button" aria-pressed={selected}
+            disabled={toggleConcernExample(concern, value) === concern}
+            onClick={() => setConcern(current => toggleConcernExample(current, value))}>{label}</button>
+        })}</div>
+      </section>
+      <div className="form-footer sales-footer">
         <span role="alert" className="error">{error}</span>
-        <button className="button primary" disabled={saving || productReading || (!existingStore && !areas?.length) || (mode === 'upload' && !pos)}>{saving ? '저장 중…' : '분석 시작'} <span aria-hidden="true">→</span></button>
+        <button className="button primary" disabled={saving || productReading || (mode === 'upload' && !pos)}>{saving ? '저장 중…' : '분석 시작'} <span aria-hidden="true">→</span></button>
       </div>
     </form>
     {timeOpen && mode === 'manual' && monthly && period && <TimeDialog monthly={monthly} initial={extra?.period === period ? extra.value : undefined} onClose={() => setTimeOpen(false)} onSave={(value) => { setExtra({ value, period }); setTimeOpen(false) }} />}

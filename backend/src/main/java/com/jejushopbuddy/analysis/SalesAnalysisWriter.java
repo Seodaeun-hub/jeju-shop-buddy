@@ -60,14 +60,17 @@ class SalesAnalysisWriter {
         }
         for (var product : input.productSales()) {
             jdbc.sql("""
-                    INSERT INTO analysis_product_sales (analysis_id, product_name, before_quantity, after_quantity, price_won)
-                    VALUES (:id, :name, :before, :after, :price)
+                    INSERT INTO analysis_product_sales (analysis_id, product_name, before_quantity, after_quantity, price_won,
+                                                        before_revenue, after_revenue)
+                    VALUES (:id, :name, :before, :after, :price, :beforeRevenue, :afterRevenue)
                     """)
                     .param("id", id)
                     .param("name", product.productName())
                     .param("before", product.before())
                     .param("after", product.after())
                     .param("price", product.priceWon(), java.sql.Types.BIGINT)
+                    .param("beforeRevenue", product.beforeRevenue(), java.sql.Types.BIGINT)
+                    .param("afterRevenue", product.afterRevenue(), java.sql.Types.BIGINT)
                     .update();
         }
         return createdAt;

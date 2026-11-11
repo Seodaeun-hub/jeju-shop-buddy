@@ -591,7 +591,7 @@ class SalesAnalysisController {
         var names = new HashSet<String>();
         var products = new ArrayList<ProductSale>();
         for (var row : node) {
-            fields(row, Set.of("productName", "before", "after", "priceWon"), "productSales");
+            fields(row, Set.of("productName", "before", "after", "priceWon", "beforeRevenue", "afterRevenue"), "productSales");
             var name = row.path("productName");
             String productName = name.isString() ? name.stringValue().strip() : "";
             if (productName.isEmpty() || productName.length() > 255 || productName.indexOf(0) >= 0) {
@@ -604,8 +604,10 @@ class SalesAnalysisController {
             if (price != null && price == 0) {
                 throw invalid(code, "판매가는 1원 이상이어야 해요.", "productSales.priceWon");
             }
+            Long beforeRevenue = row.has("beforeRevenue") ? number(row.get("beforeRevenue"), "productSales.beforeRevenue", code) : null;
+            Long afterRevenue = row.has("afterRevenue") ? number(row.get("afterRevenue"), "productSales.afterRevenue", code) : null;
             products.add(new ProductSale(productName, number(row.get("before"), "productSales.before", code),
-                    number(row.get("after"), "productSales.after", code), price));
+                    number(row.get("after"), "productSales.after", code), price, beforeRevenue, afterRevenue));
         }
         products.sort(java.util.Comparator.comparingLong(ProductSale::after).reversed()
                 .thenComparing(java.util.Comparator.comparingLong(ProductSale::before).reversed())
@@ -699,8 +701,8 @@ class SalesAnalysisController {
     record MonthlySale(String month, long amount) {}
     record TimeSeries(String metric, List<TimeSlot> rows) {}
     record TimeSlot(String label, long before, long after) {}
-    record ProductSale(String productName, long before, long after,
-                       @JsonInclude(JsonInclude.Include.NON_NULL) Long priceWon) {}
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record ProductSale(String productName, long before, long after, Long priceWon, Long beforeRevenue, Long afterRevenue) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record AnalysisResponse(UUID id, UUID storeId, String name, String concern, String beforeMonth, String afterMonth,

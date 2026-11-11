@@ -5,12 +5,13 @@ from openai import OpenAIError
 
 from .chart_question import build_question_graph
 from .chart_question_schemas import ChartQuestionRequest, ChartQuestionResponse
-from .concern_check import ConcernRequest, compare_concern, extract_intent
+from .concern_check import ConcernRequest, check_concerns
 from .execution_guide import GuideRequest, GuideResponse, build_guide_graph, load_catalog
 from .graph import build_graph
 from .model import structured_model
 from .next_promotion import NextPromotionExplanation, NextPromotionRequest, build_next_promotion_graph
 from .schemas import Contract, StrategyRequest, StrategyResponse
+from .store_notice import StoreNoticeDraft, StoreNoticeRequest, generate_store_notice
 
 app = FastAPI(title="가게짝꿍 대응 전략 Agent")
 graph = build_graph()
@@ -40,7 +41,7 @@ def chart_question(request: ChartQuestionRequest) -> ChartQuestionResponse:
 @app.post("/internal/concern-check")
 def concern_check(request: ConcernRequest) -> dict:
     try:
-        return compare_concern(request, extract_intent(request))
+        return check_concerns(request)
     except (OpenAIError, OutputParserException, ValueError, TimeoutError):
         raise HTTPException(status_code=503, detail={"code": "CONCERN_CHECK_UNAVAILABLE"}) from None
 
@@ -51,6 +52,14 @@ def next_promotion_explanation(request: NextPromotionRequest) -> NextPromotionEx
         return next_promotion_graph.invoke({"request": request})["result"]
     except (OpenAIError, OutputParserException, ValueError, TimeoutError):
         raise HTTPException(status_code=503, detail={"code": "NEXT_PROMOTION_EXPLANATION_UNAVAILABLE"}) from None
+
+
+@app.post("/internal/store-notice", response_model=StoreNoticeDraft)
+def store_notice(request: StoreNoticeRequest) -> StoreNoticeDraft:
+    try:
+        return generate_store_notice(request)
+    except (OpenAIError, OutputParserException, ValueError, TimeoutError):
+        raise HTTPException(status_code=503, detail={"code": "STORE_NOTICE_UNAVAILABLE"}) from None
 
 
 class PromotionCopyRequest(Contract):

@@ -43,6 +43,7 @@ class ConcernCheckController {
         var payload = json.createObjectNode().put("concern", concern);
         payload.set("monthlySales", json.valueToTree(analysis.monthlySales()));
         payload.set("hourlySales", json.readTree(hourlySales));
+        payload.set("productSales", json.valueToTree(analysis.productSales()));
         return agent.concernCheck(payload).orElseGet(() -> json.createObjectNode().put("status", "UNAVAILABLE")
                 .put("detail", "AI가 고민을 확인할 수 없어요. 잠시 후 다시 시도해 주세요."));
     }
