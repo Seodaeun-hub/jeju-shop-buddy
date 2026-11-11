@@ -378,7 +378,7 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
           onSave={onSaveInventory}
           reviewDate={shortDate(plan.tasks[2].date)}
           onChange={(inventoryItems) => onChange({ ...plan, inventoryItems })}
-        /> : !(plan.id && hasPromotionMaterials) && !needsPromotionInputs
+        /> : plan.strategy !== 'custom' && !(plan.id && hasPromotionMaterials) && !needsPromotionInputs
           && (!plan.reviewTopic || plan.reviewTopic === 'AFTERNOON_ORDER') && <PromoDraft plan={plan} />}
         <section>
           <h2>실행 후 확인할 지표</h2>
