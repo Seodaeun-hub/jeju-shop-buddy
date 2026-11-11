@@ -1,0 +1,128 @@
+.account-content {
+  display: grid;
+  min-height: 100vh;
+  min-height: 100svh;
+}
+
+.account-layout {
+  display: grid;
+  grid-template-columns: minmax(0, .96fr) minmax(0, 1.04fr);
+  background: var(--sheet);
+}
+
+.account-panel {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, clamp(25rem, 34vw, 32rem));
+  grid-template-rows: auto 1fr;
+  justify-content: center;
+  padding: clamp(1.25rem, 3.5vh, 3rem) clamp(1.6rem, 4vw, 3.5rem);
+}
+
+.account-panel > .wordmark { justify-self: start; font-size: clamp(1.55rem, 1.8vw, 2rem); }
+
+.account-panel-body {
+  display: grid;
+  min-width: 0;
+  align-self: center;
+  gap: clamp(1.1rem, 2.3vh, 1.6rem);
+  padding-block: clamp(.65rem, 1.5vh, 1.1rem) .5rem;
+}
+
+.account-back {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: .4rem;
+  margin-bottom: .2rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--green);
+  font-size: 1rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+.account-back:hover { text-decoration: underline; text-underline-offset: .2em; }
+.account-heading h1 { font-size: clamp(2.35rem, 3.8vw, 3.8rem); }
+.account-switch { margin-top: .55rem; color: var(--muted); font-size: clamp(1rem, 1.24vw, 1.2rem); }
+.account-switch a { margin-left: .15rem; font-weight: 700; }
+
+.account-form, .account-field { display: grid; }
+.account-form { gap: clamp(.8rem, 1.7vh, 1.15rem); }
+.account-field { gap: .4rem; }
+.account-field label { color: var(--ink); font-size: clamp(1rem, 1.22vw, 1.15rem); font-weight: 700; }
+.account-field small { font-size: clamp(.875rem, 1.03vw, 1rem); }
+.account-form input {
+  min-height: clamp(3rem, 6.6svh, 3.45rem);
+  padding-inline: .9rem;
+  border-color: #a5aa9e;
+  background: #fffdf9;
+  font-size: clamp(1rem, 1.3vw, 1.25rem);
+}
+.account-form input::placeholder { color: #686e63; opacity: 1; }
+
+.account-password-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .45rem; }
+.account-form .account-password-field input { font-family: Arial, system-ui, sans-serif; font-weight: 400; }
+.account-password-field input::-ms-reveal { display: none; }
+.account-password-field button {
+  min-width: clamp(4.75rem, 6.2vw, 5.75rem);
+  border: 1px solid #a5aa9e;
+  border-radius: 6px;
+  padding: .45rem .65rem;
+  background: var(--sheet);
+  color: var(--green);
+  font-size: clamp(1rem, 1.17vw, 1.15rem);
+  font-weight: 700;
+}
+.account-password-field button:hover { background: var(--pale-green); }
+
+.account-form .button.primary {
+  min-height: clamp(3.1rem, 6.9svh, 3.6rem);
+  font-weight: 700;
+  font-size: clamp(1.05rem, 1.42vw, 1.3rem);
+  margin-top: .2rem;
+  border-color: #254933;
+  background: #254933;
+  color: #fffdf9;
+}
+.account-form .button.primary:hover:not(:disabled) { border-color: #1a3725; background: #1a3725; }
+
+.account-intro {
+  display: grid;
+  min-width: 0;
+  align-items: center;
+  padding: clamp(1.6rem, 4vh, 3.5rem) clamp(1.6rem, 4vw, 3.5rem);
+  background: #193c2d;
+  color: #fff9ed;
+}
+.account-intro-inner { width: min(100%, clamp(31rem, 41vw, 40rem)); margin-inline: auto; }
+.account-intro-image { display: block; width: 100%; height: auto; margin-bottom: clamp(1.5rem, 3vw, 2rem); }
+.account-intro h2 {
+  font-family: "Jeju Myeongjo", Batang, serif;
+  font-size: clamp(2.1rem, 3.45vw, 3.4rem);
+  font-weight: 400;
+  letter-spacing: -.04em;
+  line-height: 1.16;
+}
+.account-intro p { max-width: 34ch; margin-top: .8rem; color: #d8e3d6; font-size: clamp(1rem, 1.3vw, 1.2rem); word-break: keep-all; }
+
+@media (min-width: 741px) and (max-height: 740px) {
+  .account-panel { padding-block: 1rem; }
+  .account-panel-body { gap: .9rem; padding-block: .45rem .25rem; }
+  .account-heading h1 { font-size: clamp(2.35rem, 3.6vw, 3rem); }
+  .account-switch { margin-top: .35rem; }
+  .account-form { gap: .65rem; }
+  .account-field { gap: .28rem; }
+}
+
+@media (max-width: 740px) {
+  .account-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr auto; }
+  .account-panel { padding-block: 1.4rem 1.85rem; }
+  .account-panel-body { gap: 1.3rem; padding-top: 1.15rem; }
+  .account-intro { padding-block: 1.4rem 1.6rem; }
+  .account-intro-inner { max-width: 34rem; }
+  .account-intro-image, .account-intro h2 br { display: none; }
+  .account-intro h2 { font-size: clamp(1.65rem, 5vw, 2rem); }
+  .account-intro p { max-width: 32ch; margin-top: .45rem; }
+}

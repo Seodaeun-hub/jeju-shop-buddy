@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import type { FormEvent, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
-import { createPromotionDraft, fetchAnalysis, fetchOwnerSession, fetchPlan, loginOwner, logoutOwner, ownerSession, signupOwner, type OwnerSession, regeneratePromotionCaption, saveInventoryReview, savePromotionReview, saveTimeSeries, toPlan, updateChecklistItem } from './api/shop'
+import { createPromotionDraft, fetchAnalysis, fetchOwnerSession, fetchPlan, logoutOwner, ownerSession, type OwnerSession, regeneratePromotionCaption, saveInventoryReview, savePromotionReview, saveTimeSeries, toPlan, updateChecklistItem } from './api/shop'
 import { Dashboard } from './pages/Dashboard'
 import { AnalysisSwitcher } from './components/AnalysisSwitcher'
 import { Home } from './pages/Home'
+import { Account } from './pages/Account'
 import { ExistingStoreIntake, Intake } from './pages/Intake'
 import { MyStores } from './pages/MyStores'
 import { MyPage } from './pages/MyPage'
@@ -25,51 +26,6 @@ const navigation = [
 
 function Placeholder({ children, to, action }: { children: ReactNode; to: string; action: string }) {
   return <section className="empty-state"><h1>{children}</h1><Link className="button primary" to={to}>{action} <span aria-hidden="true">→</span></Link></section>
-}
-
-function Account({ signup, onLogin }: { signup: boolean; onLogin: (session: OwnerSession) => void }) {
-  const [pending, setPending] = useState(false)
-  const [error, setError] = useState('')
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (pending) return
-    const fields = new FormData(event.currentTarget)
-    const email = String(fields.get('email')).trim()
-    setPending(true)
-    setError('')
-    try {
-      const password = String(fields.get('password'))
-      const session = signup ? await signupOwner(String(fields.get('name')), email, password)
-        : await loginOwner(email, password)
-      onLogin(session)
-    } catch (error) {
-      setError(error instanceof Error ? error.message : (signup ? '회원가입을 완료하지 못했어요.' : '로그인할 수 없어요.'))
-    } finally {
-      setPending(false)
-    }
-  }
-
-  return (
-    <section className="receipt account">
-      <div className="section-top">
-        <div><h1>{signup ? '회원가입' : '로그인'}</h1><p>{signup ? '가입하고 우리 가게를 등록해보세요.' : '사장님, 다시 오셨네요.'}</p></div>
-        <Citrus stamp />
-      </div>
-      <form className="form-stack account-fields" onSubmit={submit}>
-          {signup && <label>사장님 이름 또는 별명
-            <input name="name" autoComplete="nickname" required maxLength={30} placeholder="예: 다은" />
-            <small className="muted">로그인하면 화면 위에 이 이름으로 인사해요.</small>
-          </label>}
-          <label>이메일<input name="email" type="email" autoComplete="username" required placeholder="이메일을 입력하세요" /></label>
-          <label>비밀번호<input name="password" type="password" autoComplete={signup ? 'new-password' : 'current-password'} minLength={signup ? 8 : undefined}
-            required placeholder={signup ? '8자 이상 입력하세요' : '비밀번호를 입력하세요'} /></label>
-          {error && <p className="error" role="alert">{error}</p>}
-          <button className="button primary full" disabled={pending}>{signup ? (pending ? '가입 중…' : '회원가입') : (pending ? '로그인 중…' : '로그인')}</button>
-      </form>
-      <p className="account-switch">{signup ? '이미 계정이 있나요?' : '처음 오셨나요?'} <Link to={signup ? '/login' : '/signup'}>{signup ? '로그인' : '회원가입'}</Link></p>
-    </section>
-  )
 }
 
 export function App() {
@@ -98,7 +54,8 @@ export function App() {
   const strategyPath = analysisId ? '/strategy?' + new URLSearchParams({ id: analysisId }) : '/strategy'
   const planPath = (route: '/execution' | '/results', value: Plan) => value.id && value.analysisId
     ? route + '?' + new URLSearchParams({ id: value.id, analysisId: value.analysisId }) : route
-  const publicPage = pathname === '/login' || pathname === '/signup' || (pathname === '/' && !account)
+  const accountPage = pathname === '/login' || pathname === '/signup'
+  const publicPage = accountPage || (pathname === '/' && !account)
 
   useEffect(() => {
     window.scrollTo(0, 0)
@@ -294,7 +251,7 @@ export function App() {
   return (
     <>
       <a href="#main-content" className="skip-link">본문으로 건너뛰기</a>
-      <header className={pathname === '/' ? 'site-header landing-header' : 'site-header'}>
+      {!accountPage && <header className={pathname === '/' ? 'site-header landing-header' : 'site-header'}>
         <div className="shell header-inner">
           <Link to="/" className="wordmark"><Citrus /> 가게짝꿍</Link>
           {!publicPage && <nav className="main-nav" aria-label="가게짝꿍 메뉴">
@@ -303,12 +260,11 @@ export function App() {
           </nav>}
           <div className="header-actions">
             {pathname === '/' && !account ? (!sessionPending && <><Link to="/login">로그인</Link><Link className="button small secondary" to="/signup">회원가입</Link></>)
-              : publicPage ? <Link to="/">← 메인으로</Link>
               : <><span className="badge account-greeting">{account ? (account.name ? `${account.name}님, 환영해요!` : '사장님, 환영해요!') : '체험 모드'}</span>{account && <Link to="/my-page">마이페이지</Link>}<button className="text-button" onClick={leavePreview}>{account ? '로그아웃' : '나가기'}</button></>}
           </div>
         </div>
-      </header>
-      <main id="main-content" className={pathname === '/' ? 'content landing-content' : 'shell content'}>
+      </header>}
+      <main id="main-content" className={accountPage ? 'account-content' : pathname === '/' ? 'content landing-content' : 'shell content'}>
         {logoutError && <p role="alert" className="error">{logoutError}</p>}
         {sessionPending && !publicPage ? <p role="status">로그인 상태를 확인하고 있어요.</p> : <Routes>
           <Route path="/" element={<Home />} />
