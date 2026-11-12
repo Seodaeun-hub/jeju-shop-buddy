@@ -14,3 +14,9 @@ createRoot(root).render(
     </BrowserRouter>
   </StrictMode>,
 )
+
+if (window.isSecureContext && 'serviceWorker' in navigator) {
+  void navigator.serviceWorker.register('/sw.js').catch((error: unknown) => {
+    console.warn('가게짝꿍 오프라인 안내를 등록하지 못했어요.', error)
+  })
+}

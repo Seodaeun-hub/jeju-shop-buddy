@@ -3,6 +3,7 @@ import { Link } from 'react-router'
 import { fetchExecutionReminders, fetchPromotionImpact, listStores } from '../api/shop'
 import { describeMissingPos, loadPromotionArchive, posLibraryPath, promotionArchiveUpdated, reconcilePromotionArchive, resultsDataChanged, seoulDate, showWorkspaceNotifications } from '../data/promotionArchive'
 import { addDays } from '../data/shop'
+import { PushTestControl } from './PushTestControl'
 
 type Notification = { id: string; category: string; title: string; message: string; to: string }
 
@@ -136,27 +137,42 @@ export function WorkspaceNotifications({ auth, email }: { auth: string; email: s
   return <details className="workspace-notifications" ref={panel} onKeyDown={event => {
     if (event.key === 'Escape') { close(); trigger.current?.focus() }
   }}>
-    <summary ref={trigger} aria-label={unread ? `알림, 읽지 않은 알림 ${unread}개` : '알림'}>
+    <summary ref={trigger} aria-label={items ? `알림, 읽지 않은 알림 ${unread}개` : '알림'}>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"
         strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
       </svg>
-      {unread > 0 && <span className="workspace-notification-count" aria-hidden="true">{unread > 99 ? '99+' : unread}</span>}
+      {items && <span className="workspace-notification-count" data-unread={unread > 0} aria-hidden="true">
+        {unread > 99 ? '99+' : unread}
+      </span>}
     </summary>
     <section className="workspace-notification-panel" aria-label="가게짝꿍 알림">
       <div className="workspace-notification-heading">
         <h2>알림</h2>
         {items && unread > 0 && <button type="button" className="text-button" onClick={() => markRead(items.map(item => item.id))}>모두 읽기</button>}
       </div>
+      <PushTestControl auth={auth} />
       {!items && !error && <p role="status">알림을 확인하고 있어요.</p>}
       {error && <p>일부 알림을 불러오지 못했어요. <button type="button" className="text-button"
         onClick={() => setRevision(value => value + 1)}>다시 불러오기</button></p>}
       {items?.length === 0 && !error && <p>새로 확인할 알림이 없어요.</p>}
-      {items && items.length > 0 && <ul>{items.map(item => <li key={item.id}>
-        <Link to={item.to} data-unread={!seen.includes(item.id)} onClick={() => { markRead([item.id]); close() }}>
-          <span>{item.category}</span><strong>{item.title}</strong><span>{item.message}</span>
-        </Link>
-      </li>)}</ul>}
+      {items && items.length > 0 && <ul>{items.map(item => {
+        const isUnread = !seen.includes(item.id)
+        const content = <>
+          <span className="workspace-notification-meta">
+            <span>{item.category}</span>
+            {!isUnread && <span>확인함</span>}
+          </span>
+          <strong>{item.title}</strong>
+          <span>{item.message}</span>
+        </>
+        return <li key={item.id}>
+          {isUnread ? <Link to={item.to} className="workspace-notification-item" data-unread="true"
+            aria-label={`${item.category} · 읽지 않음 · ${item.title} · ${item.message}`}
+            onClick={() => { markRead([item.id]); close() }}>{content}</Link>
+            : <div className="workspace-notification-item" data-unread="false">{content}</div>}
+        </li>
+      })}</ul>}
     </section>
   </details>
 }
