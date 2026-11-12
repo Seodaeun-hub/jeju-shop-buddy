@@ -23,6 +23,7 @@ import tools.jackson.databind.ObjectMapper;
 @RestController
 class PromotionDraftController {
     private static final int DRAFT_GENERATION_VERSION = 2;
+    private static final int MAX_CAPTION_LENGTH = 2200;
     private final JdbcClient jdbc;
     private final ObjectMapper json;
     private final StrategyAgentClient agent;
@@ -154,7 +155,8 @@ class PromotionDraftController {
         String price = review == null ? "" : won(review.discountedPriceWon());
         var tone = sameSubject && plan.draft().tone() != null ? plan.draft().tone()
                 : Objects.requireNonNullElse(plan.defaultTone(), Tone.FRIENDLY);
-        var context = sameDate && previousContext != null && !generateNewCopy && !retryForecast ? previousContext
+        var context = sameDate && previousContext != null && !generateNewCopy && !retryForecast
+                ? PromotionWeather.context(plan.area(), input.publishDate(), previousContext.forecast(), plan.avoidPhrases())
                 : weather.resolve(plan.address(), plan.storeName(), plan.area(), input.publishDate(), plan.avoidPhrases());
         var generated = generate ? generateChannels(plan, product, tone, photo, sourcePage, selected) : null;
         if (sourcePage != null && (generated == null || !generated.researched())) {
@@ -179,19 +181,25 @@ class PromotionDraftController {
             source = "EDITED";
         }
         var oldLeads = previousContext == null ? new ChannelCopy("", "", "") : previousContext.leads();
-        var leads = context.leads();
         String offer = offer(plan, product);
-        copies = new ChannelCopy(withWeather(copies.instagram(), oldLeads.instagram(), leads.instagram(), offer, false),
-                withWeather(copies.naver(), oldLeads.naver(), leads.naver(), offer, true),
-                withWeather(copies.daangn(), oldLeads.daangn(), leads.daangn(), offer, true));
-        if (copies.instagram().length() > 2200 || copies.naver().length() > 2200 || copies.daangn().length() > 2200) {
+        var bodies = new ChannelCopy(captionWithoutContext(copies.instagram(), oldLeads.instagram(), offer),
+                captionWithoutContext(copies.naver(), oldLeads.naver(), offer),
+                captionWithoutContext(copies.daangn(), oldLeads.daangn(), offer));
+        var desired = context.leads();
+        var leads = new ChannelCopy(fittingLead(bodies.instagram(), desired.instagram(), offer, instagramEdit != null),
+                fittingLead(bodies.naver(), desired.naver(), offer, naverEdit != null),
+                fittingLead(bodies.daangn(), desired.daangn(), offer, daangnEdit != null));
+        copies = withOffer(new ChannelCopy(addWeather(bodies.instagram(), leads.instagram(), false),
+                addWeather(bodies.naver(), leads.naver(), true), addWeather(bodies.daangn(), leads.daangn(), true)), offer);
+        if (copies.instagram().length() > MAX_CAPTION_LENGTH || copies.naver().length() > MAX_CAPTION_LENGTH
+                || copies.daangn().length() > MAX_CAPTION_LENGTH) {
             return bad("게시일 안내와 행사 조건을 포함한 홍보 문구는 채널마다 2,200자까지 저장할 수 있어요.");
         }
         channels = new SavedChannels(channels.findings(), copies, channels.researched(), offer,
                 channels.basis(), channels.sourceCheckVersion());
         var draft = new Draft(plan.storeName(), product, feature, price, detail, copies.instagram(),
                 input.publishDate(), input.publishTime(), "Asia/Seoul", source, photo, 3, tone, channels,
-                replace ? selected : sameSubject ? plan.draft().reviewSelection() : null, context);
+                replace ? selected : sameSubject ? plan.draft().reviewSelection() : null, context.withLeads(leads));
         int updated = jdbc.sql("""
                 UPDATE execution_plans SET promotion_draft=CAST(:draft AS jsonb)
                 WHERE id=:id AND instagram_publication IS NULL
@@ -337,22 +345,27 @@ class PromotionDraftController {
     }
 
     private static boolean validCopy(String value) {
-        return value == null || (!value.isBlank() && value.strip().length() <= 2200);
+        return value == null || (!value.isBlank() && value.strip().length() <= MAX_CAPTION_LENGTH);
+    }
+
+    static String fittingLead(String body, String lead, String offer, boolean edited) {
+        // Older drafts can already fill the limit. Preserve their body and offer when the posting date changes.
+        int footerLength = offer == null ? 0 : offer.length() + 2;
+        return !edited && body.length() + lead.length() + 2 + footerLength > MAX_CAPTION_LENGTH ? "" : lead;
     }
 
     static String withWeather(String copy, String previousLead, String lead, String offer, boolean titled) {
-        String body = captionWithoutContext(copy, previousLead, offer);
-        if (!lead.isBlank()) {
-            int titleEnd = body.indexOf('\n');
-            if (titled && titleEnd > 0 && titleEnd <= 65) {
-                body = body.substring(0, titleEnd + 1) + lead + "\n\n" + body.substring(titleEnd + 1);
-            } else if (titled) {
-                body = body + "\n\n" + lead;
-            } else {
-                body = lead + "\n\n" + body;
-            }
+        return withOffer(addWeather(captionWithoutContext(copy, previousLead, offer), lead, titled), offer);
+    }
+
+    private static String addWeather(String body, String lead, boolean titled) {
+        if (lead.isBlank()) return body;
+        if (!titled) return lead + "\n\n" + body;
+        int titleEnd = body.indexOf('\n');
+        if (titleEnd > 0 && titleEnd <= 65) {
+            return body.substring(0, titleEnd + 1) + lead + "\n\n" + body.substring(titleEnd + 1);
         }
-        return withOffer(body, offer);
+        return body + "\n\n" + lead;
     }
 
     private static String captionWithoutContext(String copy, String lead, String offer) {

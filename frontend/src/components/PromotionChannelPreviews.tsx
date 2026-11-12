@@ -87,6 +87,7 @@ export function PromotionChannelPreviews({ plan, draft, generatedImage, imageFai
             {id === 'naver' && image}
             <p>{body}</p>
             {showOffer && <p className="promotion-post-offer">{offer}</p>}
+            {weather && !weather.leads[id] && <small className="muted">이 채널 문구에는 자동 날씨 안내가 들어가지 않았어요.</small>}
           </div>
           {id === 'daangn' && image}
           <footer className="promotion-post-footer">

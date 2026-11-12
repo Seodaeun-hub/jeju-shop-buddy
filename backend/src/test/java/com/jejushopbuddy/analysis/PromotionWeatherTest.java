@@ -48,4 +48,26 @@ class PromotionWeatherTest {
         }
         assertThat(winter.sourceUrl()).isNull();
     }
+
+    @Test
+    void everyWeatherSentenceFitsTheEditorAllowanceIncludingLineBreaks() {
+        // The editor reserves 48 characters for the automatic sentence and its two line breaks.
+        var forecasts = List.of("", "맑음 예보", "구름 예보", "안개 예보", "비 예보", "눈 예보", "뇌우 예보");
+        for (String forecast : forecasts) {
+            var leads = PromotionWeather.context("제주시 이호동", LocalDate.parse("2026-11-13"), forecast, "").leads();
+            assertThat(List.of(leads.instagram(), leads.naver(), leads.daangn()))
+                    .allSatisfy(lead -> assertThat(lead.length() + 2).isLessThanOrEqualTo(48));
+        }
+    }
+
+    @Test
+    void keepsLegacyBodyAndOfferWhenThereIsNoRoomForTheNewWeatherSentence() {
+        String offer = "고기국수 7,500원 · 30개 한정";
+        String body = "가".repeat(2200 - offer.length() - 2);
+        String lead = "비 예보가 있는 제주입니다.";
+        String fitted = PromotionDraftController.fittingLead(body, lead, offer, false);
+        assertThat(fitted).isEmpty();
+        assertThat(PromotionDraftController.withWeather(body, "", fitted, offer, false)).isEqualTo(body + "\n\n" + offer);
+        assertThat(PromotionDraftController.fittingLead(body, lead, offer, true)).isEqualTo(lead);
+    }
 }

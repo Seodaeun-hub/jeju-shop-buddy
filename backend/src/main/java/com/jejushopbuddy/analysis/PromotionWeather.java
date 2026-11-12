@@ -112,5 +112,9 @@ class PromotionWeather {
         return Tone.containsAvoidedPhrase(line, avoid) ? "" : line;
     }
 
-    record Context(LocalDate date, String area, String season, String forecast, String sourceUrl, ChannelCopy leads) {}
+    record Context(LocalDate date, String area, String season, String forecast, String sourceUrl, ChannelCopy leads) {
+        Context withLeads(ChannelCopy applied) {
+            return new Context(date, area, season, forecast, sourceUrl, applied);
+        }
+    }
 }
