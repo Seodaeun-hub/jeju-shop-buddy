@@ -11,7 +11,7 @@ export type StoreInput = {
   industryCode: string
   customIndustryName?: string
 }
-export type Store = StoreInput & { id: string; areaName: string }
+export type Store = StoreInput & { id: string; areaName: string; createdAt: string; menuCount: number }
 type ApiTimeSeries = { metric: 'COUNT' | 'AMOUNT'; rows: TimeSeries['rows'] }
 type SavedAnalysis = {
   id: string

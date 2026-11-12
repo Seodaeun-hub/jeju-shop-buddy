@@ -17,6 +17,16 @@ const storeSections = [
   { id: 'pos-files', label: 'POS 파일 관리' },
 ] as const
 
+const storeRegistrationDate = new Intl.DateTimeFormat('ko-KR', {
+  timeZone: 'Asia/Seoul',
+  dateStyle: 'short',
+  timeStyle: 'medium',
+})
+
+function storeOptionLabel(store: Store) {
+  return `${store.name} · ${store.areaName} · 메뉴 ${store.menuCount}개`
+}
+
 function StoreHistory({ auth, store, onAnalysisDeleted }: { auth: string; store: Store; onAnalysisDeleted: (id: string) => void }) {
   const [history, setHistory] = useState<StoreAnalysisSummary[]>()
   const [deleting, setDeleting] = useState<string>()
@@ -141,7 +151,13 @@ export function MyStores({ auth, ownerEmail, onAnalysisDeleted }: {
       <div className="store-picker">
         {stores?.length ? <label>매장 선택<select value={selected?.id ?? ''} onChange={event => setParams(storeQuery(event.target.value, section))}>
           {!selected && <option value="" disabled>매장을 선택해 주세요</option>}
-          {stores.map(store => <option key={store.id} value={store.id}>{store.name} · {store.areaName}</option>)}
+          {stores.map(store => {
+            const label = storeOptionLabel(store)
+            const duplicate = stores.some(other => other.id !== store.id && storeOptionLabel(other) === label)
+            return <option key={store.id} value={store.id}>
+              {duplicate ? `${label} · 등록 ${storeRegistrationDate.format(new Date(store.createdAt))}` : label}
+            </option>
+          })}
         </select></label> : <h2>등록한 매장</h2>}
         <Link className="button secondary" to="/stores/new">새 매장 등록</Link>
       </div>

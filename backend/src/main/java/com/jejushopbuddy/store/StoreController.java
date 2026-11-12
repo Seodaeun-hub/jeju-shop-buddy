@@ -40,7 +40,16 @@ class StoreController {
     @GetMapping("/api/stores")
     List<StoreResponse> list(Principal owner) {
         return jdbc.sql("""
-                SELECT s.*, a.name AS area_name
+                SELECT s.*, a.name AS area_name, (
+                    SELECT COUNT(*) FROM (
+                        SELECT p.product_name
+                        FROM analysis_product_sales p
+                        JOIN sales_analyses analysis ON analysis.id = p.analysis_id
+                        WHERE analysis.store_id = s.id
+                        UNION
+                        SELECT photo.product_name FROM store_product_photos photo WHERE photo.store_id = s.id
+                    ) AS menu
+                ) AS menu_count
                 FROM stores s
                 JOIN owners o ON o.id = s.owner_id
                 JOIN jeju_areas a ON a.code = s.area_code
@@ -52,7 +61,7 @@ class StoreController {
                         rs.getString("name"), rs.getString("address"), rs.getString("address_detail"),
                         rs.getString("address_source"), rs.getString("area_code"), rs.getString("area_name"),
                         rs.getString("industry_code"), rs.getString("custom_industry_name"),
-                        rs.getObject("created_at", OffsetDateTime.class)))
+                        rs.getObject("created_at", OffsetDateTime.class), rs.getLong("menu_count")))
                 .list();
     }
 
@@ -101,7 +110,7 @@ class StoreController {
         }
         return ResponseEntity.status(HttpStatus.CREATED).body(new StoreResponse(
                 id, input.name(), input.address(), input.addressDetail(), input.addressSource(),
-                input.areaCode(), areaName, input.industryCode(), input.customIndustryName(), createdAt.get()));
+                input.areaCode(), areaName, input.industryCode(), input.customIndustryName(), createdAt.get(), 0));
     }
 
     @ExceptionHandler(InvalidStore.class)
@@ -168,7 +177,7 @@ class StoreController {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record StoreResponse(UUID id, String name, String address, String addressDetail, String addressSource,
                          String areaCode, String areaName, String industryCode, String customIndustryName,
-                         OffsetDateTime createdAt) {}
+                         OffsetDateTime createdAt, long menuCount) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record ApiError(String code, String message, String field) {}

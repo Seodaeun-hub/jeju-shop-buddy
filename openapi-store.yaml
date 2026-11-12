@@ -240,6 +240,7 @@ paths:
                 areaName: 제주시 애월읍
                 industryCode: KOREAN_RESTAURANT
                 createdAt: '2026-11-09T10:00:00+09:00'
+                menuCount: 0
         '400':
           description: 필수값 누락 또는 유효하지 않은 입력
           content:
@@ -1636,7 +1637,7 @@ components:
             required: [customIndustryName]
     StoreResponse:
       type: object
-      required: [id, name, address, addressSource, areaCode, areaName, industryCode, createdAt]
+      required: [id, name, address, addressSource, areaCode, areaName, industryCode, createdAt, menuCount]
       properties:
         id:
           type: string
@@ -1661,6 +1662,11 @@ components:
         createdAt:
           type: string
           format: date-time
+        menuCount:
+          type: integer
+          format: int64
+          minimum: 0
+          description: POS 분석과 등록한 메뉴 사진을 합쳐 중복을 제외한 메뉴 수
     CreateSalesAnalysisRequest:
       type: object
       additionalProperties: false
