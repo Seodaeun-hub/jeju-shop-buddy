@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
 class WeeklyPosPush {
@@ -69,32 +70,58 @@ class WeeklyPosPush {
     }
 
     boolean enabled(String email) {
+        return preferences(email).weekly();
+    }
+
+    Preferences preferences(String email) {
         return jdbc.sql("""
-                SELECT EXISTS (
-                    SELECT 1 FROM weekly_pos_push_subscriptions s JOIN owners o ON o.id = s.owner_id
-                    WHERE o.email = :email
-                )
-                """).param("email", email).query(Boolean.class).single();
+                SELECT weekly_enabled, result_enabled_at IS NOT NULL AS results
+                FROM weekly_pos_push_subscriptions s JOIN owners o ON o.id = s.owner_id
+                WHERE o.email = :email
+                """).param("email", email).query((rs, row) ->
+                        new Preferences(rs.getBoolean("weekly_enabled"), rs.getBoolean("results")))
+                .optional().orElse(new Preferences(false, false));
     }
 
     void enable(String email, AppleWebPush.Subscription subscription) {
+        enable(email, subscription, false);
+    }
+
+    void enable(String email, AppleWebPush.Subscription subscription, boolean results) {
         jdbc.sql("""
-                INSERT INTO weekly_pos_push_subscriptions (owner_id, endpoint, p256dh, auth_secret)
-                SELECT id, :endpoint, :p256dh, :auth FROM owners WHERE email = :email
+                INSERT INTO weekly_pos_push_subscriptions (owner_id, endpoint, p256dh, auth_secret, weekly_enabled, result_enabled_at)
+                SELECT id, :endpoint, :p256dh, :auth, NOT :results, CASE WHEN :results THEN CURRENT_TIMESTAMP END
+                FROM owners WHERE email = :email
                 ON CONFLICT (owner_id) DO UPDATE SET
                     endpoint = EXCLUDED.endpoint, p256dh = EXCLUDED.p256dh, auth_secret = EXCLUDED.auth_secret,
-                    registered_at = EXCLUDED.registered_at
-                WHERE (weekly_pos_push_subscriptions.endpoint, weekly_pos_push_subscriptions.p256dh,
-                    weekly_pos_push_subscriptions.auth_secret) IS DISTINCT FROM
-                    (EXCLUDED.endpoint, EXCLUDED.p256dh, EXCLUDED.auth_secret)
+                    weekly_enabled = weekly_pos_push_subscriptions.weekly_enabled OR EXCLUDED.weekly_enabled,
+                    result_enabled_at = COALESCE(weekly_pos_push_subscriptions.result_enabled_at, EXCLUDED.result_enabled_at),
+                    registered_at = CASE WHEN
+                        (weekly_pos_push_subscriptions.endpoint, weekly_pos_push_subscriptions.p256dh,
+                         weekly_pos_push_subscriptions.auth_secret) IS DISTINCT FROM
+                        (EXCLUDED.endpoint, EXCLUDED.p256dh, EXCLUDED.auth_secret)
+                        OR (EXCLUDED.weekly_enabled AND NOT weekly_pos_push_subscriptions.weekly_enabled)
+                        THEN EXCLUDED.registered_at ELSE weekly_pos_push_subscriptions.registered_at END
                 """).param("email", email).param("endpoint", subscription.endpoint())
-                .param("p256dh", subscription.keys().p256dh()).param("auth", subscription.keys().auth()).update();
+                .param("p256dh", subscription.keys().p256dh()).param("auth", subscription.keys().auth())
+                .param("results", results).update();
     }
 
     void disable(String email) {
+        disable(email, false);
+    }
+
+    @Transactional
+    public void disable(String email, boolean results) {
+        jdbc.sql("""
+                UPDATE weekly_pos_push_subscriptions s
+                SET weekly_enabled = weekly_enabled AND :results,
+                    result_enabled_at = CASE WHEN :results THEN NULL ELSE result_enabled_at END
+                FROM owners o WHERE o.id = s.owner_id AND o.email = :email
+                """).param("email", email).param("results", results).update();
         jdbc.sql("""
                 DELETE FROM weekly_pos_push_subscriptions s USING owners o
-                WHERE o.id = s.owner_id AND o.email = :email
+                WHERE o.id = s.owner_id AND o.email = :email AND NOT weekly_enabled AND result_enabled_at IS NULL
                 """).param("email", email).update();
     }
 
@@ -121,7 +148,7 @@ class WeeklyPosPush {
                     WHERE owner_id = sub.owner_id AND (CAST(:testStore AS uuid) IS NULL OR id = :testStore)
                     ORDER BY created_at DESC, id LIMIT 1
                 ) store ON true
-                WHERE sub.registered_at <= :registeredBefore
+                WHERE sub.weekly_enabled AND sub.registered_at <= :registeredBefore
                 AND NOT EXISTS (
                     SELECT 1 FROM weekly_pos_push_deliveries d
                     WHERE d.owner_id = sub.owner_id AND d.week_start = :week
@@ -142,7 +169,7 @@ class WeeklyPosPush {
         return jdbc.sql("""
                 INSERT INTO weekly_pos_push_deliveries (owner_id, week_start)
                 SELECT owner_id, :week FROM weekly_pos_push_subscriptions
-                WHERE owner_id = :owner AND registered_at = :registeredAt
+                WHERE owner_id = :owner AND registered_at = :registeredAt AND weekly_enabled
                 ON CONFLICT (owner_id, week_start) DO NOTHING
                 """).param("week", week).param("owner", recipient.ownerId())
                 .param("registeredAt", recipient.registeredAt()).update() == 1;
@@ -184,5 +211,6 @@ class WeeklyPosPush {
         return "/stores?storeId=" + storeId + "&section=pos-files&date=" + week.minusDays(1) + "&focus=upload";
     }
 
+    record Preferences(boolean weekly, boolean results) {}
     private record Recipient(UUID ownerId, UUID storeId, OffsetDateTime registeredAt, AppleWebPush.Subscription subscription) {}
 }
