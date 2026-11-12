@@ -8,7 +8,7 @@ export function InstagramPublish({ auth, planId, caption, image, hasPhoto, endDa
   auth: string
   planId: string
   caption: string
-  image: () => string | undefined
+  image?: string
   hasPhoto: boolean
   endDate: string
   state?: InstagramPublicationStatus
@@ -49,7 +49,7 @@ export function InstagramPublish({ auth, planId, caption, image, hasPhoto, endDa
   }, [auth, planId, publicationState, onStatus, busy])
 
   function openPreview() {
-    const jpeg = image()
+    const jpeg = image
     if (!jpeg?.startsWith('data:image/jpeg;base64,')) {
       setMessage('홍보 이미지를 만들지 못했어요. 다시 시도해 주세요.')
       return
@@ -97,9 +97,14 @@ export function InstagramPublish({ auth, planId, caption, image, hasPhoto, endDa
 
   const scheduleLabel = publication?.scheduledAt ? koreaSchedule.format(new Date(publication.scheduledAt)) : undefined
   return <div className="instagram-publish">
-    <button type="button" className="button small" onClick={openPreview}>
-      {publicationState === 'PUBLISHED' ? '게시한 홍보물 보기' : publicationState === 'SCHEDULED' ? '예약한 홍보물 보기' : '게시 전 최종 미리보기'}
-    </button>
+    <div className="promo-actions">
+      <button type="button" className="button primary small" disabled={!image} aria-haspopup="dialog" onClick={openPreview}>게시 관리</button>
+      {state?.available === false && !publication && <a className="button secondary small" href="https://www.instagram.com/"
+        target="_blank" rel="noopener noreferrer">인스타그램 열기 <span aria-hidden="true">↗</span></a>}
+    </div>
+    {!publication && <p className="promotion-post-mode">
+      {state?.available ? '초안 준비 완료' : state ? '계정 연결 필요' : '계정 연결 확인 중'}
+    </p>}
     {publicationState === 'SCHEDULED' && <>
       <p role="status">{scheduleLabel} (한국 시간) 예약됨</p>
       <button type="button" className="button secondary small" disabled={busy} onClick={cancel}>예약 취소</button>

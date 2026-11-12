@@ -172,6 +172,7 @@ CREATE TABLE execution_plans (
         jsonb_typeof(instagram_publication) = 'object'
         AND (strategy_code = 'PROMOTION' OR (strategy_code = 'CUSTOM' AND strategy_snapshot @> '{"marketing": true}'))
     )),
+    promotion_review_research JSONB,
     promotion_draft JSONB CONSTRAINT ck_execution_plans_promotion_draft CHECK (promotion_draft IS NULL OR (
         jsonb_typeof(promotion_draft) = 'object'
         AND (strategy_code = 'PROMOTION' OR (strategy_code = 'CUSTOM' AND strategy_snapshot @> '{"marketing": true}'))

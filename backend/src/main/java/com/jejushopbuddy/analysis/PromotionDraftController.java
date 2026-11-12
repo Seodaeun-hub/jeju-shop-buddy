@@ -5,9 +5,13 @@ import com.jejushopbuddy.analysis.SalesAnalysisController.ApiError;
 import com.jejushopbuddy.analysis.StorePromotionToneController.Tone;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.security.Principal;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.time.LocalTime;
+import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
@@ -18,6 +22,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @RestController
 class PromotionDraftController {
+    private static final int DRAFT_GENERATION_VERSION = 2;
     private final JdbcClient jdbc;
     private final ObjectMapper json;
     private final StrategyAgentClient agent;
@@ -39,6 +44,45 @@ class PromotionDraftController {
                 .body(new PhotoOptions(product == null ? null : photos.find(plan.storeId(), product), plan.defaultTone()));
     }
 
+    @PostMapping("/api/plans/{planId}/promotion-review-points")
+    ResponseEntity<?> researchReviews(@PathVariable UUID planId, @RequestBody ResearchInput input, Principal owner) {
+        var plan = find(planId, owner.getName());
+        if (plan == null) return notFound();
+        if (plan.publicationLocked()) return InstagramPublicationController.locked();
+        String product = plan.marketing() ? cleanSubject(input.subject())
+                : plan.review() == null ? null : plan.review().productName();
+        if (product == null) return bad("후기를 찾을 메뉴나 가게 소식을 선택해 주세요.");
+        var saved = plan.research();
+        var now = Instant.now();
+        if (!Boolean.TRUE.equals(input.refresh()) && saved != null && product.equals(saved.subject()) && !saved.sources().isEmpty()
+                && saved.searchedAt().isAfter(now.minus(6, ChronoUnit.HOURS))) {
+            return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(saved);
+        }
+        var result = agent.promotionReviewPoints(new ReviewSearch(plan.storeName(), plan.address(), product));
+        if (result.isEmpty()) {
+            return ResponseEntity.status(503).body(new ApiError("PROMOTION_REVIEW_SEARCH_UNAVAILABLE",
+                    "공개 후기를 불러오지 못했어요. 다시 찾거나 후기 없이 진행할 수 있어요.", null));
+        }
+        var research = new ResearchSnapshot(UUID.randomUUID(), product, now, result.get().sources(), result.get().points());
+        int updated = jdbc.sql("""
+                UPDATE execution_plans SET promotion_review_research=CAST(:research AS jsonb)
+                WHERE id=:id AND instagram_publication IS NULL
+                  AND promotion_review IS NOT DISTINCT FROM CAST(:review AS jsonb)
+                  AND promotion_review_research IS NOT DISTINCT FROM CAST(:previous AS jsonb)
+                """).param("id", planId).param("research", json.writeValueAsString(research))
+                .param("previous", plan.researchSnapshot())
+                .param("review", plan.review() == null ? null : json.writeValueAsString(plan.review())).update();
+        if (updated == 0) {
+            var latest = find(planId, owner.getName());
+            if (latest != null && !latest.publicationLocked() && latest.research() != null
+                    && product.equals(latest.research().subject()) && Objects.equals(plan.review(), latest.review())) {
+                return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(latest.research());
+            }
+            return changed();
+        }
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(research);
+    }
+
     @Transactional
     @PostMapping("/api/plans/{planId}/promotion-draft")
     public ResponseEntity<?> save(@PathVariable UUID planId, @RequestBody Input input, Principal owner) {
@@ -58,59 +102,90 @@ class PromotionDraftController {
                 || input.publishDate().isAfter(plan.end()) || input.publishTime().getSecond() != 0
                 || input.publishTime().getNano() != 0) return bad("게시 날짜와 시간을 확인해 주세요. 게시일은 계획 종료일까지 선택할 수 있어요.");
         if (!StoreProductPhotos.valid(input.photoDataUrl())) return bad("사용할 음식 사진을 다시 선택해 주세요.");
+        String sourcePage = input.sourcePageUrl() == null ? null : input.sourcePageUrl().strip();
+        if (sourcePage != null && (sourcePage.length() > 1000 || !sourcePage.startsWith("https://"))) {
+            return bad("https://로 시작하는 매장 공개 페이지 주소를 입력해 주세요.");
+        }
 
         String product = plan.marketing() ? cleanSubject(input.subject()) : review.productName();
-        String discount = review == null ? "" : discountLine(review);
         boolean sameSubject = plan.draft() != null && product.equals(plan.draft().headline());
         String photo = input.photoDataUrl() != null ? input.photoDataUrl()
                 : input.useSavedPhoto() ? photos.find(plan.storeId(), product) : null;
         if (photo == null && input.useSavedPhoto() && sameSubject) photo = plan.draft().photoDataUrl();
-        String edited = input.caption() == null ? null : input.caption().strip();
-        if (edited != null && (edited.isEmpty() || edited.length() > 2200)) return bad("홍보 문구는 1~2,200자로 작성해 주세요.");
-        if (sameSubject && input.publishDate().equals(plan.draft().publishDate())
-                && input.publishTime().equals(plan.draft().publishTime()) && java.util.Objects.equals(photo, plan.draft().photoDataUrl())
-                && (edited == null || edited.equals(plan.draft().caption()))
-                && (edited != null || "EDITED".equals(plan.draft().copySource()) || plan.draft().caption().contains(discount))) {
-            return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(plan.draft());
+        var edits = input.channelEdits();
+        var instagramEdit = edits != null && edits.instagram() != null ? edits.instagram() : input.caption();
+        var naverEdit = edits == null ? null : edits.naver();
+        var daangnEdit = edits == null ? null : edits.daangn();
+        if (!validCopy(instagramEdit) || !validCopy(naverEdit) || !validCopy(daangnEdit)) {
+            return bad("홍보 문구는 채널마다 1~2,200자로 작성해 주세요.");
         }
-        if (edited == null && sameSubject && "EDITED".equals(plan.draft().copySource())) {
-            edited = plan.draft().caption();
+        boolean edited = instagramEdit != null || naverEdit != null || daangnEdit != null;
+        boolean generateNewCopy = Boolean.TRUE.equals(input.generateNewCopy());
+        var requestedPoints = input.reviewPointIds() == null ? List.<String>of() : input.reviewPointIds();
+        ReviewSelection selected = null;
+        if (!requestedPoints.isEmpty()) {
+            var research = plan.research();
+            if (edited || !generateNewCopy || requestedPoints.size() > 5 || research == null
+                    || !research.id().equals(input.reviewResearchId()) || !product.equals(research.subject())) {
+                return bad("현재 메뉴의 후기 포인트를 다시 선택해 주세요.");
+            }
+            var points = research.points().stream().filter(point -> requestedPoints.contains(point.id())).toList();
+            if (points.size() != requestedPoints.size()) return bad("현재 메뉴의 후기 포인트를 다시 선택해 주세요.");
+            selected = new ReviewSelection(research.sources(), points);
+        }
+        boolean generate = generateNewCopy || sourcePage != null || !sameSubject || (!edited && canUpgrade(plan, product));
+        if (sourcePage != null && sameSubject && "EDITED".equals(plan.draft().copySource())) {
+            return bad("직접 수정해 저장한 초안은 그대로 편집할 수 있어요. 새 공개 출처를 참고하려면 새 초안을 만들어 주세요.");
+        }
+        if (sameSubject && input.publishDate().equals(plan.draft().publishDate())
+                && input.publishTime().equals(plan.draft().publishTime()) && Objects.equals(photo, plan.draft().photoDataUrl())
+                && !edited && !generate) {
+            return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(plan.draft());
         }
         String feature = review == null ? "가게 소식" : String.format(Locale.KOREA, "%,d개 한정", review.maxDiscountQuantity());
         String detail = plan.start() + " ~ " + plan.end();
         String price = review == null ? "" : won(review.discountedPriceWon());
-        String caption = edited;
-        Tone tone = plan.draft() == null ? plan.defaultTone() : plan.draft().tone();
-        String source = "EDITED";
-        if (caption == null && tone != null) {
-            caption = plan.marketing()
-                    ? tone.marketingCaption(product, plan.storeName(), plan.avoidPhrases())
-                    : tone.caption(product, price, discount, feature, detail, plan.storeName(), plan.avoidPhrases());
-            source = "TEMPLATE";
+        var tone = sameSubject && plan.draft().tone() != null ? plan.draft().tone()
+                : Objects.requireNonNullElse(plan.defaultTone(), Tone.FRIENDLY);
+        var generated = generate ? generateChannels(plan, product, tone, photo, sourcePage, selected) : null;
+        if (sourcePage != null && (generated == null || !generated.researched())) {
+            return ResponseEntity.unprocessableEntity().body(new ApiError("PROMOTION_SOURCE_NOT_VERIFIED",
+                    "같은 매장의 공개 소개를 확인하지 못했어요. 매장 이름과 주소가 표시되는 소개 링크를 확인해 주세요.", null));
         }
-        if (caption == null) {
-            var opening = agent.promotionOpening(product);
-            if (plan.marketing()) {
-                opening = opening.filter(line -> !Tone.containsAvoidedPhrase(line, plan.avoidPhrases()));
-                caption = opening.map(line -> product + "\n" + line + "\n\n" + plan.storeName())
-                        .orElseGet(() -> Tone.PLAIN.marketingCaption(product, plan.storeName(), plan.avoidPhrases()));
-            } else {
-                caption = product + " " + price + " · " + feature
-                        + "\n" + discount + opening.map(line -> "\n" + line).orElse("")
-                        + "\n\n" + detail + " · " + plan.storeName();
+        if (selected != null && (generated == null || generated.basis() == Basis.BASIC)) {
+            return ResponseEntity.status(503).body(new ApiError("PROMOTION_COPY_UNAVAILABLE",
+                    "선택한 후기 포인트를 반영한 초안을 만들지 못했어요. 다시 시도해 주세요.", null));
+        }
+        boolean replace = generated != null
+                && (generateNewCopy || !sameSubject || generated.basis() != Basis.BASIC);
+        var channels = replace ? generated : plan.draft().channels();
+        String source = replace ? channels.basis() == Basis.BASIC ? "TEMPLATE" : "GPT" : plan.draft().copySource();
+        String caption = replace ? channels.drafts().instagram() : plan.draft().caption();
+        if (edited) {
+            if (channels == null) channels = legacyChannels(plan, product, caption);
+            var copies = channels.drafts();
+            caption = editedCopy(instagramEdit, caption, channels.offer());
+            channels = new SavedChannels(channels.findings(), new ChannelCopy(caption,
+                    editedCopy(naverEdit, copies.naver(), channels.offer()), editedCopy(daangnEdit, copies.daangn(), channels.offer())),
+                    channels.researched(), channels.offer(), channels.basis(), channels.sourceCheckVersion());
+            if (caption.length() > 2200 || channels.drafts().naver().length() > 2200 || channels.drafts().daangn().length() > 2200) {
+                return bad("행사 조건을 포함한 홍보 문구는 채널마다 2,200자까지 저장할 수 있어요.");
             }
-            source = opening.isPresent() ? "GPT" : "TEMPLATE";
+            source = "EDITED";
         }
         var draft = new Draft(plan.storeName(), product, feature, price, detail, caption,
-                input.publishDate(), input.publishTime(), "Asia/Seoul", source, photo, 3, tone);
+                input.publishDate(), input.publishTime(), "Asia/Seoul", source, photo, 3, tone, channels,
+                replace ? selected : sameSubject ? plan.draft().reviewSelection() : null);
         int updated = jdbc.sql("""
                 UPDATE execution_plans SET promotion_draft=CAST(:draft AS jsonb)
                 WHERE id=:id AND instagram_publication IS NULL
                   AND promotion_review IS NOT DISTINCT FROM CAST(:review AS jsonb)
                   AND promotion_draft IS NOT DISTINCT FROM CAST(:previous AS jsonb)
+                  AND (CAST(:researchId AS text) IS NULL OR promotion_review_research->>'id' = CAST(:researchId AS text))
                 """).param("id", planId).param("draft", json.writeValueAsString(draft))
                 .param("review", review == null ? null : json.writeValueAsString(review))
-                .param("previous", plan.draftSnapshot()).update();
+                .param("previous", plan.draftSnapshot())
+                .param("researchId", selected == null ? null : input.reviewResearchId().toString()).update();
         if (updated == 0) {
             var latest = find(planId, owner.getName());
             return latest != null && latest.publicationLocked() ? InstagramPublicationController.locked() : changed();
@@ -134,9 +209,30 @@ class PromotionDraftController {
                 : input.tone().caption(review.productName(), won(review.discountedPriceWon()), discountLine(review),
                         String.format(Locale.KOREA, "%,d개 한정", review.maxDiscountQuantity()),
                         saved.detail(), saved.storeName(), plan.avoidPhrases());
+        var channels = saved.channels();
+        String source = "TEMPLATE";
+        if (channels != null) {
+            if (channels.researched() || (channels.basis() != null && channels.basis() != Basis.BASIC)) {
+                var findings = channels.sourceCheckVersion() == null ? List.<ChannelFinding>of() : channels.findings();
+                var rewritten = agent.promotionChannels(channelInput(plan, saved.headline(), input.tone(), findings,
+                                saved.photoDataUrl(), null, saved.reviewSelection()))
+                        .map(ChannelDrafts::drafts);
+                if (rewritten.isEmpty()) {
+                    return ResponseEntity.status(503).body(new ApiError("PROMOTION_COPY_UNAVAILABLE",
+                            "말투를 바꾸지 못했어요. 저장된 초안은 그대로예요.", null));
+                }
+                caption = withOffer(rewritten.get().instagram(), channels.offer());
+                source = "GPT";
+            } else if (channels.offer() != null) {
+                caption = withOffer(defaultCopy(plan, saved.headline(), input.tone()).instagram(), channels.offer());
+            }
+            channels = new SavedChannels(channels.findings(),
+                    new ChannelCopy(caption, channels.drafts().naver(), channels.drafts().daangn()), channels.researched(),
+                    channels.offer(), channels.basis(), channels.sourceCheckVersion());
+        }
         var draft = new Draft(saved.storeName(), saved.headline(), saved.feature(), saved.discountedPrice(),
                 saved.detail(), caption, saved.publishDate(), saved.publishTime(), saved.timeZone(),
-                "TEMPLATE", saved.photoDataUrl(), saved.templateVersion(), input.tone());
+                source, saved.photoDataUrl(), saved.templateVersion(), input.tone(), channels, saved.reviewSelection());
         int updated = jdbc.sql("""
                 UPDATE execution_plans SET promotion_draft=CAST(:draft AS jsonb)
                 WHERE id=:id AND instagram_publication IS NULL AND promotion_draft=CAST(:previous AS jsonb)
@@ -149,10 +245,88 @@ class PromotionDraftController {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(draft);
     }
 
+    private SavedChannels generateChannels(Saved plan, String product, Tone tone, String photo, String sourcePage, ReviewSelection selected) {
+        var saved = plan.draft();
+        var findings = sourcePage == null && saved != null && product.equals(saved.headline())
+                && saved.channels() != null && saved.channels().researched()
+                && Objects.requireNonNullElse(saved.channels().sourceCheckVersion(), 0) >= DRAFT_GENERATION_VERSION
+                ? saved.channels().findings() : null;
+        var result = agent.promotionChannels(channelInput(plan, product, tone, findings, photo, sourcePage, selected))
+                .orElse(new ChannelDrafts(List.of(), null, false));
+        if (sourcePage != null && !result.sourcePageUsed()) return null;
+        boolean researched = result.drafts() != null && result.findings().stream().anyMatch(fact -> !"HOURS".equals(fact.kind()));
+        Basis basis = result.drafts() == null ? Basis.BASIC
+                : researched ? (photo == null ? Basis.WEB : Basis.WEB_AND_PHOTO)
+                : (photo == null ? Basis.MENU : Basis.PHOTO);
+        var copies = result.drafts() == null ? defaultCopy(plan, product, tone) : result.drafts();
+        String offer = offer(plan, product);
+        return new SavedChannels(result.findings(), withOffer(copies, offer), researched, offer, basis, DRAFT_GENERATION_VERSION);
+    }
+
+    private static boolean canUpgrade(Saved plan, String product) {
+        var draft = plan.draft();
+        if ("EDITED".equals(draft.copySource())) return false;
+        var channels = draft.channels();
+        if (channels != null && channels.basis() != null && Objects.requireNonNullElse(channels.sourceCheckVersion(), 0) < DRAFT_GENERATION_VERSION
+                && "GPT".equals(draft.copySource())) return true;
+        return channels == null || (!channels.researched()
+                && (channels.basis() == null || channels.basis() == Basis.BASIC)
+                && channels.drafts().equals(withOffer(defaultCopy(plan, product, draft.tone()), channels.offer())));
+    }
+
+    private static ChannelInput channelInput(Saved plan, String product, Tone tone, List<ChannelFinding> findings, String photo, String sourcePage, ReviewSelection selected) {
+        return new ChannelInput(plan.storeName(), plan.address(), product, tone == null ? Tone.FRIENDLY : tone,
+                plan.avoidPhrases() == null ? "" : plan.avoidPhrases(), plan.review() != null, findings, photo, sourcePage,
+                selected == null ? List.of() : selected.points().stream()
+                        .map(point -> new ReviewFocus(point.sentence(), point.anchors())).toList());
+    }
+
+    private static ChannelCopy defaultCopy(Saved plan, String product, Tone tone) {
+        Tone effective = tone == null ? Tone.FRIENDLY : tone;
+        String instagram = effective.marketingCaption(product, plan.storeName(), plan.avoidPhrases());
+        String naver = "[" + product + (plan.review() == null ? " 소식" : " 할인 행사") + "]\n" + plan.storeName();
+        String greeting = "동네 이웃 여러분, " + plan.storeName() + "입니다.";
+        String daangn = (Tone.containsAvoidedPhrase(greeting, plan.avoidPhrases()) ? plan.storeName() : greeting)
+                + "\n" + product + (plan.review() == null ? " 소식을 전해요." : " 할인 소식을 전해요.");
+        return new ChannelCopy(instagram, naver, daangn);
+    }
+
+    private static SavedChannels legacyChannels(Saved plan, String product, String caption) {
+        var copies = defaultCopy(plan, product, plan.draft().tone());
+        String offer = offer(plan, product);
+        return new SavedChannels(List.of(), new ChannelCopy(caption, withOffer(copies.naver(), offer),
+                withOffer(copies.daangn(), offer)), false, null, null, null);
+    }
+
+    private static String offer(Saved plan, String product) {
+        var review = plan.review();
+        if (review == null) return null;
+        return product + " " + won(review.discountedPriceWon()) + " · " + discountLine(review)
+                + " · " + String.format(Locale.KOREA, "%,d개 한정", review.maxDiscountQuantity())
+                + "\n행사 기간 " + plan.start() + " ~ " + plan.end();
+    }
+
+    private static boolean validCopy(String value) {
+        return value == null || (!value.isBlank() && value.strip().length() <= 2200);
+    }
+
+    private static String editedCopy(String edit, String saved, String offer) {
+        if (edit == null) return saved;
+        return withOffer(edit.strip(), offer);
+    }
+
+    private static String withOffer(String body, String offer) {
+        return offer == null || body.endsWith("\n\n" + offer) ? body : body + "\n\n" + offer;
+    }
+
+    private static ChannelCopy withOffer(ChannelCopy copy, String offer) {
+        return new ChannelCopy(withOffer(copy.instagram(), offer), withOffer(copy.naver(), offer), withOffer(copy.daangn(), offer));
+    }
+
     private Saved find(UUID id, String email) {
         return jdbc.sql("""
-                SELECT s.id AS store_id, s.name, p.start_date, p.end_date, p.promotion_review, p.promotion_draft,
-                       p.strategy_code='CUSTOM' AS marketing,
+                SELECT s.id AS store_id, s.name, s.address, p.start_date, p.end_date, p.promotion_review, p.promotion_draft,
+                       p.strategy_code='CUSTOM' AS marketing, p.promotion_review_research,
                        p.instagram_publication IS NOT NULL AS publication_locked,
                        s.promotion_tone, s.promotion_avoid_phrases
                 FROM execution_plans p JOIN sales_analyses a ON a.id=p.analysis_id
@@ -160,12 +334,15 @@ class PromotionDraftController {
                 WHERE p.id=:id AND o.email=:email
                   AND (p.strategy_code='PROMOTION' OR (p.strategy_code='CUSTOM' AND p.strategy_snapshot @> '{"marketing":true}'))
                 """).param("id", id).param("email", email)
-                .query((rs, row) -> new Saved(rs.getObject("store_id", UUID.class), rs.getString("name"),
+                .query((rs, row) -> new Saved(rs.getObject("store_id", UUID.class), rs.getString("name"), rs.getString("address"),
                         rs.getObject("start_date", LocalDate.class), rs.getObject("end_date", LocalDate.class),
                         rs.getString("promotion_review") == null ? null : json.readValue(rs.getString("promotion_review"), Review.class),
                         rs.getString("promotion_draft") == null ? null : json.readValue(rs.getString("promotion_draft"), Draft.class),
                         rs.getString("promotion_draft"), rs.getBoolean("publication_locked"), rs.getBoolean("marketing"),
-                        Tone.parse(rs.getString("promotion_tone")), rs.getString("promotion_avoid_phrases")))
+                        Tone.parse(rs.getString("promotion_tone")), rs.getString("promotion_avoid_phrases"),
+                        rs.getString("promotion_review_research") == null ? null
+                                : json.readValue(rs.getString("promotion_review_research"), ResearchSnapshot.class),
+                        rs.getString("promotion_review_research")))
                 .optional().orElse(null);
     }
 
@@ -189,14 +366,37 @@ class PromotionDraftController {
     private static ResponseEntity<ApiError> bad(String message) {
         return ResponseEntity.badRequest().body(new ApiError("INVALID_PROMOTION_DRAFT", message, null));
     }
-    private record Saved(UUID storeId, String storeName, LocalDate start, LocalDate end, Review review, Draft draft,
-                         String draftSnapshot, boolean publicationLocked, boolean marketing, Tone defaultTone, String avoidPhrases) {}
+    private record Saved(UUID storeId, String storeName, String address, LocalDate start, LocalDate end, Review review, Draft draft,
+                         String draftSnapshot, boolean publicationLocked, boolean marketing, Tone defaultTone, String avoidPhrases,
+                         ResearchSnapshot research, String researchSnapshot) {}
     record Photo(String photoDataUrl) {}
     record PhotoOptions(String photoDataUrl, Tone defaultTone) {}
     record CaptionInput(Tone tone) {}
+    record ResearchInput(String subject, Boolean refresh) {}
+    record ReviewSearch(String storeName, String address, String subject) {}
+    record ReviewSource(String id, String url, String title, String dateLabel) {}
+    record ReviewPoint(String id, String sentence, List<String> anchors, List<String> sourceIds) {}
+    record ReviewResearch(List<ReviewSource> sources, List<ReviewPoint> points) {}
+    record ResearchSnapshot(UUID id, String subject, Instant searchedAt, List<ReviewSource> sources, List<ReviewPoint> points) {}
+    record ReviewSelection(List<ReviewSource> sources, List<ReviewPoint> points) {}
+    record ReviewFocus(String sentence, List<String> anchors) {}
     record Input(Review review, String subject, LocalDate publishDate, LocalTime publishTime, String photoDataUrl,
-                 boolean useSavedPhoto, String caption) {}
+                 boolean useSavedPhoto, String caption, ChannelCopy channelEdits, String sourcePageUrl,
+                 Boolean generateNewCopy, UUID reviewResearchId, List<String> reviewPointIds) {}
+    record ChannelInput(String storeName, String address, String subject, Tone tone, String avoidPhrases, boolean promotion,
+                        @JsonInclude(JsonInclude.Include.NON_NULL) List<ChannelFinding> savedFindings,
+                        @JsonInclude(JsonInclude.Include.NON_NULL) String photoDataUrl,
+                        @JsonInclude(JsonInclude.Include.NON_NULL) String sourcePageUrl, List<ReviewFocus> reviewPoints) {}
+    record ChannelFinding(String kind, String text, String url) {}
+    record ChannelCopy(String instagram, String naver, String daangn) {}
+    record ChannelDrafts(List<ChannelFinding> findings, ChannelCopy drafts, boolean sourcePageUsed) {}
+    enum Basis { WEB, WEB_AND_PHOTO, PHOTO, MENU, BASIC }
+    record SavedChannels(List<ChannelFinding> findings, ChannelCopy drafts, boolean researched, String offer,
+                         @JsonInclude(JsonInclude.Include.NON_NULL) Basis basis,
+                         @JsonInclude(JsonInclude.Include.NON_NULL) Integer sourceCheckVersion) {}
     record Draft(String storeName, String headline, String feature, String discountedPrice, String detail, String caption,
                  LocalDate publishDate, LocalTime publishTime, String timeZone, String copySource, String photoDataUrl, int templateVersion,
-                 @JsonInclude(JsonInclude.Include.NON_NULL) Tone tone) {}
+                 @JsonInclude(JsonInclude.Include.NON_NULL) Tone tone,
+                 @JsonInclude(JsonInclude.Include.NON_NULL) SavedChannels channels,
+                 @JsonInclude(JsonInclude.Include.NON_NULL) ReviewSelection reviewSelection) {}
 }

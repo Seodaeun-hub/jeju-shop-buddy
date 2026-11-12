@@ -1,5 +1,5 @@
 import type { Review, ReviewTopic } from '../data/reviews'
-import type { Analysis, CustomerNotice, InventoryItem, MonthlySales, Plan, ProductSale, PromotionDraft, PromotionDraftInput, PromotionReview, PromotionReviewInput, PromotionTone, SalesResult, TimeSeries } from '../data/shop'
+import type { Analysis, CustomerNotice, InventoryItem, MonthlySales, Plan, ProductSale, PromotionDraft, PromotionDraftInput, PromotionReview, PromotionReviewInput, PromotionReviewResearch, PromotionTone, SalesResult, TimeSeries } from '../data/shop'
 import { formatEvidence } from '../data/strategyEvidence'
 
 export type Area = { code: string; name: string }
@@ -358,6 +358,10 @@ export function createPromotionDraft(auth: string, id: string, input: PromotionD
 
 export function regeneratePromotionCaption(auth: string, id: string, tone: PromotionTone) {
   return request<PromotionDraft>(`/api/plans/${encodeURIComponent(id)}/promotion-draft/caption`, auth, 'POST', {tone})
+}
+
+export function fetchPromotionReviewPoints(auth: string, id: string, subject: string, signal: AbortSignal, refresh: boolean) {
+  return request<PromotionReviewResearch>(`/api/plans/${encodeURIComponent(id)}/promotion-review-points`, auth, 'POST', { subject, refresh }, signal)
 }
 
 export function fetchPromotionPhoto(auth: string, id: string, signal: AbortSignal, subject?: string) {
