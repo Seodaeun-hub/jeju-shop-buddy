@@ -34,12 +34,14 @@ function posNotificationUrl(path) {
 }
 
 self.addEventListener('push', event => {
-  let path
-  try { path = event.data?.json()?.path } catch { /* Show a notification even without a valid path. */ }
-  event.waitUntil(self.registration.showNotification('가게짝꿍', {
-    body: '테스트 알림이에요. 눌러서 POS 등록 화면을 열어보세요.',
+  let message
+  try { message = event.data?.json() } catch { /* Show a notification even without a valid path. */ }
+  const weekly = message?.kind === 'weekly-pos'
+  event.waitUntil(self.registration.showNotification(weekly ? '가게짝꿍 · 주간 POS' : '가게짝꿍', {
+    body: weekly ? '지난주 POS 파일을 올려 주세요. 누르면 POS 등록 화면이 열려요.'
+      : '테스트 알림이에요. 눌러서 POS 등록 화면을 열어보세요.',
     icon: '/icons/shop-buddy-192.png',
-    data: { url: posNotificationUrl(path).href },
+    data: { url: posNotificationUrl(message?.path).href },
   }))
 })
 
