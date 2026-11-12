@@ -1,10 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { Link } from 'react-router'
 import { fetchPromotionImpact, saveNextPromotionChecklist, savePromotionActuals, savePromotionImpact, type NextPromotionChecklistItem, type PromotionActuals, type PromotionImpact, type PromotionImpactPeriod, type PromotionImpactTotals } from '../api/shop'
 import type { PromotionReview } from '../data/shop'
 import { promotionPublicationLabels } from '../data/promotionChannels'
 import { NextPromotionCard } from './NextPromotionCard'
 import { importPromotionProduct } from '../data/pos'
-import { changeRate, formatNumber, formatRate, won } from '../data/shop'
+import { describeMissingPos, loadPromotionArchive, notifyResultsDataChanged, posLibraryPath, promotionArchiveUpdated, reconcilePromotionArchive, resultsDataChanged, seoulDate } from '../data/promotionArchive'
+import type { PromotionArchiveResult } from '../data/promotionArchive'
+import { addDays, changeRate, formatNumber, formatRate, won } from '../data/shop'
 
 function ImpactRow({ label, before, after, format }: {
   label: string
@@ -17,21 +20,62 @@ function ImpactRow({ label, before, after, format }: {
     <td>{delta > 0 ? '+' : delta < 0 ? '−' : ''}{format(Math.abs(delta))} · {formatRate(changeRate(before, after))}</td></tr>
 }
 
-export function PromotionImpactPanel({ auth, planId, review }: { auth: string; planId: string; review?: PromotionReview }) {
+export function PromotionImpactPanel({ auth, planId, storeId, endDate, review }: {
+  auth: string; planId: string; storeId?: string; endDate: string; review?: PromotionReview
+}) {
   const [result, setResult] = useState<PromotionImpact>()
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [pending, setPending] = useState(false)
+  const [checkingArchive, setCheckingArchive] = useState(false)
+  const [missing, setMissing] = useState<PromotionArchiveResult['missing']>([])
+  const [archiveError, setArchiveError] = useState('')
+  const [revision, setRevision] = useState(0)
+
+  useEffect(() => {
+    const refresh = () => setRevision(value => value + 1)
+    const archiveSaved = (event: Event) => {
+      if (event instanceof CustomEvent && event.detail === planId) refresh()
+    }
+    window.addEventListener(resultsDataChanged, refresh)
+    window.addEventListener(promotionArchiveUpdated, archiveSaved)
+    window.addEventListener('focus', refresh)
+    return () => {
+      window.removeEventListener(resultsDataChanged, refresh)
+      window.removeEventListener(promotionArchiveUpdated, archiveSaved)
+      window.removeEventListener('focus', refresh)
+    }
+  }, [planId])
 
   useEffect(() => {
     const controller = new AbortController()
-    fetchPromotionImpact(auth, planId, controller.signal).then(value => {
-      if (!controller.signal.aborted) setResult(value)
+    const { signal } = controller
+    setArchiveError('')
+    setMissing([])
+    setCheckingArchive(false)
+    fetchPromotionImpact(auth, planId, signal).then(async value => {
+      if (signal.aborted) return
+      setResult(value)
+      setError('')
+      if (!storeId || !value.afterReady || (value.beforeTotals && value.afterTotals)) return
+      setCheckingArchive(true)
+      try {
+        const archive = await loadPromotionArchive(auth, storeId, signal)
+        const outcome = await reconcilePromotionArchive(auth, planId, value, archive, signal)
+        if (signal.aborted) return
+        setResult(outcome.impact)
+        setMissing(outcome.missing)
+        if (outcome.saved) setNotice('내 매장에 보관한 상품 주문 POS를 집계했어요.')
+      } catch {
+        if (!signal.aborted) setArchiveError('저장한 POS를 확인하지 못했어요.')
+      } finally {
+        if (!signal.aborted) setCheckingArchive(false)
+      }
     }).catch((failure: Error) => {
-      if (!controller.signal.aborted) setError(failure.message)
+      if (!signal.aborted) setError(failure.message)
     })
     return () => controller.abort()
-  }, [auth, planId])
+  }, [auth, planId, storeId, revision])
 
   async function upload(event: FormEvent<HTMLFormElement>, phase: 'BEFORE' | 'AFTER', period: PromotionImpactPeriod) {
     event.preventDefault()
@@ -49,6 +93,7 @@ export function PromotionImpactPanel({ auth, planId, review }: { auth: string; p
       form.reset()
       const message = phase === 'BEFORE' ? '행사 전 POS 집계를 저장했어요.' : '홍보 게시 후 POS 집계를 저장했어요.'
       setNotice(result.actuals && !saved.actuals ? message + ' 집계가 바뀌어 실제 할인 수량과 원가를 다시 입력해 주세요.' : message)
+      notifyResultsDataChanged()
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'POS 집계를 저장하지 못했어요.')
     } finally {
@@ -111,6 +156,14 @@ export function PromotionImpactPanel({ auth, planId, review }: { auth: string; p
   return <section className="form-stack" aria-labelledby="promotion-impact-title">
     <div className="section-top ruled"><h2 id="promotion-impact-title">홍보 품목 판매 변화</h2></div>
     {!result && !error && <p role="status">홍보 품목의 비교 기간을 불러오는 중이에요.</p>}
+    {result && endDate >= seoulDate() && <p>행사가 끝난 뒤 <strong>{addDays(endDate, 1)}</strong>부터 저장된 POS로 결과를 확인할 수 있어요.</p>}
+    {checkingArchive && <p role="status">내 매장에 보관한 POS에서 행사 전후 자료를 찾고 있어요.</p>}
+    {missing.length > 0 && storeId && <div className="result-pos-status">
+      <p><strong>상품 주문 POS가 더 필요해요.</strong><br />{describeMissingPos(missing)}</p>
+      <Link className="button secondary small" to={posLibraryPath(storeId, missing[0].end, 'PRODUCT')}>내 매장에 POS 올리기</Link>
+    </div>}
+    {archiveError && <p role="alert">{archiveError} <button type="button" className="text-button"
+      onClick={() => setRevision(value => value + 1)}>다시 확인하기</button></p>}
     {result && <dl className="promotion-publication-dates" aria-label="채널별 게시일">
       {(Object.entries(promotionPublicationLabels) as [keyof typeof promotionPublicationLabels, string][]).map(([channel, label]) => {
         const dates = (result.publications ?? []).filter(post => post.channel === channel)
@@ -126,9 +179,9 @@ export function PromotionImpactPanel({ auth, planId, review }: { auth: string; p
     {result?.before && result.after && <>
       <p><strong>{result.productName}</strong>의 판매량과 실판매금액을 비교해요.</p>
       <p className="muted">첫 게시 당일은 제외하고 행사 종료일까지의 판매를 같은 요일의 게시 전 기간과 비교해요. 기록한 채널의 홍보 기간 전체를 한 번 비교해요. 매장 POS에서는 채널별 판매를 구분할 수 없어요.</p>
-      <div className="result-form-grid">
-        {periodForm('BEFORE', result.before, result.beforeTotals)}
-        {periodForm('AFTER', result.after, result.afterTotals)}
+      <div className="result-form-grid result-pos-periods">
+        <p><strong>행사 전</strong> {result.before.start} ~ {result.before.end}</p>
+        <p><strong>행사 기간</strong> {result.after.start} ~ {result.after.end}</p>
       </div>
       {result.beforeTotals && result.afterTotals && <table className="input-table" aria-label={`${result.productName} 판매량과 매출 비교`}>
         <thead><tr><th scope="col">지표</th><th scope="col">행사 전</th><th scope="col">홍보 게시 후</th><th scope="col">변화</th></tr></thead>
@@ -172,6 +225,13 @@ export function PromotionImpactPanel({ auth, planId, review }: { auth: string; p
           advice={result.advice} actuals={result.actuals} profit={result.profit} checklist={result.nextChecklist} pending={pending}
           onCreate={() => void saveChecklist()}
           onToggle={(item, completed) => void saveChecklist({ item, completed })} />}
+      <details className="result-direct-entry">
+        <summary>이 계획에 POS 직접 올리기</summary>
+        <div className="result-form-grid">
+          {periodForm('BEFORE', result.before, result.beforeTotals)}
+          {periodForm('AFTER', result.after, result.afterTotals)}
+        </div>
+      </details>
     </>}
     {notice && <p role="status">{notice}</p>}
     {error && <p role="alert" className="error">{error}</p>}

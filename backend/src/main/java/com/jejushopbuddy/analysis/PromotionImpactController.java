@@ -125,8 +125,13 @@ class PromotionImpactController {
                 || !period.end().isBefore(LocalDate.now(SEOUL))) {
             return invalid("화면에 표시된 기간이 끝난 뒤 해당 기간의 POS를 올려 주세요.");
         }
+        if (Boolean.TRUE.equals(upload.onlyIfMissing())
+                && (upload.phase() == Phase.BEFORE ? result.beforeTotals() : result.afterTotals()) != null) {
+            return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(result);
+        }
         if (!validTotal(upload.quantity()) || !validTotal(upload.amount())
-                || upload.recordedDays() == null || upload.recordedDays() < 1
+                || upload.recordedDays() == null || upload.recordedDays() < 0
+                || (upload.recordedDays() == 0 && (upload.quantity() != 0 || upload.amount() != 0))
                 || upload.recordedDays() > ChronoUnit.DAYS.between(period.start(), period.end()) + 1) {
             return invalid("상품 주문 시트의 판매량, 실판매금액과 기록된 날짜를 확인해 주세요.");
         }
@@ -428,7 +433,8 @@ class PromotionImpactController {
     record ChannelPublication(Channel channel, LocalDate publishedDate, boolean automatic) {}
     record ManualPublicationStatus(Map<Channel, PublicationReference> publications, String productName) {}
     enum Phase { BEFORE, AFTER }
-    record Upload(Phase phase, LocalDate start, LocalDate end, Long quantity, Long amount, Integer recordedDays, String productName) {}
+    record Upload(Phase phase, LocalDate start, LocalDate end, Long quantity, Long amount, Integer recordedDays,
+                  String productName, Boolean onlyIfMissing) {}
     record Totals(long quantity, long amount, int recordedDays) {}
     record Period(LocalDate start, LocalDate end) {}
     enum NextAction { RETEST, KEEP_TERMS, REVIEW_TERMS, CHECK_DATA }

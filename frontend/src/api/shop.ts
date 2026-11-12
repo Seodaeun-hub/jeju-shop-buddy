@@ -101,19 +101,29 @@ export const saveStorePromotionTone = (auth: string, id: string, settings: { ton
 
 export const listStores = (auth: string, signal?: AbortSignal) => request<Store[]>('/api/stores', auth, 'GET', undefined, signal)
 export type PosFileKind = 'PAYMENT' | 'PRODUCT'
-export type StoredPosFile = { id: string; kind: PosFileKind; filename: string; size: number; uploadedAt: string }
+export type StoredPosFile = {
+  id: string; kind: PosFileKind; filename: string; size: number; uploadedAt: string
+  coverageStart?: string | null; coverageEnd?: string | null
+  calendarDate?: string | null
+}
 const posFilesPath = (storeId: string) => `/api/stores/${encodeURIComponent(storeId)}/pos-files`
 const posFilePath = (storeId: string, fileId: string) => `${posFilesPath(storeId)}/${encodeURIComponent(fileId)}`
 export const listPosFiles = (auth: string, storeId: string, signal: AbortSignal) =>
   request<StoredPosFile[]>(posFilesPath(storeId), auth, 'GET', undefined, signal)
-export function uploadPosFile(auth: string, storeId: string, kind: PosFileKind, file: File) {
+export function uploadPosFile(auth: string, storeId: string, kind: PosFileKind, file: File,
+  options: { calendarDate?: string; coverage?: PromotionImpactPeriod } = {}) {
   const body = new FormData()
   body.append('kind', kind)
   body.append('file', file)
+  if (options.calendarDate) body.append('calendarDate', options.calendarDate)
+  if (options.coverage) {
+    body.append('coverageStart', options.coverage.start)
+    body.append('coverageEnd', options.coverage.end)
+  }
   return request<StoredPosFile>(posFilesPath(storeId), auth, 'POST', body)
 }
-export async function readStoredPosFile(auth: string, storeId: string, file: StoredPosFile) {
-  const content = await (await send(posFilePath(storeId, file.id), auth)).blob()
+export async function readStoredPosFile(auth: string, storeId: string, file: StoredPosFile, signal?: AbortSignal) {
+  const content = await (await send(posFilePath(storeId, file.id), auth, 'GET', undefined, signal)).blob()
   return new File([content], file.filename, { type: content.type })
 }
 export const deletePosFile = (auth: string, storeId: string, fileId: string) =>
@@ -131,8 +141,18 @@ export type StoreAnalysisSummary = {
 export const deleteAnalysis = (auth: string, id: string) =>
   send(`/api/analyses/${encodeURIComponent(id)}`, auth, 'DELETE')
 
+export const deleteExecutionPlan = (auth: string, id: string) =>
+  send(`/api/plans/${encodeURIComponent(id)}`, auth, 'DELETE')
+
 export const listStoreAnalyses = (auth: string, storeId: string, signal: AbortSignal) =>
   request<StoreAnalysisSummary[]>(`/api/stores/${encodeURIComponent(storeId)}/analyses`, auth, 'GET', undefined, signal)
+
+export type ExecutionReminder = {
+  planId: string; analysisId: string; storeId: string; storeName: string; title?: string | null
+  endDate: string; promotion: boolean; hasSalesResult: boolean
+}
+export const fetchExecutionReminders = (auth: string, signal: AbortSignal) =>
+  request<ExecutionReminder[]>('/api/execution-reminders', auth, 'GET', undefined, signal)
 
 export type QuestionChart = 'MONTHLY_SALES' | 'MARKET_CARD_SALES' | 'JEJU_BSI' | 'TIME_SERIES'
 type QuestionSource = { label: string; url?: string }
@@ -456,8 +476,9 @@ export const saveManualPromotionPublication = (auth: string, planId: string,
 export const fetchPromotionImpact = (auth: string, planId: string, signal: AbortSignal) =>
   request<PromotionImpact>(promotionImpactPath(planId), auth, 'GET', undefined, signal)
 export const savePromotionImpact = (auth: string, planId: string,
-  input: PromotionImpactPeriod & PromotionImpactTotals & {phase: 'BEFORE' | 'AFTER'; productName: string}) =>
-  request<PromotionImpact>(promotionImpactPath(planId), auth, 'PUT', input)
+  input: PromotionImpactPeriod & PromotionImpactTotals & {phase: 'BEFORE' | 'AFTER'; productName: string; onlyIfMissing?: boolean},
+  signal?: AbortSignal) =>
+  request<PromotionImpact>(promotionImpactPath(planId), auth, 'PUT', input, signal)
 
 export type NextPromotionExplanation = {
   input: { before: PromotionImpactTotals; after: PromotionImpactTotals; advice: PromotionImpactAdvice; actuals: PromotionActuals | null; profit: PromotionProfit | null }

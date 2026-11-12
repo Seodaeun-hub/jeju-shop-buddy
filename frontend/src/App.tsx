@@ -4,6 +4,7 @@ import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-r
 import { createPromotionDraft, fetchAnalysis, fetchOwnerSession, fetchPlan, logoutOwner, ownerSession, type OwnerSession, regeneratePromotionCaption, saveInventoryReview, savePromotionReview, saveTimeSeries, toPlan, updateChecklistItem } from './api/shop'
 import { Dashboard } from './pages/Dashboard'
 import { AnalysisSwitcher } from './components/AnalysisSwitcher'
+import { WorkspaceNotifications } from './components/WorkspaceNotifications'
 import { Home } from './pages/Home'
 import { Account } from './pages/Account'
 import { Intake } from './pages/Intake'
@@ -13,7 +14,7 @@ import { MyPage } from './pages/MyPage'
 import { Execution } from './pages/Execution'
 import { Results } from './pages/Results'
 import { SavedStrategyPage, Strategy } from './pages/Strategy'
-import { monthLabel } from './data/shop'
+import { addDays, monthLabel } from './data/shop'
 import type { Analysis, InventoryItem, Plan, PromotionDraftInput, PromotionReviewInput, PromotionTone, TimeSeries } from './data/shop'
 import { Citrus, PageTitle } from './components/ui'
 
@@ -140,6 +141,11 @@ export function App() {
     setAnalysisError('')
     setPlan(undefined)
     setPlanError(undefined)
+  }
+
+  function forgetDeletedPlan(id: string) {
+    setPlan(current => current?.id === id ? undefined : current)
+    setPlanError(current => current?.id === id ? undefined : current)
   }
 
   function openSavedAnalysis(id: string, destination = dashboardPath(id)) {
@@ -286,13 +292,21 @@ export function App() {
   const planPage = requestedPlanId && !auth
     ? <Navigate to="/login" state={{ returnTo: pathname + search }} replace />
     : plan && currentAnalysis && (!requestedPlanId || requestedPlanId === plan.id) && (!plan.analysisId || plan.analysisId === analysisId)
-      ? pathname === '/results'
-        ? <Results key={plan.id ?? 'demo'} plan={plan} onChange={setPlan} auth={auth} executionTo={planPath('/execution', plan)} />
-        : <Execution key={plan.id ?? 'demo'} plan={plan} onChange={setPlan} onToggleChecklist={toggleChecklist}
-          analysis={currentAnalysis} onSaveInventory={auth && plan.id ? savePlanInventory : undefined}
-          onSavePromotion={auth && plan.id ? savePlanPromotion : undefined}
-          auth={auth} onSavePromotionDraft={auth && plan.id ? savePlanPromotionDraft : undefined}
-          onRegeneratePromotionCaption={regeneratePlanPromotionCaption} resultsTo={planPath('/results', plan)} />
+      ? <>
+        <nav className="plan-sections" aria-label="실행 계획 화면">
+          <Link to={planPath('/execution', plan)} aria-current={pathname === '/execution' ? 'page' : undefined}>실행 관리</Link>
+          <Link to={planPath('/results', plan)} aria-current={pathname === '/results' ? 'page' : undefined}>결과 확인</Link>
+          <span>결과 확인일 <time dateTime={addDays(plan.endDate, 1)}>{addDays(plan.endDate, 1)}</time></span>
+        </nav>
+        {pathname === '/results'
+          ? <Results key={plan.id ?? 'demo'} plan={plan} onChange={setPlan} auth={auth} storeId={currentAnalysis.storeId}
+            executionTo={planPath('/execution', plan)} />
+          : <Execution key={plan.id ?? 'demo'} plan={plan} onChange={setPlan} onToggleChecklist={toggleChecklist}
+            analysis={currentAnalysis} onSaveInventory={auth && plan.id ? savePlanInventory : undefined}
+            onSavePromotion={auth && plan.id ? savePlanPromotion : undefined}
+            auth={auth} onSavePromotionDraft={auth && plan.id ? savePlanPromotionDraft : undefined}
+            onRegeneratePromotionCaption={regeneratePlanPromotionCaption} resultsTo={planPath('/results', plan)} />}
+      </>
       : requestedPlanId && analysisId ? !currentAnalysis ? analysisStatus : <section className="empty-state">
         {planError?.id === requestedPlanId ? <><p role="alert" className="error">{planError.message}</p><button className="button secondary" onClick={() => {
           setPlanError(undefined)
@@ -317,7 +331,8 @@ export function App() {
       <Route path="/my-page" element={account
         ? <MyPage key={account.email} account={account} onUpdate={session => setAccount({ ...session, auth: ownerSession })} />
         : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
-      <Route path="/stores" element={account ? <MyStores key={account.email} auth={account.auth} ownerEmail={account.email} onAnalysisDeleted={forgetDeletedAnalysis} /> : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
+      <Route path="/stores" element={account ? <MyStores key={account.email} auth={account.auth} ownerEmail={account.email}
+        onAnalysisDeleted={forgetDeletedAnalysis} onPlanDeleted={forgetDeletedPlan} /> : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
       <Route path="/stores/new" element={auth ? <StoreRegistration auth={auth} />
         : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
       <Route path="/sales" element={account ? <Intake key={account.email} auth={account.auth} ownerEmail={account.email} onAnalyze={openSavedAnalysis} />
@@ -342,6 +357,7 @@ export function App() {
             <Link to="/" className="wordmark"><Citrus /> 가게짝꿍</Link>
           </div>
           <div className="header-actions">
+            {account && workspace && <WorkspaceNotifications key={account.email} auth={account.auth} email={account.email} />}
             {account ? <AccountMenu key={pathname} name={account.name} onLogout={leavePreview} />
               : !sessionPending && (workspace
                 ? <><span className="muted">체험 모드</span><button className="text-button" onClick={leavePreview}>나가기</button></>

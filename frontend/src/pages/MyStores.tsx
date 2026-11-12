@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { deleteAnalysis, listStoreAnalyses, listStores } from '../api/shop'
+import { deleteAnalysis, deleteExecutionPlan, listStoreAnalyses, listStores } from '../api/shop'
 import type { Store, StoreAnalysisSummary } from '../api/shop'
 import { monthLabel } from '../data/shop'
+import { notifyResultsDataChanged } from '../data/promotionArchive'
 import { PageTitle } from '../components/ui'
 import { useStoreSelection } from '../components/useStoreSelection'
 import { MenuPhotos } from './MenuPhotos'
@@ -27,7 +28,9 @@ function storeOptionLabel(store: Store) {
   return `${store.name} · ${store.areaName} · 메뉴 ${store.menuCount}개`
 }
 
-function StoreHistory({ auth, store, onAnalysisDeleted }: { auth: string; store: Store; onAnalysisDeleted: (id: string) => void }) {
+function StoreHistory({ auth, store, onAnalysisDeleted, onPlanDeleted }: {
+  auth: string; store: Store; onAnalysisDeleted: (id: string) => void; onPlanDeleted: (id: string) => void
+}) {
   const [history, setHistory] = useState<StoreAnalysisSummary[]>()
   const [deleting, setDeleting] = useState<string>()
   const [deleteError, setDeleteError] = useState('')
@@ -58,9 +61,30 @@ function StoreHistory({ auth, store, onAnalysisDeleted }: { auth: string; store:
       await deleteAnalysis(auth, analysis.id)
       setHistory(items => items?.filter(item => item.id !== analysis.id))
       onAnalysisDeleted(analysis.id)
+      notifyResultsDataChanged()
       setDeleteMessage('분석을 삭제했어요.')
     } catch (failure) {
       setDeleteError(failure instanceof Error ? failure.message : '분석을 삭제하지 못했어요.')
+    } finally {
+      setDeleting(undefined)
+    }
+  }
+
+  async function removePlan(analysisId: string, plan: StoreAnalysisSummary['plans'][number]) {
+    const label = plan.title || '실행 계획'
+    if (!window.confirm(`‘${label}’ (${plan.startDate} ~ ${plan.endDate}) 계획을 삭제할까요? 연결된 점검표와 실행 결과도 함께 삭제돼요. 이미 게시된 인스타그램 게시물은 인스타그램에 남아요.`)) return
+    setDeleting(plan.id)
+    setDeleteError('')
+    setDeleteMessage('')
+    try {
+      await deleteExecutionPlan(auth, plan.id)
+      setHistory(items => items?.map(item => item.id === analysisId
+        ? { ...item, plans: item.plans.filter(value => value.id !== plan.id) } : item))
+      onPlanDeleted(plan.id)
+      notifyResultsDataChanged()
+      setDeleteMessage(`‘${label}’ 계획을 삭제했어요.`)
+    } catch (failure) {
+      setDeleteError(failure instanceof Error ? failure.message : '실행 계획을 삭제하지 못했어요.')
     } finally {
       setDeleting(undefined)
     }
@@ -107,6 +131,8 @@ function StoreHistory({ auth, store, onAnalysisDeleted }: { auth: string; store:
                         <Link className="button secondary small" to={'/execution?' + query}>실행 계획 열기</Link>
                         {plan.hasResult ? <Link className="button secondary small" to={'/results?' + query}>실행 결과 열기</Link>
                           : <span className="muted">저장된 결과 없음</span>}
+                        <button type="button" className="text-button" disabled={Boolean(deleting)}
+                          onClick={() => void removePlan(analysis.id, plan)}>{deleting === plan.id ? '삭제 중…' : '실행 계획 삭제'}</button>
                       </div>
                     </div>
                   </li>
@@ -117,10 +143,11 @@ function StoreHistory({ auth, store, onAnalysisDeleted }: { auth: string; store:
   </section>
 }
 
-export function MyStores({ auth, ownerEmail, onAnalysisDeleted }: {
+export function MyStores({ auth, ownerEmail, onAnalysisDeleted, onPlanDeleted }: {
   auth: string
   ownerEmail: string
   onAnalysisDeleted: (id: string) => void
+  onPlanDeleted: (id: string) => void
 }) {
   const [params, setParams] = useSearchParams()
   const [stores, setStores] = useState<Store[]>()
@@ -173,8 +200,10 @@ export function MyStores({ auth, ownerEmail, onAnalysisDeleted }: {
           {storeSections.map(({ id, label }) => <Link key={id} to={'?' + storeQuery(selected.id, id)}
             preventScrollReset aria-current={section === id ? 'page' : undefined}>{label}</Link>)}
         </nav>
-        {section === 'history' && <StoreHistory key={selected.id} auth={auth} store={selected} onAnalysisDeleted={onAnalysisDeleted} />}
-        {section === 'pos-files' && <StorePosFiles key={selected.id} auth={auth} storeId={selected.id} />}
+        {section === 'history' && <StoreHistory key={selected.id} auth={auth} store={selected}
+          onAnalysisDeleted={onAnalysisDeleted} onPlanDeleted={onPlanDeleted} />}
+        {section === 'pos-files' && <StorePosFiles key={selected.id + ':' + (params.get('date') ?? '') + ':' + (params.get('kind') ?? '')}
+          auth={auth} storeId={selected.id} initialDate={params.get('date')} initialKind={params.get('kind')} />}
         {section === 'photos' && <MenuPhotos key={selected.id} auth={auth} storeId={selected.id} />}
         {section === 'tone' && <section className="store-tone-panel" aria-label="홍보 말투 설정">
           <StorePromotionTone key={selected.id} auth={auth} storeId={selected.id} />

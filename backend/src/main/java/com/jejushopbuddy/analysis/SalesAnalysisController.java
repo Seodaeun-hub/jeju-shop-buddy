@@ -219,6 +219,19 @@ class SalesAnalysisController {
         return ResponseEntity.ok(plan.get());
     }
 
+    @DeleteMapping("/api/plans/{planId}")
+    ResponseEntity<?> deletePlan(@PathVariable String planId, Principal owner) {
+        UUID id = parseId(planId, "INVALID_PLAN_ID", "실행 계획 ID 형식을 확인해 주세요.", "planId");
+        return switch (planWriter.delete(id, owner.getName())) {
+            case DELETED -> ResponseEntity.noContent().build();
+            case NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new ApiError("PLAN_NOT_FOUND", "실행 계획을 찾을 수 없어요.", null));
+            case PUBLICATION_PENDING -> ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(new ApiError("PLAN_PUBLICATION_PENDING",
+                            "인스타그램 게시가 예약되어 있거나 확인이 필요해요. 실행 관리에서 게시 상태를 먼저 확인해 주세요.", null));
+        };
+    }
+
     @GetMapping(path = "/api/plans/{planId}/results", produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<?> getLatestResult(@PathVariable String planId, Principal owner) {
         UUID id = parseId(planId, "INVALID_PLAN_ID", "실행 계획 ID 형식을 확인해 주세요.", "planId");

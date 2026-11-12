@@ -74,6 +74,24 @@ async function readPosCsv(file: File) {
   return parseCsv(text)
 }
 
+export async function inspectPosDates(file: File, kind: 'PAYMENT' | 'PRODUCT') {
+  if (!file.size || file.size > maxFileSize) return
+  const rows = kind === 'PRODUCT' ? await readPosCsv(file) : await readPosRows(file)
+  const firstRow = rows.findIndex(row => row.some(cell => String(cell ?? '').trim()))
+  const dateColumn = kind === 'PRODUCT' ? productColumns[0] : columns[0]
+  const index = rows[firstRow]?.findIndex(cell => String(cell ?? '').replace(/\s/g, '') === dateColumn) ?? -1
+  if (index < 0) return
+  let start: string | undefined
+  let end: string | undefined
+  for (const row of rows.slice(firstRow + 1)) {
+    const day = readDate(row[index])
+    if (!day) continue
+    if (!start || day < start) start = day
+    if (!end || day > end) end = day
+  }
+  if (start && end) return { start, end }
+}
+
 export async function readProductSales(file: File, beforeMonth: string, afterMonth: string): Promise<ProductSale[]> {
   if (file.size > maxFileSize) throw new Error('10MB 이하의 상품 주문 CSV를 선택해 주세요.')
   const rows = /\.csv$/i.test(file.name) ? await readPosCsv(file)
@@ -143,7 +161,7 @@ export async function readProductSales(file: File, beforeMonth: string, afterMon
     || a.productName.localeCompare(b.productName, 'ko'))
 }
 
-export async function importPromotionProduct(file: File, product: string, start: string, end: string) {
+async function readPromotionOrders(file: File) {
   if (file.size > maxFileSize) throw new Error('10MB 이하의 POS 파일을 선택해 주세요.')
   let rows: Cell[][]
   if (/\.xlsx$/i.test(file.name)) {
@@ -165,26 +183,52 @@ export async function importPromotionProduct(file: File, product: string, start:
   if (indices.includes(-1)) {
     throw new Error('상품 주문에 주문기준일자·결제상태·상품명·수량·실판매금액 열이 있는지 확인해 주세요.')
   }
+  return rows.flatMap((row, index) => {
+    if (index <= headerIndex || row.every(cell => !String(cell ?? '').trim())) return []
+    const [dateValue, state, name, count, amount] = indices.map(column => row[column])
+    const date = readDate(dateValue)
+    if (!date) throw new Error(`${index + 1}행의 주문기준일자를 확인해 주세요.`)
+    return [{ date, status: String(state ?? '').trim(), name: String(name ?? '').trim(), count, amount, line: index + 1 }]
+  })
+}
 
+function isCompletedOrder({ status, name, line }: Awaited<ReturnType<typeof readPromotionOrders>>[number]) {
+  if (!['완료', '결제완료', '취소', '결제취소'].includes(status) || !name) {
+    throw new Error(`${line}행의 결제상태와 상품명을 확인해 주세요.`)
+  }
+  return status === '완료' || status === '결제완료'
+}
+
+export async function readArchivedProductDays(file: File) {
+  const days = new Map<string, Map<string, { quantity: number; amount: number } | null>>()
+  for (const order of await readPromotionOrders(file)) {
+    const products = days.get(order.date) ?? new Map()
+    days.set(order.date, products)
+    if (!isCompletedOrder(order)) continue
+    const previous = products.get(order.name)
+    const count = readTotal(order.count)
+    const sales = readTotal(order.amount)
+    const quantity = (previous?.quantity ?? 0) + (count ?? 0)
+    const amount = (previous?.amount ?? 0) + (sales ?? 0)
+    products.set(order.name, previous === null || count === undefined || sales === undefined
+      || !Number.isSafeInteger(quantity) || !Number.isSafeInteger(amount) ? null : { quantity, amount })
+  }
+  return days
+}
+
+export async function importPromotionProduct(file: File, product: string, start: string, end: string) {
   const days = new Set<string>()
   let quantity = 0
   let amount = 0
-  for (const [index, row] of rows.entries()) {
-    if (index <= headerIndex || row.every(cell => !String(cell ?? '').trim())) continue
-    const [dateValue, state, name, countValue, amountValue] = indices.map(column => row[column])
-    const date = readDate(dateValue)
-    if (!date) throw new Error(`${index + 1}행의 주문기준일자를 확인해 주세요.`)
-    if (date < start || date > end) continue
-    const status = String(state ?? '').trim()
-    if (!['완료', '결제완료', '취소', '결제취소'].includes(status) || !String(name ?? '').trim()) {
-      throw new Error(`${index + 1}행의 결제상태와 상품명을 확인해 주세요.`)
-    }
-    days.add(date)
-    if (status === '취소' || status === '결제취소' || String(name).trim() !== product) continue
-    const count = readTotal(countValue)
-    const sales = readTotal(amountValue)
+  for (const order of await readPromotionOrders(file)) {
+    if (order.date < start || order.date > end) continue
+    const completed = isCompletedOrder(order)
+    days.add(order.date)
+    if (!completed || order.name !== product) continue
+    const count = readTotal(order.count)
+    const sales = readTotal(order.amount)
     if (count === undefined || sales === undefined) {
-      throw new Error(`${index + 1}행의 수량과 실판매금액을 확인해 주세요.`)
+      throw new Error(`${order.line}행의 수량과 실판매금액을 확인해 주세요.`)
     }
     quantity += count
     amount += sales

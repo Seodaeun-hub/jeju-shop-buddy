@@ -163,6 +163,42 @@ class ExecutionPlanWriter {
         return new ChecklistUpdate(true, item.orElse(null));
     }
 
+    enum DeleteStatus { DELETED, NOT_FOUND, PUBLICATION_PENDING }
+
+    @Transactional
+    public DeleteStatus delete(UUID planId, String ownerEmail) {
+        var plan = jdbc.sql("""
+                SELECT p.id, p.instagram_publication->>'state' AS publication_state
+                FROM execution_plans p
+                JOIN sales_analyses a ON a.id=p.analysis_id
+                JOIN stores s ON s.id=a.store_id JOIN owners o ON o.id=s.owner_id
+                WHERE p.id=:planId AND o.email=:ownerEmail
+                FOR UPDATE OF p
+                """).param("planId", planId).param("ownerEmail", ownerEmail)
+                .query(LockedPlan.class).optional();
+        if (plan.isEmpty()) return DeleteStatus.NOT_FOUND;
+        if (plan.get().publicationPending()) return DeleteStatus.PUBLICATION_PENDING;
+        deleteLockedPlans(jdbc, List.of(plan.get()));
+        return DeleteStatus.DELETED;
+    }
+
+    static void deleteLockedPlans(JdbcClient jdbc, List<LockedPlan> plans) {
+        if (plans.isEmpty()) return;
+        var ids = plans.stream().map(LockedPlan::id).toList();
+        jdbc.sql("DELETE FROM execution_checklist_items WHERE plan_id IN (:ids)").param("ids", ids).update();
+        jdbc.sql("DELETE FROM execution_results WHERE plan_id IN (:ids)").param("ids", ids).update();
+        jdbc.sql("DELETE FROM execution_plans WHERE id IN (:ids)").param("ids", ids).update();
+    }
+
+    record LockedPlan(UUID id, String publicationState) {
+        boolean publicationPending() {
+            return publicationState != null && switch (publicationState) {
+                case "SCHEDULED", "PUBLISHING", "VERIFY_REQUIRED" -> true;
+                default -> false;
+            };
+        }
+    }
+
     private static List<ChecklistItem> checklistFor(Suggestion strategy, Conditions conditions,
                                                      LocalDate start, LocalDate end) {
         if (strategy.code().equals("CUSTOM")) {

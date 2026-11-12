@@ -5,7 +5,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.Principal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.Locale;
 import java.util.UUID;
 import org.springframework.http.CacheControl;
@@ -30,6 +32,7 @@ import org.springframework.web.multipart.MultipartFile;
 @RequestMapping("/api/stores/{storeId}/pos-files")
 class StorePosFileController {
     private static final int MAX_SIZE = 10 * 1024 * 1024;
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private final JdbcClient jdbc;
 
     StorePosFileController(JdbcClient jdbc) {
@@ -42,7 +45,7 @@ class StorePosFileController {
             return error(HttpStatus.NOT_FOUND, "STORE_NOT_FOUND", "매장을 찾을 수 없어요.");
         }
         var files = jdbc.sql("""
-                SELECT id, kind, filename, octet_length(content) AS size, uploaded_at
+                SELECT id, kind, filename, octet_length(content) AS size, uploaded_at, coverage_start, coverage_end, calendar_date
                 FROM store_pos_files WHERE store_id = :store
                 ORDER BY uploaded_at DESC, id DESC
                 """).param("store", storeId).query(StorePosFileController::metadata).list();
@@ -51,7 +54,9 @@ class StorePosFileController {
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     ResponseEntity<?> upload(@PathVariable UUID storeId, @RequestParam String kind,
-                             @RequestParam MultipartFile file, Principal owner) {
+                             @RequestParam MultipartFile file, @RequestParam(required = false) LocalDate coverageStart,
+                             @RequestParam(required = false) LocalDate coverageEnd,
+                             @RequestParam(required = false) LocalDate calendarDate, Principal owner) {
         String originalName = file.getOriginalFilename();
         String filename = originalName == null ? "" : originalName.replace('\\', '/');
         filename = filename.substring(filename.lastIndexOf('/') + 1).strip();
@@ -68,6 +73,15 @@ class StorePosFileController {
         if (file.getSize() > MAX_SIZE) {
             return tooLarge();
         }
+        LocalDate today = LocalDate.now(SEOUL);
+        if (calendarDate != null && (calendarDate.getYear() < 1900 || calendarDate.isAfter(today))) {
+            return error(HttpStatus.BAD_REQUEST, "INVALID_POS_CALENDAR_DATE", "POS를 기록할 날짜를 확인해 주세요.");
+        }
+        if ((coverageStart == null) != (coverageEnd == null) || (coverageStart != null
+                && (coverageStart.getYear() < 1900 || coverageStart.isAfter(coverageEnd)
+                || coverageEnd.isAfter(today)))) {
+            return error(HttpStatus.BAD_REQUEST, "INVALID_POS_COVERAGE", "POS를 내보낸 시작일과 종료일을 확인해 주세요.");
+        }
         byte[] content;
         try {
             content = file.getBytes();
@@ -75,13 +89,14 @@ class StorePosFileController {
             return error(HttpStatus.BAD_REQUEST, "UNREADABLE_POS_FILE", "파일을 읽을 수 없어요. 다시 선택해 주세요.");
         }
         var saved = jdbc.sql("""
-                INSERT INTO store_pos_files (id, store_id, kind, filename, content)
-                SELECT :id, s.id, :kind, :filename, :content
+                INSERT INTO store_pos_files (id, store_id, kind, filename, content, coverage_start, coverage_end, calendar_date)
+                SELECT :id, s.id, :kind, :filename, :content, :coverageStart, :coverageEnd, :calendarDate
                 FROM stores s JOIN owners o ON o.id = s.owner_id
                 WHERE s.id = :store AND o.email = :email
-                RETURNING id, kind, filename, octet_length(content) AS size, uploaded_at
+                RETURNING id, kind, filename, octet_length(content) AS size, uploaded_at, coverage_start, coverage_end, calendar_date
                 """).param("id", UUID.randomUUID()).param("kind", kind).param("filename", filename)
                 .param("content", content).param("store", storeId).param("email", owner.getName())
+                .param("coverageStart", coverageStart).param("coverageEnd", coverageEnd).param("calendarDate", calendarDate)
                 .query(StorePosFileController::metadata).optional();
         if (saved.isEmpty()) {
             return error(HttpStatus.NOT_FOUND, "STORE_NOT_FOUND", "매장을 찾을 수 없어요.");
@@ -131,7 +146,9 @@ class StorePosFileController {
 
     private static PosFile metadata(ResultSet rs, int row) throws SQLException {
         return new PosFile(rs.getObject("id", UUID.class), rs.getString("kind"), rs.getString("filename"),
-                rs.getInt("size"), rs.getObject("uploaded_at", OffsetDateTime.class));
+                rs.getInt("size"), rs.getObject("uploaded_at", OffsetDateTime.class),
+                rs.getObject("coverage_start", LocalDate.class), rs.getObject("coverage_end", LocalDate.class),
+                rs.getObject("calendar_date", LocalDate.class));
     }
 
     private static ResponseEntity<?> missingFile() {
@@ -143,6 +160,7 @@ class StorePosFileController {
                 .body(new StoreController.ApiError(code, message, null));
     }
 
-    private record PosFile(UUID id, String kind, String filename, int size, OffsetDateTime uploadedAt) {}
+    private record PosFile(UUID id, String kind, String filename, int size, OffsetDateTime uploadedAt,
+                           LocalDate coverageStart, LocalDate coverageEnd, LocalDate calendarDate) {}
     private record StoredFile(String filename, byte[] content) {}
 }
