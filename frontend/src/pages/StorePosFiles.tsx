@@ -4,6 +4,7 @@ import { Link } from 'react-router'
 import { deletePosFile, listPosFiles, uploadPosFile } from '../api/shop'
 import type { PosFileKind, StoredPosFile } from '../api/shop'
 import { PosFileCalendar } from '../components/PosFileCalendar'
+import { useStandaloneApp } from '../components/useStandaloneApp'
 import { inspectPosDates } from '../data/pos'
 import { notifyResultsDataChanged, seoulDate, showWorkspaceNotifications } from '../data/promotionArchive'
 
@@ -22,6 +23,7 @@ export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKi
   uploadRequest?: { missingStart: string | null; resultTo?: string }
 }) {
   const today = seoulDate()
+  const standalone = useStandaloneApp()
   const input = useRef<HTMLInputElement>(null)
   const uploadHeading = useRef<HTMLHeadingElement>(null)
   const [files, setFiles] = useState<StoredPosFile[]>()
@@ -29,6 +31,7 @@ export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKi
   const [view, setView] = useState<'calendar' | 'all'>('calendar')
   const [selectedDate, setSelectedDate] = useState(() => startingDate(initialDate, today))
   const [month, setMonth] = useState(() => selectedDate.slice(0, 7))
+  const [uploadOpen, setUploadOpen] = useState(Boolean(initialDate || uploadRequest))
   const [filterMonth, setFilterMonth] = useState('')
   const [filterKind, setFilterKind] = useState('')
   const [search, setSearch] = useState('')
@@ -42,6 +45,7 @@ export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKi
   const [retry, setRetry] = useState(0)
   const filesReady = files !== undefined
   const focusUpload = Boolean(uploadRequest)
+  const dateInView = selectedDate.startsWith(month)
   const requestedEnd = startingDate(initialDate, today)
   const requestedStart = startingDate(uploadRequest?.missingStart ?? null, today)
   const missingPeriod = uploadRequest?.missingStart === requestedStart && initialDate === requestedEnd
@@ -64,10 +68,10 @@ export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKi
   }, [auth, storeId, retry])
 
   useEffect(() => {
-    if (!focusUpload || !filesReady) return
+    if (standalone || !focusUpload || !filesReady) return
     uploadHeading.current?.focus({ preventScroll: true })
     uploadHeading.current?.scrollIntoView({ block: 'start' })
-  }, [focusUpload, filesReady])
+  }, [standalone, focusUpload, filesReady])
 
   useEffect(() => {
     if (!selected) return
@@ -81,6 +85,7 @@ export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKi
   function selectDate(date: string) {
     setSelectedDate(date)
     setMonth(date.slice(0, 7))
+    setUploadOpen(true)
   }
 
   async function upload(event: FormEvent<HTMLFormElement>) {
@@ -155,6 +160,40 @@ export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKi
     && (!filterKind || file.kind === filterKind) && file.filename.toLocaleLowerCase('ko-KR').includes(search.trim().toLocaleLowerCase('ko-KR'))) ?? []
   const calendar = <PosFileCalendar month={month} today={today} selected={selectedDate} counts={counts}
     disabled={busy} onMonth={setMonth} onSelect={selectDate} />
+  const layout = standalone ? ' pos-calendar-layout-app' : focusUpload ? ' pos-calendar-layout-upload' : ''
+  const registrationHelp = focusUpload
+    ? <p className="muted">{storeName}{missingPeriod && ` · 필요한 상품 주문 POS ${missingPeriod}`}</p>
+    : <p className="muted">파일은 선택한 날짜에 표시돼요. 매출 집계는 파일 속 거래일을 사용해요.</p>
+  const fileHelp = <p className="muted">행사 결과에는 상품 주문 CSV나 상품 주문 시트가 포함된 엑셀을 사용해요.</p>
+  const uploadForm = <form className="pos-library-upload" onSubmit={upload}>
+    <label>파일 종류<select value={kind} disabled={busy} onChange={event => {
+      setKind(event.target.value === 'PRODUCT' ? 'PRODUCT' : 'PAYMENT')
+      setSelected(undefined)
+      setInspection(undefined)
+      setError('')
+      if (input.current) input.current.value = ''
+    }}><option value="PAYMENT">결제 내역 (엑셀·CSV)</option><option value="PRODUCT">상품 주문 (CSV)</option></select></label>
+    <label>POS 파일 (최대 10MB)<input ref={input} type="file" accept={kind === 'PRODUCT' ? '.csv' : '.xlsx,.csv'}
+      disabled={busy} onChange={event => { setSelected(event.target.files?.[0]); setInspection(undefined); setError('') }} /></label>
+    <button type="submit" className="button primary" disabled={busy || !selected}>
+      {operation === 'upload' ? '저장 중…' : '파일 저장'}
+    </button>
+    <details className="pos-coverage-fields">
+      <summary>내보낸 기간 기록 (선택)</summary>
+      <p className="muted">쉰 날이나 주문이 없던 날도 포함한 전체 내보내기 기간을 적어 주세요.</p>
+      <div>
+        <label>내보내기 시작일<input name="coverageStart" type="date" min="1900-01-01" max={today} disabled={busy} /></label>
+        <label>내보내기 종료일<input name="coverageEnd" type="date" min="1900-01-01" max={today} disabled={busy} /></label>
+      </div>
+    </details>
+  </form>
+  const datePreview = dates && <div className="pos-calendar-date-preview">
+    <p>파일에서 확인한 거래일 · {dates.start}{dates.start === dates.end ? '' : ` ~ ${dates.end}`}</p>
+    {dates.end !== selectedDate && dates.end >= '1900-01-01' && dates.end <= today &&
+      <button type="button" className="text-button" disabled={busy} onClick={() => selectDate(dates.end)}>
+        마지막 거래일로 이동
+      </button>}
+  </div>
   const uploadFeedback = <>
     {status && <p role="status">{status.message}</p>}
     {error && <p className="error" role="alert">{error}</p>}
@@ -175,38 +214,23 @@ export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKi
           <button type="button" aria-pressed={view === 'all'} disabled={busy} onClick={() => setView('all')}>전체 파일</button>
         </nav>
         {(!focusUpload || view === 'all') && uploadFeedback}
-        <div className={`pos-calendar-layout${focusUpload ? ' pos-calendar-layout-upload' : ''}`} hidden={view !== 'calendar'}>
-          {!focusUpload && calendar}
-          <section className="pos-calendar-registration form-stack" aria-labelledby="pos-selected-day">
-            <div>
-              <h3 id="pos-selected-day" ref={uploadHeading} tabIndex={focusUpload ? -1 : undefined}>
+        <div className={`pos-calendar-layout${layout}`} hidden={view !== 'calendar'}>
+          {(!focusUpload || standalone) && calendar}
+          <section className="pos-calendar-registration form-stack" aria-labelledby="pos-selected-day" hidden={standalone && !dateInView}>
+            <div className={standalone ? 'pos-registration-heading' : undefined}>
+              <h3 id="pos-selected-day" ref={uploadHeading} tabIndex={!standalone && focusUpload ? -1 : undefined}>
                 <time dateTime={selectedDate}>{selectedDate}</time> POS 기록
               </h3>
-              {focusUpload && <p className="muted">{storeName}{missingPeriod && ` · 필요한 상품 주문 POS ${missingPeriod}`}</p>}
-              {!focusUpload && <p className="muted">파일은 선택한 날짜에 표시돼요. 매출 집계는 파일 속 거래일을 사용해요.</p>}
+              {standalone ? <button type="button" className="button secondary small pos-upload-toggle"
+                aria-expanded={uploadOpen} aria-controls="pos-upload-form" disabled={busy}
+                onClick={() => setUploadOpen(open => !open)}>파일 추가</button> : registrationHelp}
             </div>
-            <form className="pos-library-upload" onSubmit={upload}>
-              <label>파일 종류<select value={kind} disabled={busy} onChange={event => {
-                setKind(event.target.value === 'PRODUCT' ? 'PRODUCT' : 'PAYMENT')
-                setSelected(undefined)
-                setInspection(undefined)
-                setError('')
-                if (input.current) input.current.value = ''
-              }}><option value="PAYMENT">결제 내역 (엑셀·CSV)</option><option value="PRODUCT">상품 주문 (CSV)</option></select></label>
-              <label>POS 파일 (최대 10MB)<input ref={input} type="file" accept={kind === 'PRODUCT' ? '.csv' : '.xlsx,.csv'}
-                disabled={busy} onChange={event => { setSelected(event.target.files?.[0]); setInspection(undefined); setError('') }} /></label>
-              <button type="submit" className="button primary" disabled={busy || !selected}>
-                {operation === 'upload' ? '저장 중…' : '파일 저장'}
-              </button>
-              <details className="pos-coverage-fields">
-                <summary>내보낸 기간 기록 (선택)</summary>
-                <p className="muted">쉰 날이나 주문이 없던 날도 포함한 전체 내보내기 기간을 적어 주세요.</p>
-                <div>
-                  <label>내보내기 시작일<input name="coverageStart" type="date" min="1900-01-01" max={today} disabled={busy} /></label>
-                  <label>내보내기 종료일<input name="coverageEnd" type="date" min="1900-01-01" max={today} disabled={busy} /></label>
-                </div>
-              </details>
-            </form>
+            {standalone ? <div id="pos-upload-form" className="pos-upload-fields form-stack" hidden={!uploadOpen}>
+              {registrationHelp}
+              {uploadForm}
+              {datePreview}
+              {fileHelp}
+            </div> : uploadForm}
             {focusUpload && uploadFeedback}
             {uploadRequest?.resultTo && <Link className="button secondary pos-upload-result" to={uploadRequest.resultTo}>
               이 계획의 실행 결과 확인 <span aria-hidden="true">→</span>
@@ -214,18 +238,12 @@ export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKi
             {focusUpload && !uploadRequest?.resultTo && status?.operation === 'upload' &&
               <button type="button" className="button secondary pos-upload-result"
                 onClick={() => window.dispatchEvent(new Event(showWorkspaceNotifications))}>결과 알림 보기</button>}
-            {dates && <div className="pos-calendar-date-preview">
-              <p>파일에서 확인한 거래일 · {dates.start}{dates.start === dates.end ? '' : ` ~ ${dates.end}`}</p>
-              {dates.end !== selectedDate && dates.end >= '1900-01-01' && dates.end <= today &&
-                <button type="button" className="text-button" disabled={busy} onClick={() => selectDate(dates.end)}>
-                  마지막 거래일로 이동
-                </button>}
-            </div>}
-            <p className="muted">행사 결과에는 상품 주문 CSV나 상품 주문 시트가 포함된 엑셀을 사용해요.</p>
+            {!standalone && <>{datePreview}{fileHelp}</>}
             {fileList(files.filter(file => calendarDate(file) === selectedDate),
               files.length ? '이날 등록한 POS 파일이 없어요.' : '저장된 POS 파일이 없어요.', false)}
           </section>
-          {focusUpload && calendar}
+          {standalone && !dateInView && <p className="muted">날짜를 선택하면 POS 파일을 추가할 수 있어요.</p>}
+          {!standalone && focusUpload && calendar}
         </div>
         {view === 'all' && <>
           <div className="pos-library-filters">

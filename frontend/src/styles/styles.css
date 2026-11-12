@@ -110,11 +110,13 @@ input[type="checkbox"], input[type="radio"] { width: 1.18rem; min-height: 0; hei
   min-width: 1.2rem;
   padding: .08rem .22rem;
   border-radius: 8px;
-  background: #f2d8ad;
-  color: #283226;
+  background: #d8efd9;
+  color: #1f5633;
   text-align: center;
   font-size: .72rem;
+  font-weight: 700;
 }
+.workspace-notification-count[data-unread="true"] { background: #b62f39; color: #fff; }
 .workspace-notification-panel {
   position: absolute;
   z-index: 15;
@@ -137,10 +139,12 @@ input[type="checkbox"], input[type="radio"] { width: 1.18rem; min-height: 0; hei
   padding: .8rem 1rem;
 }
 .workspace-notification-heading h2 { font-size: 1.08rem; font-weight: 750; margin: 0; }
+.workspace-push-test { padding: 0 1rem .75rem; }
+.workspace-push-test p { font-size: .85rem; margin: .35rem 0 0; }
 .workspace-notification-panel > p { padding: 0 1rem .75rem; margin: 0; }
 .workspace-notification-panel ul { list-style: none; margin: 0; padding: 0; }
 .workspace-notification-panel li { border-top: 1px solid var(--line); }
-.workspace-notification-panel li a {
+.workspace-notification-item {
   display: grid;
   gap: .2rem;
   padding: .7rem 1rem;
@@ -148,9 +152,31 @@ input[type="checkbox"], input[type="radio"] { width: 1.18rem; min-height: 0; hei
   text-decoration: none;
   overflow-wrap: anywhere;
 }
-.workspace-notification-panel li a > span:first-child { color: var(--green); font-size: .78rem; font-weight: 750; }
-.workspace-notification-panel li a[data-unread="true"] { background: #edf2eb; }
-.workspace-notification-panel li a:hover { background: #e1eae0; }
+.workspace-notification-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: .5rem;
+  color: var(--green);
+  font-size: .78rem;
+  font-weight: 750;
+}
+.workspace-notification-item[data-unread="true"] { background: #edf2eb; }
+.workspace-notification-item[data-unread="true"] .workspace-notification-meta > span::before {
+  content: "";
+  display: inline-block;
+  width: .38rem;
+  height: .38rem;
+  margin-inline-end: .4rem;
+  border-radius: 50%;
+  background: #b62f39;
+  vertical-align: .12em;
+}
+.workspace-notification-item[data-unread="false"] { background: #f2f3f4; color: #454a47; }
+.workspace-notification-item[data-unread="false"] .workspace-notification-meta { color: #575e59; }
+.workspace-notification-item[data-unread="false"] > strong { font-weight: 400; }
+@media (hover: hover) {
+  a.workspace-notification-item:hover { background: #e1eae0; }
+}
 @media (max-width: 550px) {
   .workspace-notification-panel { position: fixed; top: 4.15rem; right: .8rem; left: .8rem; width: auto; }
 }

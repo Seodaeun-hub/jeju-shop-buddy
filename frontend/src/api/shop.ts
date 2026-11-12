@@ -49,6 +49,12 @@ async function request<T>(...args: Parameters<typeof send>): Promise<T> {
   return (await send(...args)).json()
 }
 
+export const fetchPushTestConfig = (auth: string, signal: AbortSignal) =>
+  request<{ publicKey: string | null }>('/api/push/config', auth, 'GET', undefined, signal)
+
+export const sendPushTest = (auth: string, subscription: PushSubscriptionJSON) =>
+  request<{ delaySeconds: number }>('/api/push/test', auth, 'POST', subscription)
+
 export type InstagramPublication = {
   state: 'SCHEDULED' | 'PUBLISHING' | 'PUBLISHED' | 'FAILED' | 'VERIFY_REQUIRED'
   username: string

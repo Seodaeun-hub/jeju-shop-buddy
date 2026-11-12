@@ -65,6 +65,7 @@
 }
 .pos-library-views button[aria-pressed='true'] { border-color: var(--green); color: var(--green); }
 .pos-calendar-layout { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: clamp(.75rem, 2vw, 1.4rem); align-items: start; }
+.pos-calendar-layout-app { grid-template-columns: minmax(0, 1fr); gap: .85rem; width: min(100%, 50rem); }
 .pos-calendar-layout[hidden] { display: none; }
 .pos-calendar { min-width: 0; border: 1px solid var(--line); border-radius: 9px; padding: clamp(.5rem, 1.5vw, .9rem); }
 .pos-calendar-navigation {
@@ -97,6 +98,19 @@
 .pos-calendar-registration { min-width: 0; padding: .8rem; border: 1px solid var(--line); border-radius: 9px; }
 .pos-calendar-registration h3 { margin: 0 0 .3rem; }
 .pos-calendar-layout-upload .pos-calendar-registration h3 { scroll-margin-top: 1rem; }
+.pos-registration-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
+.pos-registration-heading h3 { margin: 0; }
+.pos-calendar-registration[hidden], .pos-upload-fields[hidden] { display: none; }
+.pos-upload-toggle::after {
+  content: '';
+  width: .38rem;
+  height: .38rem;
+  margin-top: -.18rem;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(45deg);
+}
+.pos-upload-toggle[aria-expanded="true"]::after { margin-top: .18rem; transform: rotate(225deg); }
 .pos-upload-result { justify-self: start; }
 .pos-calendar-registration p { margin: 0; }
 .pos-calendar-date-preview { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .65rem; }
@@ -105,8 +119,8 @@
 .pos-library-filters input { max-width: 100%; }
 @media (max-width: 800px) {
   .pos-calendar-layout { grid-template-columns: minmax(0, 1fr); }
-  .pos-calendar-layout-upload .pos-library-upload { display: grid; grid-template-columns: minmax(0, 1fr); }
-  .pos-calendar-layout-upload .pos-library-upload > .button, .pos-upload-result { width: 100%; }
+  :is(.pos-calendar-layout-upload, .pos-calendar-layout-app) .pos-library-upload { display: grid; grid-template-columns: minmax(0, 1fr); }
+  :is(.pos-calendar-layout-upload, .pos-calendar-layout-app) .pos-library-upload > .button, .pos-upload-result { width: 100%; }
 }
 
 .menu-photo-grid {
