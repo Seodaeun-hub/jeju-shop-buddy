@@ -54,7 +54,7 @@ class PromotionDraftController {
         if (product == null) return bad("후기를 찾을 메뉴나 가게 소식을 선택해 주세요.");
         var saved = plan.research();
         var now = Instant.now();
-        if (!input.refresh() && saved != null && product.equals(saved.subject()) && !saved.sources().isEmpty()
+        if (!Boolean.TRUE.equals(input.refresh()) && saved != null && product.equals(saved.subject()) && !saved.sources().isEmpty()
                 && saved.searchedAt().isAfter(now.minus(6, ChronoUnit.HOURS))) {
             return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(saved);
         }
@@ -120,11 +120,12 @@ class PromotionDraftController {
             return bad("홍보 문구는 채널마다 1~2,200자로 작성해 주세요.");
         }
         boolean edited = instagramEdit != null || naverEdit != null || daangnEdit != null;
+        boolean generateNewCopy = Boolean.TRUE.equals(input.generateNewCopy());
         var requestedPoints = input.reviewPointIds() == null ? List.<String>of() : input.reviewPointIds();
         ReviewSelection selected = null;
         if (!requestedPoints.isEmpty()) {
             var research = plan.research();
-            if (edited || !input.generateNewCopy() || requestedPoints.size() > 5 || research == null
+            if (edited || !generateNewCopy || requestedPoints.size() > 5 || research == null
                     || !research.id().equals(input.reviewResearchId()) || !product.equals(research.subject())) {
                 return bad("현재 메뉴의 후기 포인트를 다시 선택해 주세요.");
             }
@@ -132,7 +133,7 @@ class PromotionDraftController {
             if (points.size() != requestedPoints.size()) return bad("현재 메뉴의 후기 포인트를 다시 선택해 주세요.");
             selected = new ReviewSelection(research.sources(), points);
         }
-        boolean generate = input.generateNewCopy() || sourcePage != null || !sameSubject || (!edited && canUpgrade(plan, product));
+        boolean generate = generateNewCopy || sourcePage != null || !sameSubject || (!edited && canUpgrade(plan, product));
         if (sourcePage != null && sameSubject && "EDITED".equals(plan.draft().copySource())) {
             return bad("직접 수정해 저장한 초안은 그대로 편집할 수 있어요. 새 공개 출처를 참고하려면 새 초안을 만들어 주세요.");
         }
@@ -151,11 +152,12 @@ class PromotionDraftController {
             return ResponseEntity.unprocessableEntity().body(new ApiError("PROMOTION_SOURCE_NOT_VERIFIED",
                     "같은 매장의 공개 소개를 확인하지 못했어요. 매장 이름과 주소가 표시되는 소개 링크를 확인해 주세요.", null));
         }
-        if (input.generateNewCopy() && (generated == null || generated.basis() == Basis.BASIC)) {
+        if (selected != null && (generated == null || generated.basis() == Basis.BASIC)) {
             return ResponseEntity.status(503).body(new ApiError("PROMOTION_COPY_UNAVAILABLE",
-                    "세 채널 문구를 만들지 못했어요. 다시 시도해 주세요.", null));
+                    "선택한 후기 포인트를 반영한 초안을 만들지 못했어요. 다시 시도해 주세요.", null));
         }
-        boolean replace = generated != null && (!sameSubject || generated.basis() != Basis.BASIC);
+        boolean replace = generated != null
+                && (generateNewCopy || !sameSubject || generated.basis() != Basis.BASIC);
         var channels = replace ? generated : plan.draft().channels();
         String source = replace ? channels.basis() == Basis.BASIC ? "TEMPLATE" : "GPT" : plan.draft().copySource();
         String caption = replace ? channels.drafts().instagram() : plan.draft().caption();
@@ -370,7 +372,7 @@ class PromotionDraftController {
     record Photo(String photoDataUrl) {}
     record PhotoOptions(String photoDataUrl, Tone defaultTone) {}
     record CaptionInput(Tone tone) {}
-    record ResearchInput(String subject, boolean refresh) {}
+    record ResearchInput(String subject, Boolean refresh) {}
     record ReviewSearch(String storeName, String address, String subject) {}
     record ReviewSource(String id, String url, String title, String dateLabel) {}
     record ReviewPoint(String id, String sentence, List<String> anchors, List<String> sourceIds) {}
@@ -380,7 +382,7 @@ class PromotionDraftController {
     record ReviewFocus(String sentence, List<String> anchors) {}
     record Input(Review review, String subject, LocalDate publishDate, LocalTime publishTime, String photoDataUrl,
                  boolean useSavedPhoto, String caption, ChannelCopy channelEdits, String sourcePageUrl,
-                 boolean generateNewCopy, UUID reviewResearchId, List<String> reviewPointIds) {}
+                 Boolean generateNewCopy, UUID reviewResearchId, List<String> reviewPointIds) {}
     record ChannelInput(String storeName, String address, String subject, Tone tone, String avoidPhrases, boolean promotion,
                         @JsonInclude(JsonInclude.Include.NON_NULL) List<ChannelFinding> savedFindings,
                         @JsonInclude(JsonInclude.Include.NON_NULL) String photoDataUrl,

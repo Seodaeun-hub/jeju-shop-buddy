@@ -211,6 +211,7 @@ export function PromotionDraftForm({ plan, auth, productNames, reviewFirst, prel
       </fieldset>
       {preview && <img src={preview} alt={productName + ' 사진 미리보기'} width={160} />}
       {review?.maxDiscountQuantity === 0 && <p className="muted">할인 예산으로 최소 한 개를 할인할 수 있어야 해요.</p>}
+      {canSkipReviews && <p className="muted">AI에 연결하기 어려우면 매장 이름과 메뉴를 넣은 기본 초안을 저장해요.</p>}
       <button className="button primary small" disabled={busy || cannotSave || (reviewFirst && !selectedPoints.length && !canSkipReviews)}>
         {busy ? '준비 중…' : reviewFirst
           ? canSkipReviews ? '후기 없이 세 채널 초안 만들기' : '선택한 포인트로 세 채널 초안 만들기'
