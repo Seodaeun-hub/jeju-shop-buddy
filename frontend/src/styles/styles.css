@@ -139,8 +139,9 @@ input[type="checkbox"], input[type="radio"] { width: 1.18rem; min-height: 0; hei
   padding: .8rem 1rem;
 }
 .workspace-notification-heading h2 { font-size: 1.08rem; font-weight: 750; margin: 0; }
-.workspace-push-test { padding: 0 1rem .75rem; }
-.workspace-push-test p { font-size: .85rem; margin: .35rem 0 0; }
+.workspace-push-controls { padding: 0 1rem .75rem; }
+.workspace-push-controls p { font-size: .85rem; margin: .35rem 0; }
+.workspace-push-controls > div { display: flex; flex-wrap: wrap; gap: .35rem .85rem; }
 .workspace-notification-panel > p { padding: 0 1rem .75rem; margin: 0; }
 .workspace-notification-panel ul { list-style: none; margin: 0; padding: 0; }
 .workspace-notification-panel li { border-top: 1px solid var(--line); }

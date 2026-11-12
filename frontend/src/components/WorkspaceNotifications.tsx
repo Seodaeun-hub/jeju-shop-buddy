@@ -3,7 +3,7 @@ import { Link } from 'react-router'
 import { fetchExecutionReminders, fetchPromotionImpact, listStores } from '../api/shop'
 import { describeMissingPos, loadPromotionArchive, posLibraryPath, promotionArchiveUpdated, reconcilePromotionArchive, resultsDataChanged, seoulDate, showWorkspaceNotifications } from '../data/promotionArchive'
 import { addDays } from '../data/shop'
-import { PushTestControl } from './PushTestControl'
+import { PushControls } from './PushControls'
 
 type Notification = { id: string; category: string; title: string; message: string; to: string }
 
@@ -151,7 +151,7 @@ export function WorkspaceNotifications({ auth, email }: { auth: string; email: s
         <h2>알림</h2>
         {items && unread > 0 && <button type="button" className="text-button" onClick={() => markRead(items.map(item => item.id))}>모두 읽기</button>}
       </div>
-      <PushTestControl auth={auth} />
+      <PushControls auth={auth} />
       {!items && !error && <p role="status">알림을 확인하고 있어요.</p>}
       {error && <p>일부 알림을 불러오지 못했어요. <button type="button" className="text-button"
         onClick={() => setRevision(value => value + 1)}>다시 불러오기</button></p>}
