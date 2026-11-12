@@ -76,75 +76,85 @@ async function readPosCsv(file: File) {
 
 export async function inspectPosDates(file: File, kind: 'PAYMENT' | 'PRODUCT') {
   if (!file.size || file.size > maxFileSize) return
-  const rows = kind === 'PRODUCT' ? await readPosCsv(file) : await readPosRows(file)
+  const rows = kind === 'PRODUCT' ? await readProductRows(file) : await readPosRows(file)
   const firstRow = rows.findIndex(row => row.some(cell => String(cell ?? '').trim()))
   const dateColumn = kind === 'PRODUCT' ? productColumns[0] : columns[0]
   const index = rows[firstRow]?.findIndex(cell => String(cell ?? '').replace(/\s/g, '') === dateColumn) ?? -1
   if (index < 0) return
   let start: string | undefined
   let end: string | undefined
+  const days = new Set<string>()
   for (const row of rows.slice(firstRow + 1)) {
     const day = readDate(row[index])
     if (!day) continue
+    days.add(day)
     if (!start || day < start) start = day
     if (!end || day > end) end = day
   }
-  if (start && end) return { start, end }
+  if (start && end) return { start, end, days }
+}
+
+async function readProductRows(file: File) {
+  if (file.size > maxFileSize) throw new Error('10MB 이하의 상품 주문 CSV를 선택해 주세요.')
+  return /\.csv$/i.test(file.name) ? await readPosCsv(file)
+    : await (await import('read-excel-file/browser')).readSheet(file, '상품 주문')
 }
 
 export async function readProductSales(file: File, beforeMonth: string, afterMonth: string): Promise<ProductSale[]> {
-  if (file.size > maxFileSize) throw new Error('10MB 이하의 상품 주문 CSV를 선택해 주세요.')
-  const rows = /\.csv$/i.test(file.name) ? await readPosCsv(file)
-    : await (await import('read-excel-file/browser')).readSheet(file, '상품 주문')
-  const headerIndex = rows.findIndex((row) => row.some((cell) => String(cell ?? '').trim()))
-  const header = rows[headerIndex]?.map((value) => String(value ?? '').replace(/\s/g, ''))
-  const indices = productColumns.map((column) => header?.indexOf(column) ?? -1)
-  if (indices.includes(-1)) throw new Error('Invalid product order columns')
+  return aggregateProductSales([{ rows: await readProductRows(file) }], beforeMonth, afterMonth)
+}
 
-  const priceIndex = header.indexOf('상품가격')
-  const revenueIndex = header.findIndex(column => productRevenueColumn.test(column))
+function aggregateProductSales(sources: { rows: Cell[][]; month?: string }[], beforeMonth: string, afterMonth: string) {
   const revenueMonths = new Set<string>()
   const products = new Map<string, ProductSale>()
   const prices = new Map<string, { date: string; values: Set<number> }>()
   const incompleteRevenue = new Map<string, Set<string>>()
-  for (const row of rows.slice(headerIndex + 1)) {
-    if (row.every((cell) => !String(cell ?? '').trim())) continue
-    const [date, state, name, quantity] = indices.map((index) => row[index])
-    const status = String(state ?? '').trim()
-    if (status === '취소' || status === '결제취소') continue
-    const orderDate = readDate(date)
-    if (!orderDate) throw new Error('Invalid product order date')
-    const month = orderDate.slice(0, 7)
-    if (month !== beforeMonth && month !== afterMonth) continue
-    const productName = typeof name === 'string' ? name.trim() : ''
-    const count = readTotal(quantity)
-    if ((status !== '완료' && status !== '결제완료') || !productName || productName.length > 255
-        || productName.includes('\0') || count === undefined) {
-      throw new Error('Invalid product order row')
-    }
-    const totals = products.get(productName) ?? { productName, before: 0, after: 0 }
-    const period = month === beforeMonth ? 'before' : 'after'
-    totals[period] += count
-    if (!Number.isSafeInteger(totals[period])) throw new Error('Product quantity total overflow')
-    if (revenueIndex >= 0) {
-      const revenue = readTotal(row[revenueIndex])
-      const field = period === 'before' ? 'beforeRevenue' : 'afterRevenue'
-      if (revenue === undefined) {
-        const months = incompleteRevenue.get(productName) ?? new Set<string>()
-        months.add(month)
-        incompleteRevenue.set(productName, months)
-      } else {
-        revenueMonths.add(month)
-        totals[field] = (totals[field] ?? 0) + revenue
-        if (!Number.isSafeInteger(totals[field])) throw new Error('Product revenue total overflow')
+  for (const { rows, month: sourceMonth } of sources) {
+    const headerIndex = rows.findIndex((row) => row.some((cell) => String(cell ?? '').trim()))
+    const header = rows[headerIndex]?.map((value) => String(value ?? '').replace(/\s/g, '')) ?? []
+    const indices = productColumns.map((column) => header.indexOf(column))
+    if (indices.includes(-1)) throw new Error('상품 주문 CSV의 날짜·결제상태·상품명·수량을 확인해 주세요.')
+    const priceIndex = header.indexOf('상품가격')
+    const revenueIndex = header.findIndex(column => productRevenueColumn.test(column))
+    for (const row of rows.slice(headerIndex + 1)) {
+      if (row.every((cell) => !String(cell ?? '').trim())) continue
+      const [date, state, name, quantity] = indices.map((index) => row[index])
+      const status = String(state ?? '').trim()
+      if (status === '취소' || status === '결제취소') continue
+      const orderDate = readDate(date)
+      if (!orderDate) throw new Error('Invalid product order date')
+      const month = orderDate.slice(0, 7)
+      if ((sourceMonth && month !== sourceMonth) || (month !== beforeMonth && month !== afterMonth)) continue
+      const productName = typeof name === 'string' ? name.trim() : ''
+      const count = readTotal(quantity)
+      if ((status !== '완료' && status !== '결제완료') || !productName || productName.length > 255
+          || productName.includes('\0') || count === undefined) {
+        throw new Error('Invalid product order row')
       }
-    }
-    products.set(productName, totals)
-    const price = readTotal(row[priceIndex])
-    if (price && count > 0) {
-      const latest = prices.get(productName)
-      if (!latest || orderDate > latest.date) prices.set(productName, { date: orderDate, values: new Set([price]) })
-      else if (orderDate === latest.date) latest.values.add(price)
+      const totals = products.get(productName) ?? { productName, before: 0, after: 0 }
+      const period = month === beforeMonth ? 'before' : 'after'
+      totals[period] += count
+      if (!Number.isSafeInteger(totals[period])) throw new Error('Product quantity total overflow')
+      if (revenueIndex >= 0) {
+        const revenue = readTotal(row[revenueIndex])
+        const field = period === 'before' ? 'beforeRevenue' : 'afterRevenue'
+        if (revenue === undefined) {
+          const months = incompleteRevenue.get(productName) ?? new Set<string>()
+          months.add(month)
+          incompleteRevenue.set(productName, months)
+        } else {
+          revenueMonths.add(month)
+          totals[field] = (totals[field] ?? 0) + revenue
+          if (!Number.isSafeInteger(totals[field])) throw new Error('Product revenue total overflow')
+        }
+      }
+      products.set(productName, totals)
+      const price = readTotal(row[priceIndex])
+      if (price && count > 0) {
+        const latest = prices.get(productName)
+        if (!latest || orderDate > latest.date) prices.set(productName, { date: orderDate, values: new Set([price]) })
+        else if (orderDate === latest.date) latest.values.add(price)
+      }
     }
   }
   for (const [name, { values }] of prices) {
@@ -240,7 +250,7 @@ export async function importPromotionProduct(file: File, product: string, start:
   return {quantity, amount, recordedDays: days.size}
 }
 
-export async function importPos(file: File, compareMonths?: [string, string]): Promise<PosImport> {
+async function readMonthlyPayments(file: File) {
   if (file.size > maxFileSize) throw new Error('10MB 이하의 POS 파일을 선택해 주세요.')
   const rows = await readPosRows(file)
   const headerIndex = rows.findIndex((row) => row.some((value) => value != null && String(value).trim() !== ''))
@@ -276,7 +286,10 @@ export async function importPos(file: File, compareMonths?: [string, string]): P
     }
     totals.set(month, total)
   }
+  return totals
+}
 
+function summarizePayments(totals: Map<string, MonthlyTotals>, compareMonths?: [string, string]): PosImport {
   const monthly = [...totals].sort(([a], [b]) => a.localeCompare(b))
     .map(([month, { amount }]) => ({ month, amount }))
   if (monthly.length < 2) throw new Error('결제 완료 내역이 있는 서로 다른 두 달 이상의 자료가 필요해요.')
@@ -284,7 +297,7 @@ export async function importPos(file: File, compareMonths?: [string, string]): P
   const before = totals.get(beforeMonth)
   const after = totals.get(afterMonth)
   if (!before || !after) throw new Error('비교할 두 달의 결제 완료 내역이 모두 포함된 파일을 선택해 주세요.')
-  const imported: PosImport = {
+  return {
     monthly,
     months: [beforeMonth, afterMonth],
     hourlySales: Object.fromEntries([...totals].map(([month, total]) => [month, total.hours])),
@@ -293,6 +306,11 @@ export async function importPos(file: File, compareMonths?: [string, string]): P
       rows: timeSlots.map((label, index) => ({ label, before: before.counts[index], after: after.counts[index] })),
     },
   }
+}
+
+export async function importPos(file: File, compareMonths?: [string, string]): Promise<PosImport> {
+  const imported = summarizePayments(await readMonthlyPayments(file), compareMonths)
+  const [beforeMonth, afterMonth] = imported.months
   if (/\.xlsx$/i.test(file.name) && !compareMonths) {
     try {
       imported.productSales = await readProductSales(file, beforeMonth, afterMonth)
@@ -301,4 +319,25 @@ export async function importPos(file: File, compareMonths?: [string, string]): P
     }
   }
   return imported
+}
+
+export async function importMonthlyPos(months: [string, string], payments: [File, File], products?: [File, File]) {
+  const [beforeMonth, afterMonth] = months
+  const beforeTotals = await readMonthlyPayments(payments[0])
+  const afterTotals = payments[0] === payments[1] ? beforeTotals : await readMonthlyPayments(payments[1])
+  const before = beforeTotals.get(beforeMonth)
+  const after = afterTotals.get(afterMonth)
+  if (!before || !after) throw new Error('선택한 두 달의 결제 완료 내역이 있는지 확인해 주세요.')
+  const data = summarizePayments(new Map([[beforeMonth, before], [afterMonth, after]]), months)
+  if (products) {
+    try {
+      const beforeRows = await readProductRows(products[0])
+      const afterRows = products[0] === products[1] ? beforeRows : await readProductRows(products[1])
+      data.productSales = aggregateProductSales([{ rows: beforeRows, month: beforeMonth },
+        { rows: afterRows, month: afterMonth }], beforeMonth, afterMonth)
+    } catch {
+      data.productWarning = '상품 주문 파일의 형식을 확인해 주세요. 결제 내역 집계는 저장할 수 있어요.'
+    }
+  }
+  return data
 }

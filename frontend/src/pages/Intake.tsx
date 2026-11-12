@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router'
 import { listPosFiles, listStores, readStoredPosFile, saveAnalysis } from '../api/shop'
 import type { StoredPosFile, Store } from '../api/shop'
 import { useStoreSelection } from '../components/useStoreSelection'
+import { MonthlyPosArchive } from '../components/MonthlyPosArchive'
 import { formatNumber, monthLabel, timeSlots, won } from '../data/shop'
 import { importPos, readProductSales } from '../data/pos'
 import type { PosImport } from '../data/pos'
@@ -373,7 +374,7 @@ export function Intake({ auth, ownerEmail, onAnalyze }: { auth: string; ownerEma
   return <div className="sales-intake">
     <header className="sales-heading">
       <h1>매출 입력</h1>
-      <p>매장을 고른 뒤 POS 파일을 올리거나 월별 매출을 직접 입력하세요.</p>
+      <p>매장을 고른 뒤 보관한 POS를 불러오거나 매출 자료를 새로 입력하세요.</p>
     </header>
     {error ? <section className="empty-state">
       <p role="alert" className="error">{error}</p>
@@ -419,8 +420,11 @@ function SalesForm({ auth, storeId, saving, onSaving, onAnalyze }: {
   const [error, setError] = useState('')
   const [timeOpen, setTimeOpen] = useState(false)
   const [extra, setExtra] = useState<{ value: TimeSeries; period: string }>()
-  const [pos, setPos] = useState<ImportedFile>()
+  const [posSource, setPosSource] = useState<'archive' | 'upload'>('archive')
+  const [directPos, setDirectPos] = useState<ImportedFile>()
+  const [archivedPos, setArchivedPos] = useState<PosImport>()
   const [productReading, setProductReading] = useState(false)
+  const pos = posSource === 'archive' ? archivedPos : directPos
   const monthly = mode === 'upload' ? pos?.monthly : monthlyValues(rows)
   const period = monthly?.slice(-2).map(({ month }) => month).join('/')
 
@@ -455,9 +459,27 @@ function SalesForm({ auth, storeId, saving, onSaving, onAnalyze }: {
     <form className="sales-form" onSubmit={submit}>
       <section className="sales-section form-stack" aria-labelledby="sales-data-heading">
         <h2 id="sales-data-heading">매출 자료</h2>
-          <InputTabs mode={mode} onChange={(next) => { if (!saving && !productReading) { setError(''); setMode(next) } }} manualLabel="월별 매출 직접 입력" />
+          <InputTabs mode={mode} onChange={next => {
+            if (saving || productReading || next === mode) return
+            setError('')
+            setArchivedPos(undefined)
+            setMode(next)
+          }} manualLabel="월별 매출 직접 입력" />
           {mode === 'upload' ? <>
-            <PosUpload value={pos} onChange={setPos} disabled={saving} onProductReadingChange={setProductReading} auth={auth} storeId={storeId} />
+            <div className="actions monthly-pos-source" role="group" aria-label="POS 파일 가져오기">
+              <button type="button" className="button secondary small" aria-pressed={posSource === 'archive'}
+                disabled={saving || productReading} onClick={() => { setError(''); setPosSource('archive') }}>내 매장 월별 파일</button>
+              <button type="button" className="button secondary small" aria-pressed={posSource === 'upload'}
+                disabled={saving || productReading} onClick={() => {
+                  setError('')
+                  setArchivedPos(undefined)
+                  setPosSource('upload')
+                }}>직접 업로드</button>
+            </div>
+            {posSource === 'archive'
+              ? <MonthlyPosArchive auth={auth} storeId={storeId} disabled={saving} onImport={setArchivedPos} onReading={setProductReading} />
+              : <PosUpload value={directPos} onChange={setDirectPos} disabled={saving}
+                onProductReadingChange={setProductReading} auth={auth} storeId={storeId} />}
             {pos && <div className="sales-import-summary">
               <h3>월별 매출 미리보기</h3>
               <table className="input-table" aria-label="월별 매출 미리보기">
@@ -466,6 +488,8 @@ function SalesForm({ auth, storeId, saving, onSaving, onAnalyze }: {
                   <th scope="row">{monthLabel(month)}</th><td>{won(amount)}</td>
                 </tr>)}</tbody>
               </table>
+              {posSource === 'archive' && pos.productSales && <p className="muted">상품 주문에서 {formatNumber(pos.productSales.length)}개 품목을 집계했어요.</p>}
+              {posSource === 'archive' && pos.productWarning && <p className="muted" role="status">{pos.productWarning}</p>}
               <details>
                 <summary>시간대별 결제 건수 보기</summary>
                 <p className="muted">가장 최근 두 달을 비교하며 취소된 결제는 집계에서 제외해요.</p>
@@ -505,7 +529,9 @@ function SalesForm({ auth, storeId, saving, onSaving, onAnalyze }: {
       </section>
       <div className="form-footer sales-footer">
         <span role="alert" className="error">{error}</span>
-        <button className="button primary" disabled={saving || productReading || (mode === 'upload' && !pos)}>{saving ? '저장 중…' : '분석 시작'} <span aria-hidden="true">→</span></button>
+        <button className="button primary" disabled={saving || productReading || (mode === 'upload' && !pos)}>
+          {saving ? '저장 중…' : mode === 'upload' && posSource === 'archive' ? '이 자료로 분석하기' : '분석 시작'} <span aria-hidden="true">→</span>
+        </button>
       </div>
     </form>
     {timeOpen && mode === 'manual' && monthly && period && <TimeDialog monthly={monthly} initial={extra?.period === period ? extra.value : undefined} onClose={() => setTimeOpen(false)} onSave={(value) => { setExtra({ value, period }); setTimeOpen(false) }} />}
