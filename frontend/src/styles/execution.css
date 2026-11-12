@@ -566,5 +566,49 @@
 }
 
 .promotion-review-loading {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
   min-height: 1.75rem;
 }
+
+.promotion-review-loading span {
+  flex: 0 0 1rem;
+  height: 1rem;
+  border: 2px solid var(--line, #d6ddd5);
+  border-top-color: var(--green, #294f3c);
+  border-radius: 50%;
+  animation: promotion-review-spin .75s linear infinite;
+}
+
+@keyframes promotion-review-spin {
+  to { transform: rotate(1turn); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .promotion-review-loading span { animation: none; }
+}
+
+.promotion-manual-publication {
+  display: grid;
+  gap: .45rem;
+  justify-items: start;
+  padding-top: .55rem;
+  border-top: 1px solid var(--line);
+}
+.promotion-manual-publication details { width: 100%; }
+.promotion-manual-publication summary { cursor: pointer; color: var(--green); font-weight: 700; }
+.promotion-manual-publication form { margin-top: .55rem; }
+.promotion-manual-publication input { width: 100%; min-width: 0; }
+
+.promotion-publication-dates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr));
+  gap: .6rem 1rem;
+  margin: 0;
+  padding: .75rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.promotion-publication-dates dt { font-weight: 700; }
+.promotion-publication-dates dd { margin: .25rem 0 0; overflow-wrap: anywhere; }

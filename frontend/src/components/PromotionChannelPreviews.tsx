@@ -17,7 +17,7 @@ const channelLinks = {
   daangn: 'https://business.daangn.com/',
 }
 
-export function PromotionChannelPreviews({ plan, draft, generatedImage, imageFailed, instagramImage, instagramCaption, instagramUsername, instagramPublishing }: {
+export function PromotionChannelPreviews({ plan, draft, generatedImage, imageFailed, instagramImage, instagramCaption, instagramUsername, instagramPublishing, manualPublishing }: {
   plan: Plan
   draft: PromotionDraft
   generatedImage?: string
@@ -26,6 +26,7 @@ export function PromotionChannelPreviews({ plan, draft, generatedImage, imageFai
   instagramCaption: string
   instagramUsername?: string
   instagramPublishing?: ReactNode
+  manualPublishing?: (channel: keyof PromotionChannelCopy) => ReactNode
 }) {
   const captions = { ...promotionCaptions(plan, draft), instagram: instagramCaption }
   const offer = draft.channels?.offer
@@ -82,7 +83,7 @@ export function PromotionChannelPreviews({ plan, draft, generatedImage, imageFai
           </div>
           {id === 'daangn' && image}
           <footer className="promotion-post-footer">
-            {!instagram && <p className="promotion-post-mode">초안 준비 완료 · 직접 게시</p>}
+            {!instagram && !manualPublishing && <p className="promotion-post-mode">초안 준비 완료 · 직접 게시</p>}
             <div className="promo-actions">
               <button type="button" className="button secondary small" aria-label={`${label} 문구 복사`}
                 onClick={() => void copy(id)}>문구 복사</button>
@@ -94,6 +95,7 @@ export function PromotionChannelPreviews({ plan, draft, generatedImage, imageFai
             </div>
             {status?.channel === id && status.caption === captions[id] && <small role="status">{status.message}</small>}
             {instagram && instagramPublishing}
+            {manualPublishing?.(id)}
           </footer>
         </article>
       })}

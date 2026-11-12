@@ -180,7 +180,8 @@ function SalesResults({ plan, onChange, auth }: { plan: Plan; onChange: (plan: P
   return <>
     <PageTitle title="실행 결과 확인" detail={`${plan.store}${showSample ? ' · 시연용 가상 결과' : ''}`} />
     <ResultSummary plan={plan} detail={savedResult?.scope ?? defaultScope} />
-    {plan.strategy === 'promotion' && auth && planId && <PromotionImpactPanel auth={auth} planId={planId} review={plan.promotionReview} />}
+    {(plan.strategy === 'promotion' || (plan.marketing && plan.promotionDraft)) && auth && planId &&
+      <PromotionImpactPanel key={planId} auth={auth} planId={planId} review={plan.promotionReview} />}
     {loading && <section className="empty-state compact">
       {loadError ? <>
         <p role="alert" className="error">{loadError}</p>

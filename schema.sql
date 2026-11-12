@@ -165,7 +165,14 @@ CREATE TABLE execution_plans (
     inventory_review JSONB CHECK (inventory_review IS NULL OR (strategy_code = 'INVENTORY' AND jsonb_typeof(inventory_review) = 'array')),
     promotion_review_saved_at timestamptz,
     promotion_review JSONB CHECK (promotion_review IS NULL OR (strategy_code = 'PROMOTION' AND jsonb_typeof(promotion_review) = 'object')),
-    promotion_impact JSONB CHECK (promotion_impact IS NULL OR (strategy_code = 'PROMOTION' AND jsonb_typeof(promotion_impact) = 'object')),
+    promotion_impact JSONB CONSTRAINT ck_execution_plans_promotion_impact CHECK (promotion_impact IS NULL OR (
+        jsonb_typeof(promotion_impact) = 'object'
+        AND (strategy_code = 'PROMOTION' OR (strategy_code = 'CUSTOM' AND strategy_snapshot @> '{"marketing": true}'))
+    )),
+    manual_promotion_publication JSONB CONSTRAINT ck_execution_plans_manual_promotion_publication CHECK (manual_promotion_publication IS NULL OR (
+        jsonb_typeof(manual_promotion_publication) = 'object'
+        AND (strategy_code = 'PROMOTION' OR (strategy_code = 'CUSTOM' AND strategy_snapshot @> '{"marketing": true}'))
+    )),
     instagram_scheduled_at TIMESTAMPTZ,
     instagram_publication_started_at TIMESTAMPTZ,
     instagram_publication JSONB CONSTRAINT ck_execution_plans_instagram_publication CHECK (instagram_publication IS NULL OR (

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { fetchPromotionImpact, saveNextPromotionChecklist, savePromotionActuals, savePromotionImpact, type NextPromotionChecklistItem, type PromotionActuals, type PromotionImpact, type PromotionImpactPeriod, type PromotionImpactTotals } from '../api/shop'
 import type { PromotionReview } from '../data/shop'
+import { promotionPublicationLabels } from '../data/promotionChannels'
 import { NextPromotionCard } from './NextPromotionCard'
 import { importPromotionProduct } from '../data/pos'
 import { changeRate, formatNumber, formatRate, won } from '../data/shop'
@@ -43,7 +44,7 @@ export function PromotionImpactPanel({ auth, planId, review }: { auth: string; p
     setNotice('')
     try {
       const totals = await importPromotionProduct(file, result.productName, period.start, period.end)
-      const saved = await savePromotionImpact(auth, planId, {phase, ...period, ...totals})
+      const saved = await savePromotionImpact(auth, planId, {phase, productName: result.productName, ...period, ...totals})
       setResult(saved)
       form.reset()
       const message = phase === 'BEFORE' ? '행사 전 POS 집계를 저장했어요.' : '홍보 게시 후 POS 집계를 저장했어요.'
@@ -110,10 +111,21 @@ export function PromotionImpactPanel({ auth, planId, review }: { auth: string; p
   return <section className="form-stack" aria-labelledby="promotion-impact-title">
     <div className="section-top ruled"><h2 id="promotion-impact-title">홍보 품목 판매 변화</h2></div>
     {!result && !error && <p role="status">홍보 품목의 비교 기간을 불러오는 중이에요.</p>}
+    {result && <dl className="promotion-publication-dates" aria-label="채널별 게시일">
+      {(Object.entries(promotionPublicationLabels) as [keyof typeof promotionPublicationLabels, string][]).map(([channel, label]) => {
+        const dates = (result.publications ?? []).filter(post => post.channel === channel)
+          .sort((left, right) => left.publishedDate.localeCompare(right.publishedDate))
+        return <div key={channel}><dt>{label}</dt>
+          <dd>{dates.length ? dates.map(post => `${post.publishedDate}${channel === 'INSTAGRAM'
+            ? post.automatic ? ' (자동)' : ' (직접 입력)' : ''}`).join(' · ') : '게시 기록 없음'}</dd>
+        </div>
+      })}
+    </dl>}
+    {result?.publication && <p className="muted">첫 게시일 · {result.publication.publishedDate} · {promotionPublicationLabels[result.publication.channel]}</p>}
     {result?.message && <p className="muted">{result.message}</p>}
     {result?.before && result.after && <>
       <p><strong>{result.productName}</strong>의 판매량과 실판매금액을 비교해요.</p>
-      <p className="muted">게시 당일은 제외하고, 행사 종료일까지를 같은 요일의 행사 전 기간과 비교해요. 같은 매장의 각 기간 전체 상품 주문 내역을 올려 주세요.</p>
+      <p className="muted">첫 게시 당일은 제외하고 행사 종료일까지의 판매를 같은 요일의 게시 전 기간과 비교해요. 기록한 채널의 홍보 기간 전체를 한 번 비교해요. 매장 POS에서는 채널별 판매를 구분할 수 없어요.</p>
       <div className="result-form-grid">
         {periodForm('BEFORE', result.before, result.beforeTotals)}
         {periodForm('AFTER', result.after, result.afterTotals)}
@@ -128,7 +140,7 @@ export function PromotionImpactPanel({ auth, planId, review }: { auth: string; p
       {result.beforeTotals && result.afterTotals && result.beforeTotals.recordedDays !== result.afterTotals.recordedDays &&
         <p className="muted">두 파일의 주문 기록일 수가 달라요. 합계를 해석하기 전에 영업일과 내보낸 기간을 확인해 주세요.</p>}
       <p className="muted">결제 완료된 주문의 수량과 실판매금액을 합산해요. 기간 중 관측된 변화를 보여줘요.</p>
-      {result.beforeTotals && result.afterTotals &&
+      {review && result.beforeTotals && result.afterTotals &&
         <form className="receipt form-stack" aria-label="실제 할인과 원가" onSubmit={event => void saveActuals(event)}
           key={JSON.stringify([planId, result.beforeTotals, result.afterTotals, result.actuals])}>
           <h3>실제 할인과 원가</h3>

@@ -75,7 +75,7 @@ class StoreSecurityConfiguration {
                         "/api/plans/{planId}/results/{resultId}", "/api/plans/{planId}/inventory-review",
                         "/api/plans/{planId}/promotion-review", "/api/plans/{planId}/promotion-review/defaults", "/api/plans/{planId}/promotion-review-points", "/api/plans/{planId}/promotion-draft", "/api/plans/{planId}/promotion-draft/caption",
                         "/api/plans/{planId}/promotion-photo", "/api/plans/{planId}/store-notice", "/api/plans/{planId}/instagram-publication", "/api/plans/{planId}/promotion-impact",
-                        "/api/plans/{planId}/promotion-impact/next-checklist", "/api/plans/{planId}/promotion-impact/next-explanation",
+                        "/api/plans/{planId}/promotion-impact/publication", "/api/plans/{planId}/promotion-impact/next-checklist", "/api/plans/{planId}/promotion-impact/next-explanation",
                         "/api/plans/{planId}/promotion-impact/actuals", "/api/plans/{planId}/promotion-impact/next-plan/{requestId}")
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/session/signup")
