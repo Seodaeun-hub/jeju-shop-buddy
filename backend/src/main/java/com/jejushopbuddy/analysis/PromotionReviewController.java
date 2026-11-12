@@ -86,6 +86,7 @@ class PromotionReviewController {
                                           THEN p.promotion_draft ELSE NULL END
                 FROM sales_analyses a, stores s, owners o
                 WHERE p.id = :planId AND p.strategy_code = 'PROMOTION' AND p.instagram_publication IS NULL
+                  AND p.manual_promotion_publication IS NULL
                   AND p.analysis_id = a.id AND a.store_id = s.id AND s.owner_id = o.id AND o.email = :email
                 """)
                 .param("review", json.writeValueAsString(review))
@@ -93,14 +94,17 @@ class PromotionReviewController {
                 .param("email", owner.getName())
                 .update();
         if (updated == 0) {
-            boolean locked = jdbc.sql("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM execution_plans p JOIN sales_analyses a ON a.id=p.analysis_id
-                        JOIN stores s ON s.id=a.store_id JOIN owners o ON o.id=s.owner_id
-                        WHERE p.id=:id AND p.strategy_code='PROMOTION' AND p.instagram_publication IS NOT NULL AND o.email=:email
-                    )
-                    """).param("id", planId).param("email", owner.getName()).query(Boolean.class).single();
-            if (locked) return InstagramPublicationController.locked();
+            var lock = jdbc.sql("""
+                    SELECT CASE WHEN p.instagram_publication IS NOT NULL THEN 'INSTAGRAM'
+                                WHEN p.manual_promotion_publication IS NOT NULL THEN 'MANUAL'
+                                ELSE '' END AS publication_lock
+                    FROM execution_plans p JOIN sales_analyses a ON a.id=p.analysis_id
+                    JOIN stores s ON s.id=a.store_id JOIN owners o ON o.id=s.owner_id
+                    WHERE p.id=:id AND p.strategy_code='PROMOTION' AND o.email=:email
+                    """).param("id", planId).param("email", owner.getName()).query(String.class).optional().orElse("");
+            if ("INSTAGRAM".equals(lock)) return InstagramPublicationController.locked();
+            if ("MANUAL".equals(lock)) return ResponseEntity.status(409)
+                    .body(new ApiError("PROMOTION_REVIEW_LOCKED", "게시 기록이 있는 행사의 할인 조건은 새 계획에서 바꿔 주세요.", null));
             return ResponseEntity.status(404)
                     .body(new ApiError("PROMOTION_PLAN_NOT_FOUND", "프로모션 계획을 찾을 수 없어요.", null));
         }

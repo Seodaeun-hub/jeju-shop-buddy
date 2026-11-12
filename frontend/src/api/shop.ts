@@ -407,6 +407,21 @@ function resultsPath(planId: string, resultId?: string) {
   return resultId ? `${base}/${encodeURIComponent(resultId)}` : base
 }
 
+export type PromotionChannel = 'INSTAGRAM' | 'NAVER' | 'DAANGN'
+export type PromotionPublication = {
+  channel: PromotionChannel
+  publishedDate: string
+  automatic: boolean
+}
+type ManualPromotionPublication = {
+  channel: PromotionChannel
+  publishedDate: string
+  productName: string
+}
+export type ManualPromotionPublicationStatus = {
+  publications: Partial<Record<PromotionChannel, ManualPromotionPublication>>
+  productName: string | null
+}
 export type PromotionImpactPeriod = { start: string; end: string }
 export type PromotionImpactTotals = { quantity: number; amount: number; recordedDays: number }
 export type NextPromotionChecklistItem = 'DISCOUNT_QUANTITY' | 'ACTUAL_COST' | 'UPLOAD_POS'
@@ -419,6 +434,8 @@ export type PromotionActuals = { discountedQuantity: number; beforeUnitCost: num
 export type PromotionProfit = { beforeWon: number; afterWon: number; changeWon: number }
 export type PromotionImpact = {
   productName: string | null
+  publication: PromotionPublication | null
+  publications: PromotionPublication[]
   before: PromotionImpactPeriod | null
   after: PromotionImpactPeriod | null
   beforeTotals: PromotionImpactTotals | null
@@ -431,10 +448,15 @@ export type PromotionImpact = {
   nextChecklist: Partial<Record<NextPromotionChecklistItem, boolean>> | null
 }
 const promotionImpactPath = (planId: string) => `/api/plans/${encodeURIComponent(planId)}/promotion-impact`
+export const fetchManualPromotionPublication = (auth: string, planId: string, signal: AbortSignal) =>
+  request<ManualPromotionPublicationStatus>(promotionImpactPath(planId) + '/publication', auth, 'GET', undefined, signal)
+export const saveManualPromotionPublication = (auth: string, planId: string,
+  input: { channel: PromotionChannel; publishedDate: string; productName?: string }) =>
+  request<ManualPromotionPublicationStatus>(promotionImpactPath(planId) + '/publication', auth, 'PUT', input)
 export const fetchPromotionImpact = (auth: string, planId: string, signal: AbortSignal) =>
   request<PromotionImpact>(promotionImpactPath(planId), auth, 'GET', undefined, signal)
 export const savePromotionImpact = (auth: string, planId: string,
-  input: PromotionImpactPeriod & PromotionImpactTotals & {phase: 'BEFORE' | 'AFTER'}) =>
+  input: PromotionImpactPeriod & PromotionImpactTotals & {phase: 'BEFORE' | 'AFTER'; productName: string}) =>
   request<PromotionImpact>(promotionImpactPath(planId), auth, 'PUT', input)
 
 export type NextPromotionExplanation = {

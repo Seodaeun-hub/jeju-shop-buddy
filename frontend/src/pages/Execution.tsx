@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { fetchInstagramPublication, type InstagramPublicationStatus } from '../api/shop'
+import { fetchInstagramPublication, fetchManualPromotionPublication, type InstagramPublicationStatus, type ManualPromotionPublicationStatus } from '../api/shop'
 import { CustomerNoticeDetails } from '../components/CustomerNotice'
 import { Citrus, PageTitle } from '../components/ui'
 import { ExecutionGuideSteps } from '../components/ExecutionGuidePanel'
 import { StoreNotice } from '../components/StoreNotice'
 import { ExecutionPlanSwitcher } from '../components/ExecutionPlanSwitcher'
 import { PromotionChannelPreviews } from '../components/PromotionChannelPreviews'
-import { usePromotionReviews } from '../components/PromotionReviewPoints'
 import { drawPromotionCard } from '../data/promotionCard'
 import { formatNumber, won } from '../data/shop'
 import type { Analysis, InventoryItem, Plan, PromotionDraftInput, PromotionReviewInput, PromotionTone } from '../data/shop'
@@ -15,6 +14,7 @@ import { InventoryReview } from './InventoryReview'
 import { PromotionReview } from './PromotionReview'
 import { InstagramPublish } from './InstagramPublish'
 import { PromotionDraftForm } from './PromotionDraftForm'
+import { ManualPromotionPublication } from './ManualPromotionPublication'
 import '../styles/execution.css'
 
 function shortDate(date: string) {
@@ -58,11 +58,14 @@ function getDraft(plan: Plan) {
   return { headline, feature, detail, caption }
 }
 
-function PromoDraft({ plan, auth, instagramStatus, onInstagramStatus }: {
+function PromoDraft({ plan, auth, instagramStatus, onInstagramStatus, manualStatus, onManualStatus, resultsTo }: {
   plan: Plan
   auth?: string
   instagramStatus?: InstagramPublicationStatus
   onInstagramStatus?: (status: InstagramPublicationStatus) => void
+  manualStatus?: ManualPromotionPublicationStatus | null
+  resultsTo?: string
+  onManualStatus?: (status: ManualPromotionPublicationStatus) => void
 }) {
   const saved = plan.promotionDraft
   const { headline, feature, detail, caption: draftCaption } = saved ?? getDraft(plan)
@@ -194,7 +197,17 @@ function PromoDraft({ plan, auth, instagramStatus, onInstagramStatus }: {
       instagramImage={instagramImage} instagramUsername={publication?.username ?? instagramStatus?.username}
       instagramPublishing={plan.id && auth && onInstagramStatus && <InstagramPublish key={plan.id} auth={auth}
         planId={plan.id} caption={caption} hasPhoto={Boolean(photoUrl)} endDate={plan.endDate} image={instagramImage}
-        state={instagramStatus} onStatus={onInstagramStatus} />} />
+        state={instagramStatus} onStatus={onInstagramStatus} />}
+      manualPublishing={id => {
+        if (!auth || !plan.id || !onManualStatus) return null
+        const channel = { instagram: 'INSTAGRAM', naver: 'NAVER', daangn: 'DAANGN' } as const
+        const selected = channel[id]
+        return <ManualPromotionPublication
+          key={`${plan.id}:${selected}:${manualStatus?.publications?.[selected]?.publishedDate ?? ''}:${manualStatus?.productName ?? ''}`}
+          auth={auth} planId={plan.id} channel={selected}
+          endDate={plan.endDate} resultsTo={resultsTo} defaultProduct={plan.marketing ? saved.headline : undefined}
+          status={manualStatus} onStatus={onManualStatus} />
+      }} />
   </section>
 
   return <section className="execution-material">
@@ -230,6 +243,7 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
   const [savingIndex, setSavingIndex] = useState<number>()
   const [checklistError, setChecklistError] = useState('')
   const [instagramStatus, setInstagramStatus] = useState<InstagramPublicationStatus>()
+  const [manualStatus, setManualStatus] = useState<ManualPromotionPublicationStatus | null>()
   const [editingPromotion, setEditingPromotion] = useState(false)
   const [promotionOpen, setPromotionOpen] = useState(false)
   const [reviewFirst, setReviewFirst] = useState(false)
@@ -242,14 +256,14 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
   const loadingInstagram = trackInstagram && !instagramStatus
   const draft = plan.promotionDraft
   const promotionEditorReady = !locked && !loadingInstagram && (plan.marketing || plan.promotionReview)
-  const onlyMenu = analysis.productSales?.length === 1 ? analysis.productSales[0].productName : undefined
-  const reviewSubject = promotionEditorReady ? plan.promotionReview?.productName ?? draft?.headline ?? onlyMenu : undefined
-  const reviewResearch = usePromotionReviews(auth, plan.id, reviewSubject)
   const showPromotionEditor = promotionOpen && promotionEditorReady && (reviewFirst || editingPromotion)
-  const promotionStatus = publication ? publicationLabels[publication.state] : draft ? '초안 저장됨' : '작성 전'
+  const hasManualPublication = Object.keys(manualStatus?.publications ?? {}).length > 0
+  const promotionStatus = publication ? publicationLabels[publication.state]
+    : hasManualPublication ? '직접 게시일 기록됨'
+      : draft ? '초안 저장됨' : '작성 전'
   const promotionSchedule = publication?.state === 'SCHEDULED' && publication.scheduledAt
     ? instagramSchedule.format(new Date(publication.scheduledAt))
-    : !publication && draft ? `${shortDate(draft.publishDate)} ${draft.publishTime.slice(0, 5)} 게시 희망` : undefined
+    : !publication && !hasManualPublication && draft ? `${shortDate(draft.publishDate)} ${draft.publishTime.slice(0, 5)} 게시 희망` : undefined
 
   useEffect(() => {
     if (promotionOpen && promotionDialog.current?.open) {
@@ -266,6 +280,17 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
     })
     return () => controller.abort()
   }, [trackInstagram, auth, plan.id])
+
+  useEffect(() => {
+    if (!trackInstagram || !auth || !plan.id || !draft) return
+    const controller = new AbortController()
+    fetchManualPromotionPublication(auth, plan.id, controller.signal).then(status => {
+      if (!controller.signal.aborted) setManualStatus(status)
+    }).catch(() => {
+      if (!controller.signal.aborted) setManualStatus(null)
+    })
+    return () => controller.abort()
+  }, [trackInstagram, auth, plan.id, draft])
 
   async function toggleChecklist(index: number, completed: boolean) {
     if (savingIndex !== undefined) return
@@ -373,7 +398,8 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
       </section>
       <div className="form-stack execution-aside">
         {plan.strategy === 'promotion' && <PromotionReview key={locked ? 'locked' : 'editable'} analysis={analysis}
-          saved={plan.promotionReview} initialBudget={plan.budget} auth={auth} planId={plan.id} readOnly={locked || loadingInstagram} onSave={onSavePromotion} />}
+          saved={plan.promotionReview} initialBudget={plan.budget} auth={auth} planId={plan.id} readOnly={locked || loadingInstagram || hasManualPublication} onSave={onSavePromotion} />}
+        {plan.strategy === 'promotion' && hasManualPublication && <p className="muted">게시일을 기록한 행사의 할인 조건은 새 행사 계획에서 바꿀 수 있어요.</p>}
         {hasPromotionMaterials && auth && onSavePromotionDraft && <section className="receipt promotion-summary">
           <div>
             <h2>홍보</h2>
@@ -397,7 +423,7 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
             onClose={() => setPromotionOpen(false)} aria-labelledby="promotion-dialog-title">
             <header className="promotion-dialog-header">
               <h2 id="promotion-dialog-title" ref={promotionDialogHeading} tabIndex={-1}>
-                {reviewFirst ? '홍보에 담을 포인트 고르기' : showPromotionEditor ? '홍보 초안 수정' : '채널별 홍보 미리보기'}
+                {reviewFirst ? '홍보물 만들기' : showPromotionEditor ? '홍보 초안 수정' : '채널별 홍보 미리보기'}
               </h2>
               <div className="promo-actions">
                 {promotionEditorReady && draft && !reviewFirst && <button type="button" className="button secondary small"
@@ -408,11 +434,12 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
             <div className="promotion-dialog-body">
               {showPromotionEditor && <PromotionDraftForm key={`${plan.id}:${plan.promotionReview?.productName ?? ''}`} plan={plan} auth={auth}
                   productNames={analysis.productSales?.map(product => product.productName)}
-                  reviewFirst={reviewFirst} preloadedReview={reviewResearch} initialSubject={reviewSubject}
+                  reviewFirst={reviewFirst}
                   onSave={async input => { await onSavePromotionDraft(input); setEditingPromotion(false); setReviewFirst(false) }}
                   onRegenerate={onRegeneratePromotionCaption} />}
               {draft && <div hidden={Boolean(showPromotionEditor)}>
-                <PromoDraft plan={plan} auth={auth} instagramStatus={instagramStatus} onInstagramStatus={setInstagramStatus} />
+                <PromoDraft plan={plan} auth={auth} instagramStatus={instagramStatus} onInstagramStatus={setInstagramStatus}
+                  manualStatus={manualStatus} onManualStatus={setManualStatus} resultsTo={resultsTo} />
               </div>}
             </div>
           </dialog>

@@ -6,6 +6,9 @@ import java.math.RoundingMode;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.Principal;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.List;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -24,6 +27,11 @@ import tools.jackson.databind.ObjectMapper;
 class PromotionImpactController {
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final long MAX_SAFE_INTEGER = 9_007_199_254_740_991L;
+    private static final String MATCH_PUBLICATION = """
+                AND p.manual_promotion_publication IS NOT DISTINCT FROM CAST(:manual AS jsonb)
+                AND (CASE WHEN p.instagram_publication->>'state'='PUBLISHED'
+                          THEN p.instagram_publication->>'publishedAt' END) IS NOT DISTINCT FROM CAST(:published AS text)
+            """;
     private final JdbcClient jdbc;
     private final ObjectMapper json;
     private final StrategyAgentClient agent;
@@ -46,14 +54,74 @@ class PromotionImpactController {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(comparison(plan));
     }
 
+    @GetMapping("/publication")
+    ResponseEntity<?> manualPublication(@PathVariable UUID planId, Principal owner) {
+        var plan = find(planId, owner.getName());
+        return plan == null ? notFound() : publicationStatus(plan);
+    }
+
+    @PutMapping("/publication")
+    ResponseEntity<?> saveManualPublication(@PathVariable UUID planId, @RequestBody PublicationInput input, Principal owner) {
+        var plan = find(planId, owner.getName());
+        if (plan == null) return notFound();
+        var day = input.publishedDate();
+        if (input.channel() == null || day == null || day.getYear() < 1900
+                || day.isAfter(LocalDate.now(SEOUL)) || day.isAfter(plan.end())) {
+            return invalid("게시 채널과 실제 게시일을 확인해 주세요. 오늘과 행사 종료일을 넘길 수 없어요.");
+        }
+        if (plan.draftProduct() == null || plan.product() == null) {
+            return invalid("비교할 메뉴로 홍보 초안을 먼저 저장해 주세요.");
+        }
+        String product = plan.comparisonProduct();
+        if (!plan.discountPromotion() && input.productName() != null) {
+            product = input.productName().strip();
+        }
+        if (product.isBlank() || product.length() > 255 || product.codePoints().anyMatch(Character::isISOControl)) {
+            return invalid("상품 주문 POS에 적힌 품목명을 한 줄로 입력해 주세요.");
+        }
+        var records = new EnumMap<Channel, PublicationReference>(Channel.class);
+        for (var record : plan.manualPublications().values()) {
+            records.put(record.channel(), new PublicationReference(record.channel(), record.publishedDate(), product));
+        }
+        records.put(input.channel(), new PublicationReference(input.channel(), day, product));
+        if (records.equals(plan.manualPublications())) return publicationStatus(plan);
+
+        // Stamp older totals before changing the dates that were used to calculate them.
+        var basis = savedBasis(plan, readSnapshot(plan));
+        int updated = jdbc.sql("""
+                UPDATE execution_plans p SET manual_promotion_publication=CAST(:records AS jsonb),
+                    promotion_impact=CASE WHEN p.promotion_impact IS NULL OR CAST(:basis AS jsonb) IS NULL
+                        THEN p.promotion_impact
+                        ELSE jsonb_set(p.promotion_impact, '{basis}', CAST(:basis AS jsonb)) END
+                FROM sales_analyses a, stores s, owners o
+                WHERE p.id=:id AND p.analysis_id=a.id AND a.store_id=s.id AND s.owner_id=o.id AND o.email=:email
+                  AND p.promotion_draft->>'headline'=:draftProduct
+                  AND p.promotion_impact IS NOT DISTINCT FROM CAST(:snapshot AS jsonb)
+                """ + MATCH_PUBLICATION)
+                .param("records", json.writeValueAsString(records)).param("id", planId).param("email", owner.getName())
+                .param("basis", basis == null ? null : json.writeValueAsString(basis))
+                .param("draftProduct", plan.draftProduct()).param("snapshot", plan.snapshot())
+                .param("manual", plan.manualSnapshot()).param("published", plan.instagramPublishedAt()).update();
+        if (updated == 0) return ResponseEntity.status(409)
+                .body(new ApiError("PROMOTION_PUBLICATION_CHANGED", "게시 기록이나 POS 집계가 바뀌었어요. 새로고침한 뒤 다시 저장해 주세요.", null));
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(new ManualPublicationStatus(records, product));
+    }
+
+    private static ResponseEntity<ManualPublicationStatus> publicationStatus(Plan plan) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(new ManualPublicationStatus(plan.manualPublications(), plan.comparisonProduct()));
+    }
+
     @PutMapping
     ResponseEntity<?> save(@PathVariable UUID planId, @RequestBody Upload upload, Principal owner) {
         var plan = find(planId, owner.getName());
         if (plan == null) return notFound();
         var result = comparison(plan);
-        if (result.before() == null || upload.phase() == null) return invalid("게시 완료된 프로모션의 비교 기간을 확인해 주세요.");
+        if (result.before() == null || upload.phase() == null) return invalid("홍보 게시 기록과 비교 기간을 확인해 주세요.");
         var period = upload.phase() == Phase.BEFORE ? result.before() : result.after();
-        if (!period.start().equals(upload.start()) || !period.end().equals(upload.end())
+        if ((upload.productName() != null && !result.productName().equals(upload.productName()))
+                || !period.start().equals(upload.start()) || !period.end().equals(upload.end())
                 || !period.end().isBefore(LocalDate.now(SEOUL))) {
             return invalid("화면에 표시된 기간이 끝난 뒤 해당 기간의 POS를 올려 주세요.");
         }
@@ -63,27 +131,30 @@ class PromotionImpactController {
             return invalid("상품 주문 시트의 판매량, 실판매금액과 기록된 날짜를 확인해 주세요.");
         }
         var totals = new Totals(upload.quantity(), upload.amount(), upload.recordedDays());
+        var basis = new ComparisonBasis(result.productName(), result.before(), result.after());
+        boolean keepTotals = basis.equals(savedBasis(plan, readSnapshot(plan)));
         var saved = jdbc.sql("""
                 UPDATE execution_plans p
                 SET promotion_impact = (CASE
+                    WHEN NOT :keepTotals THEN '{}'::jsonb
                     WHEN p.promotion_impact->CAST(:phase AS text) = CAST(:totals AS jsonb) THEN p.promotion_impact
-                    ELSE COALESCE(p.promotion_impact, '{}'::jsonb) - 'actuals'
-                END) || jsonb_build_object(CAST(:phase AS text), CAST(:totals AS jsonb))
+                    ELSE p.promotion_impact - 'actuals'
+                END) || jsonb_build_object('basis', CAST(:basis AS jsonb), CAST(:phase AS text), CAST(:totals AS jsonb))
                 FROM sales_analyses a, stores s, owners o
-                WHERE p.id=:id AND p.strategy_code='PROMOTION' AND p.analysis_id=a.id
+                WHERE p.id=:id AND p.analysis_id=a.id
                   AND a.store_id=s.id AND s.owner_id=o.id AND o.email=:email
-                  AND p.instagram_publication->>'state'='PUBLISHED'
-                  AND p.instagram_publication->>'publishedAt'=:published
-                  AND p.promotion_review->>'productName'=:product
+                """ + MATCH_PUBLICATION + """
+                  AND p.promotion_impact IS NOT DISTINCT FROM CAST(:snapshot AS jsonb)
                 RETURNING p.promotion_impact
                 """).param("phase", upload.phase() == Phase.BEFORE ? "before" : "after")
                 .param("totals", json.writeValueAsString(totals)).param("id", planId).param("email", owner.getName())
-                .param("published", plan.publishedAt()).param("product", plan.product())
+                .param("basis", json.writeValueAsString(basis)).param("keepTotals", keepTotals).param("snapshot", plan.snapshot())
+                .param("published", plan.instagramPublishedAt()).param("manual", plan.manualSnapshot())
                 .query(String.class).optional();
         if (saved.isEmpty()) return ResponseEntity.status(409)
                 .body(new ApiError("PROMOTION_IMPACT_CHANGED", "게시 상태가 바뀌었어요. 새로고침해 주세요.", null));
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(comparison(
-                new Plan(plan.product(), plan.start(), plan.end(), plan.state(), plan.publishedAt(), saved.get())));
+                plan.withSnapshot(saved.get())));
     }
 
     @GetMapping("/next-explanation")
@@ -119,18 +190,19 @@ class PromotionImpactController {
                 FROM sales_analyses a, stores s, owners o
                 WHERE p.id=:id AND p.strategy_code='PROMOTION' AND p.analysis_id=a.id
                   AND a.store_id=s.id AND s.owner_id=o.id AND o.email=:email
-                  AND p.instagram_publication->>'state'='PUBLISHED'
+                """ + MATCH_PUBLICATION + """
                   AND p.promotion_impact->'before'=CAST(:before AS jsonb)
                   AND p.promotion_impact->'after'=CAST(:after AS jsonb)
                 RETURNING p.promotion_impact
                 """).param("id", planId).param("email", owner.getName())
+                .param("published", plan.instagramPublishedAt()).param("manual", plan.manualSnapshot())
                 .param("before", json.writeValueAsString(current.beforeTotals()))
                 .param("after", json.writeValueAsString(current.afterTotals()))
                 .param("actuals", json.writeValueAsString(actuals)).query(String.class).optional();
         if (saved.isEmpty()) return ResponseEntity.status(409)
                 .body(new ApiError("PROMOTION_IMPACT_CHANGED", "POS 집계가 바뀌었어요. 새로고침해 주세요.", null));
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(comparison(
-                new Plan(plan.product(), plan.start(), plan.end(), plan.state(), plan.publishedAt(), saved.get())));
+                plan.withSnapshot(saved.get())));
     }
 
     @PutMapping("/next-plan/{requestId}")
@@ -196,53 +268,102 @@ class PromotionImpactController {
                 FROM sales_analyses a, stores s, owners o
                 WHERE p.id=:id AND p.strategy_code='PROMOTION' AND p.analysis_id=a.id
                   AND a.store_id=s.id AND s.owner_id=o.id AND o.email=:email
-                  AND p.instagram_publication->>'state'='PUBLISHED'
+                """ + MATCH_PUBLICATION + """
                   AND p.promotion_impact->'before' IS NOT NULL AND p.promotion_impact->'after' IS NOT NULL
                   AND (:create OR p.promotion_impact->'nextChecklist' IS NOT NULL)
                 RETURNING p.promotion_impact
                 """)
                 .param("changes", json.writeValueAsString(changes)).param("id", planId)
                 .param("email", owner.getName()).param("create", update.item() == null)
+                .param("published", plan.instagramPublishedAt()).param("manual", plan.manualSnapshot())
                 .query(String.class).optional();
         if (saved.isEmpty()) return invalid("먼저 다음 행사 점검표를 만들어 주세요.");
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(comparison(
-                new Plan(plan.product(), plan.start(), plan.end(), plan.state(), plan.publishedAt(), saved.get())));
+                plan.withSnapshot(saved.get())));
     }
 
     private Plan find(UUID id, String email) {
         return jdbc.sql("""
-                SELECT p.promotion_review->>'productName' AS product, p.start_date, p.end_date,
-                       p.instagram_publication->>'state' AS state, p.instagram_publication->>'publishedAt' AS published,
-                       p.promotion_impact
+                SELECT CASE WHEN p.strategy_code='PROMOTION' THEN p.promotion_review->>'productName'
+                           ELSE p.promotion_draft->>'headline' END AS product,
+                       p.promotion_draft->>'headline' AS draft_product,
+                       p.strategy_code='PROMOTION' AS discount_promotion, p.start_date, p.end_date,
+                       CASE WHEN p.instagram_publication->>'state'='PUBLISHED'
+                            THEN p.instagram_publication->>'publishedAt' END AS published,
+                       p.manual_promotion_publication, p.promotion_impact
                 FROM execution_plans p JOIN sales_analyses a ON a.id=p.analysis_id
                 JOIN stores s ON s.id=a.store_id JOIN owners o ON o.id=s.owner_id
-                WHERE p.id=:id AND p.strategy_code='PROMOTION' AND o.email=:email
+                WHERE p.id=:id AND o.email=:email
+                  AND (p.strategy_code='PROMOTION' OR (p.strategy_code='CUSTOM' AND p.strategy_snapshot @> '{"marketing":true}'))
                 """).param("id", id).param("email", email)
-                .query((rs, row) -> new Plan(rs.getString("product"), rs.getObject("start_date", LocalDate.class),
-                        rs.getObject("end_date", LocalDate.class), rs.getString("state"), rs.getString("published"),
-                        rs.getString("promotion_impact"))).optional().orElse(null);
+                .query((rs, row) -> {
+                    String manual = rs.getString("manual_promotion_publication");
+                    var records = new EnumMap<Channel, PublicationReference>(Channel.class);
+                    PublicationReference legacyManual = null;
+                    if (manual != null) {
+                        var tree = json.readTree(manual);
+                        if (tree.has("channel")) {
+                            legacyManual = json.treeToValue(tree, PublicationReference.class);
+                            records.put(legacyManual.channel(), legacyManual);
+                        } else {
+                            for (Channel channel : Channel.values()) {
+                                var entry = tree.get(channel.name());
+                                if (entry != null) records.put(channel, json.treeToValue(entry, PublicationReference.class));
+                            }
+                        }
+                    }
+                    return new Plan(rs.getString("product"), rs.getString("draft_product"),
+                            rs.getBoolean("discount_promotion"), rs.getObject("start_date", LocalDate.class),
+                            rs.getObject("end_date", LocalDate.class), rs.getString("published"),
+                            records, legacyManual, manual, rs.getString("promotion_impact"));
+                }).optional().orElse(null);
     }
 
     private Comparison comparison(Plan plan) {
-        if (plan.product() == null || !"PUBLISHED".equals(plan.state())) {
-            return unavailable(plan, "인스타그램 게시가 완료되면 홍보 품목의 POS를 비교할 수 있어요.");
+        var publications = plan.publications();
+        var first = publications.stream().min(Comparator.comparing(ChannelPublication::publishedDate)).orElse(null);
+        if (first == null || plan.comparisonProduct() == null) {
+            return unavailable(plan, publications, first, "인스타그램에 게시하거나 채널 카드에서 실제 게시일을 기록해 주세요.");
         }
-        if (plan.publishedAt() == null) {
-            return unavailable(plan, "게시 시각이 저장된 홍보물에서 전후 기간을 계산할 수 있어요.");
+        var basis = comparisonBasis(plan, plan.comparisonProduct(), first.publishedDate(), true);
+        if (basis == null) {
+            return unavailable(plan, publications, first, "첫 게시 다음 날부터 행사 종료일까지 비교할 날짜가 없어요.");
         }
-        var firstFullDay = OffsetDateTime.parse(plan.publishedAt()).atZoneSameInstant(SEOUL).toLocalDate().plusDays(1);
-        var afterStart = firstFullDay.isAfter(plan.start()) ? firstFullDay : plan.start();
-        if (afterStart.isAfter(plan.end())) {
-            return unavailable(plan, "게시 다음 날부터 행사 종료일까지 비교할 날짜가 없어요.");
-        }
-        long shift = (ChronoUnit.DAYS.between(plan.start(), plan.end()) / 7 + 1) * 7;
-        var snapshot = plan.snapshot() == null ? new Snapshot(null, null, null, null) : json.readValue(plan.snapshot(), Snapshot.class);
+        var stored = readSnapshot(plan);
+        boolean periodsChanged = stored != null && !basis.equals(savedBasis(plan, stored));
+        var snapshot = stored == null || periodsChanged ? new Snapshot(null, null, null, null, null) : stored;
         var profit = profit(snapshot.before(), snapshot.after(), snapshot.actuals());
-        return new Comparison(plan.product(), new Period(afterStart.minusDays(shift), plan.end().minusDays(shift)),
-                new Period(afterStart, plan.end()), snapshot.before(), snapshot.after(),
-                plan.end().isBefore(LocalDate.now(SEOUL)), null,
-                advice(snapshot.before(), snapshot.after(), snapshot.actuals(), profit),
+        String message = periodsChanged ? "비교 기간이나 품목이 바뀌었어요. 새 기준에 맞는 POS를 올려 주세요." : null;
+        return new Comparison(basis.productName(), first, publications, basis.before(), basis.after(),
+                snapshot.before(), snapshot.after(), plan.end().isBefore(LocalDate.now(SEOUL)), message,
+                plan.discountPromotion() ? advice(snapshot.before(), snapshot.after(), snapshot.actuals(), profit) : null,
                 snapshot.nextChecklist(), snapshot.actuals(), profit);
+    }
+
+    private Snapshot readSnapshot(Plan plan) {
+        return plan.snapshot() == null ? null : json.readValue(plan.snapshot(), Snapshot.class);
+    }
+
+    private static ComparisonBasis savedBasis(Plan plan, Snapshot snapshot) {
+        if (snapshot == null) return null;
+        if (snapshot.basis() != null) return snapshot.basis();
+        var manual = plan.legacyManual();
+        if (manual != null) return comparisonBasis(plan, manual.productName(), manual.publishedDate(), true);
+        var instagram = plan.instagramDate();
+        return instagram == null ? null : comparisonBasis(plan, plan.product(), instagram, false);
+    }
+
+    private static ComparisonBasis comparisonBasis(Plan plan, String product, LocalDate publishedDate, boolean requirePrePosting) {
+        var firstFullDay = publishedDate.plusDays(1);
+        var afterStart = firstFullDay.isAfter(plan.start()) ? firstFullDay : plan.start();
+        if (afterStart.isAfter(plan.end())) return null;
+        long shift = (ChronoUnit.DAYS.between(plan.start(), plan.end()) / 7 + 1) * 7;
+        if (requirePrePosting) {
+            long daysThroughEnd = ChronoUnit.DAYS.between(publishedDate, plan.end()) + 1;
+            shift = Math.max(shift, Math.ceilDiv(daysThroughEnd, 7) * 7);
+        }
+        return new ComparisonBasis(product,
+                new Period(afterStart.minusDays(shift), plan.end().minusDays(shift)), new Period(afterStart, plan.end()));
     }
 
     private static Advice advice(Totals before, Totals after, Actuals actuals, Profit profit) {
@@ -275,8 +396,9 @@ class PromotionImpactController {
                 .divide(BigDecimal.valueOf(totals.quantity()), 2, RoundingMode.HALF_UP);
     }
 
-    private static Comparison unavailable(Plan plan, String message) {
-        return new Comparison(plan.product(), null, null, null, null, false, message, null, null, null, null);
+    private static Comparison unavailable(Plan plan, List<ChannelPublication> publications, ChannelPublication first, String message) {
+        return new Comparison(plan.comparisonProduct(), first, publications, null, null, null, null,
+                false, message, null, null, null, null);
     }
 
     private static Long wholeValue(BigDecimal value) {
@@ -300,8 +422,13 @@ class PromotionImpactController {
         return ResponseEntity.status(404).body(new ApiError("PROMOTION_PLAN_NOT_FOUND", "프로모션 계획을 찾을 수 없어요.", null));
     }
 
+    enum Channel { INSTAGRAM, NAVER, DAANGN }
+    record PublicationInput(Channel channel, LocalDate publishedDate, String productName) {}
+    record PublicationReference(Channel channel, LocalDate publishedDate, String productName) {}
+    record ChannelPublication(Channel channel, LocalDate publishedDate, boolean automatic) {}
+    record ManualPublicationStatus(Map<Channel, PublicationReference> publications, String productName) {}
     enum Phase { BEFORE, AFTER }
-    record Upload(Phase phase, LocalDate start, LocalDate end, Long quantity, Long amount, Integer recordedDays) {}
+    record Upload(Phase phase, LocalDate start, LocalDate end, Long quantity, Long amount, Integer recordedDays, String productName) {}
     record Totals(long quantity, long amount, int recordedDays) {}
     record Period(LocalDate start, LocalDate end) {}
     enum NextAction { RETEST, KEEP_TERMS, REVIEW_TERMS, CHECK_DATA }
@@ -314,9 +441,37 @@ class PromotionImpactController {
     record Profit(long beforeWon, long afterWon, long changeWon) {}
     record ExplanationInput(Totals before, Totals after, Advice advice, Actuals actuals, Profit profit) {}
     record Explanation(ExplanationInput input, String explanation) {}
-    record Snapshot(Totals before, Totals after, Map<ChecklistItem, Boolean> nextChecklist, Actuals actuals) {}
-    record Comparison(String productName, Period before, Period after, Totals beforeTotals, Totals afterTotals,
+    record ComparisonBasis(String productName, Period before, Period after) {}
+    record Snapshot(Totals before, Totals after, Map<ChecklistItem, Boolean> nextChecklist, Actuals actuals, ComparisonBasis basis) {}
+    record Comparison(String productName, ChannelPublication publication, List<ChannelPublication> publications,
+                      Period before, Period after, Totals beforeTotals, Totals afterTotals,
                       boolean afterReady, String message, Advice advice,
                       Map<ChecklistItem, Boolean> nextChecklist, Actuals actuals, Profit profit) {}
-    private record Plan(String product, LocalDate start, LocalDate end, String state, String publishedAt, String snapshot) {}
+    private record Plan(String product, String draftProduct, boolean discountPromotion, LocalDate start, LocalDate end,
+                        String instagramPublishedAt, Map<Channel, PublicationReference> manualPublications,
+                        PublicationReference legacyManual, String manualSnapshot, String snapshot) {
+        String comparisonProduct() {
+            return manualPublications.values().stream().findFirst().map(PublicationReference::productName).orElse(product);
+        }
+
+        LocalDate instagramDate() {
+            if (instagramPublishedAt == null) return null;
+            return OffsetDateTime.parse(instagramPublishedAt).atZoneSameInstant(SEOUL).toLocalDate();
+        }
+
+        List<ChannelPublication> publications() {
+            var values = new ArrayList<ChannelPublication>();
+            var instagram = instagramDate();
+            if (instagram != null) values.add(new ChannelPublication(Channel.INSTAGRAM, instagram, true));
+            for (var entry : manualPublications.values()) {
+                values.add(new ChannelPublication(entry.channel(), entry.publishedDate(), false));
+            }
+            return values;
+        }
+
+        Plan withSnapshot(String updated) {
+            return new Plan(product, draftProduct, discountPromotion, start, end, instagramPublishedAt,
+                    manualPublications, legacyManual, manualSnapshot, updated);
+        }
+    }
 }

@@ -9,22 +9,25 @@ export type PromotionReviews = {
   retry: () => void
 }
 
-export function usePromotionReviews(auth?: string, planId?: string, subject?: string): PromotionReviews {
-  const [attempt, setAttempt] = useState(0)
+export type PromotionReviewSearch = { subject: string }
+
+export function usePromotionReviews(auth: string, planId?: string, search?: PromotionReviewSearch): PromotionReviews {
+  const [retryFor, setRetryFor] = useState<{ search: PromotionReviewSearch; attempt: number }>()
+  const attempt = retryFor && retryFor.search === search ? retryFor.attempt : 0
   const [loaded, setLoaded] = useState<{
     planId: string
-    subject: string
+    search: PromotionReviewSearch
     attempt: number
     result?: PromotionReviewResearch
     error?: string
   }>()
   useEffect(() => {
-    if (!auth || !planId || !subject) return
+    if (!auth || !planId || !search) return
     const controller = new AbortController()
     const timer = window.setTimeout(async () => {
-      const key = { planId, subject, attempt }
+      const key = { planId, search, attempt }
       try {
-        const result = await fetchPromotionReviewPoints(auth, planId, subject, controller.signal, attempt > 0)
+        const result = await fetchPromotionReviewPoints(auth, planId, search.subject, controller.signal, attempt > 0)
         if (!controller.signal.aborted) setLoaded({ ...key, result })
       } catch (error) {
         if (!controller.signal.aborted) setLoaded({ ...key, error: error instanceof Error ? error.message : '공개 후기를 불러오지 못했어요.' })
@@ -34,9 +37,14 @@ export function usePromotionReviews(auth?: string, planId?: string, subject?: st
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [auth, planId, subject, attempt])
-  const current = loaded && loaded.planId === planId && loaded.subject === subject && loaded.attempt === attempt ? loaded : undefined
-  return { subject, result: current?.result, error: current?.error, retry: () => setAttempt(previous => previous + 1) }
+  }, [auth, planId, search, attempt])
+  const current = loaded && loaded.planId === planId && loaded.search === search && loaded.attempt === attempt ? loaded : undefined
+  return {
+    subject: search?.subject,
+    result: current?.result,
+    error: current?.error,
+    retry: () => { if (search) setRetryFor({ search, attempt: attempt + 1 }) },
+  }
 }
 
 export function PromotionReviewSources({ sources }: { sources: PromotionReviewSource[] }) {
@@ -54,10 +62,13 @@ export function PromotionReviewPoints({ reviews, selected, onToggle }: {
   onToggle: (point: string) => void
 }) {
   const { subject, result, error, retry } = reviews
+  if (!subject) return null
   return <section className="promotion-review-points" aria-label="공개 후기에서 찾은 포인트">
-    <h3>공개 후기에서 찾은 포인트</h3>
-    {!subject && <p className="muted">소개할 메뉴나 소식을 고르면 공개 후기를 찾아요.</p>}
-    {subject && !result && !error && <p role="status" className="promotion-review-loading">‘{subject}’ 공개 후기와 출처를 확인하고 있어요…</p>}
+    {result && <h3>‘{subject}’ 공개 후기에서 찾은 포인트</h3>}
+    {!result && !error && <p role="status" className="promotion-review-loading">
+      <span aria-hidden="true" />
+      ‘{subject}’ 공개 후기를 찾아보고 있어요…
+    </p>}
     {error && <div>
       <p role="status">{error}</p>
       <button className="button secondary small" type="button" onClick={retry}>후기 다시 찾기</button>

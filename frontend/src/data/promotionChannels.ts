@@ -1,6 +1,12 @@
 import { formatNumber, won } from './shop'
 import type { Plan, PromotionChannelCopy, PromotionDraft } from './shop'
 
+export const promotionPublicationLabels = {
+  INSTAGRAM: '인스타그램',
+  NAVER: '네이버 플레이스',
+  DAANGN: '당근',
+} as const
+
 export const promotionChannels = [
   { id: 'instagram', label: '인스타그램', placement: '피드' },
   { id: 'naver', label: '네이버 플레이스', placement: '새소식' },
