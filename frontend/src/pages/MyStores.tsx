@@ -155,6 +155,14 @@ export function MyStores({ auth, ownerEmail, onAnalysisDeleted, onPlanDeleted }:
   const [retry, setRetry] = useState(0)
   const selected = useStoreSelection(ownerEmail, stores, params.get('storeId'), true)
   const section = storeSections.find(item => item.id === params.get('section'))?.id ?? 'history'
+  const resultPlanId = params.get('resultPlanId')
+  const resultAnalysisId = params.get('resultAnalysisId')
+  const upload = params.get('focus') === 'upload' ? {
+    missingStart: params.get('missingStart'),
+    resultTo: resultPlanId && resultAnalysisId
+      ? '/results?' + new URLSearchParams({ id: resultPlanId, analysisId: resultAnalysisId })
+      : undefined,
+  } : undefined
 
   function storeQuery(storeId: string, activeSection: typeof section) {
     const query = new URLSearchParams({ storeId })
@@ -202,8 +210,9 @@ export function MyStores({ auth, ownerEmail, onAnalysisDeleted, onPlanDeleted }:
         </nav>
         {section === 'history' && <StoreHistory key={selected.id} auth={auth} store={selected}
           onAnalysisDeleted={onAnalysisDeleted} onPlanDeleted={onPlanDeleted} />}
-        {section === 'pos-files' && <StorePosFiles key={selected.id + ':' + (params.get('date') ?? '') + ':' + (params.get('kind') ?? '')}
-          auth={auth} storeId={selected.id} initialDate={params.get('date')} initialKind={params.get('kind')} />}
+        {section === 'pos-files' && <StorePosFiles key={selected.id + ':' + params}
+          auth={auth} storeId={selected.id} storeName={selected.name}
+          initialDate={params.get('date')} initialKind={params.get('kind')} uploadRequest={upload} />}
         {section === 'photos' && <MenuPhotos key={selected.id} auth={auth} storeId={selected.id} />}
         {section === 'tone' && <section className="store-tone-panel" aria-label="홍보 말투 설정">
           <StorePromotionTone key={selected.id} auth={auth} storeId={selected.id} />

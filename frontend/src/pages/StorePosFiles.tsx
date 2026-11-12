@@ -5,7 +5,7 @@ import { deletePosFile, listPosFiles, uploadPosFile } from '../api/shop'
 import type { PosFileKind, StoredPosFile } from '../api/shop'
 import { PosFileCalendar } from '../components/PosFileCalendar'
 import { inspectPosDates } from '../data/pos'
-import { notifyResultsDataChanged, seoulDate } from '../data/promotionArchive'
+import { notifyResultsDataChanged, seoulDate, showWorkspaceNotifications } from '../data/promotionArchive'
 
 const fileKinds = { PAYMENT: '결제 내역', PRODUCT: '상품 주문' }
 const dateFormat = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeZone: 'Asia/Seoul' })
@@ -17,11 +17,13 @@ function startingDate(value: string | null, today: string) {
   return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value ? today : value
 }
 
-export function StorePosFiles({ auth, storeId, initialDate, initialKind }: {
-  auth: string; storeId: string; initialDate: string | null; initialKind: string | null
+export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKind, uploadRequest }: {
+  auth: string; storeId: string; storeName: string; initialDate: string | null; initialKind: string | null
+  uploadRequest?: { missingStart: string | null; resultTo?: string }
 }) {
   const today = seoulDate()
   const input = useRef<HTMLInputElement>(null)
+  const uploadHeading = useRef<HTMLHeadingElement>(null)
   const [files, setFiles] = useState<StoredPosFile[]>()
   const [kind, setKind] = useState<PosFileKind>(initialKind === 'PRODUCT' ? 'PRODUCT' : 'PAYMENT')
   const [view, setView] = useState<'calendar' | 'all'>('calendar')
@@ -36,8 +38,14 @@ export function StorePosFiles({ auth, storeId, initialDate, initialKind }: {
   const busy = Boolean(operation)
   const [loadError, setLoadError] = useState('')
   const [error, setError] = useState('')
-  const [status, setStatus] = useState('')
+  const [status, setStatus] = useState<{ message: string; operation: 'upload' | 'delete' }>()
   const [retry, setRetry] = useState(0)
+  const filesReady = files !== undefined
+  const focusUpload = Boolean(uploadRequest)
+  const requestedEnd = startingDate(initialDate, today)
+  const requestedStart = startingDate(uploadRequest?.missingStart ?? null, today)
+  const missingPeriod = uploadRequest?.missingStart === requestedStart && initialDate === requestedEnd
+    && requestedStart <= requestedEnd ? requestedStart === requestedEnd ? requestedEnd : requestedStart + ' ~ ' + requestedEnd : ''
 
   const counts = new Map<string, number>()
   for (const file of files ?? []) {
@@ -54,6 +62,12 @@ export function StorePosFiles({ auth, storeId, initialDate, initialKind }: {
     })
     return () => controller.abort()
   }, [auth, storeId, retry])
+
+  useEffect(() => {
+    if (!focusUpload || !filesReady) return
+    uploadHeading.current?.focus({ preventScroll: true })
+    uploadHeading.current?.scrollIntoView({ block: 'start' })
+  }, [focusUpload, filesReady])
 
   useEffect(() => {
     if (!selected) return
@@ -73,7 +87,7 @@ export function StorePosFiles({ auth, storeId, initialDate, initialKind }: {
     event.preventDefault()
     if (!selected || busy) return
     const accepted = kind === 'PRODUCT' ? /\.csv$/i : /\.(csv|xlsx)$/i
-    setStatus('')
+    setStatus(undefined)
     if (!accepted.test(selected.name) || selected.size < 1 || selected.size > 10 * 1024 * 1024) {
       setError(`10MB 이하의 ${kind === 'PRODUCT' ? '상품 주문 CSV' : '결제 내역 엑셀 또는 CSV'}를 골라 주세요.`)
       return
@@ -95,7 +109,7 @@ export function StorePosFiles({ auth, storeId, initialDate, initialKind }: {
       setFiles(current => [saved, ...(current ?? [])])
       setSelected(undefined)
       form.reset()
-      setStatus(`‘${saved.filename}’을 저장했어요.`)
+      setStatus({ message: `‘${saved.filename}’을 저장했어요.`, operation: 'upload' })
       notifyResultsDataChanged()
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : '파일을 저장할 수 없어요.')
@@ -108,11 +122,11 @@ export function StorePosFiles({ auth, storeId, initialDate, initialKind }: {
     if (busy || !window.confirm(`‘${file.filename}’을 삭제할까요? 이미 저장한 매출 분석은 유지돼요.`)) return
     setOperation('delete')
     setError('')
-    setStatus('')
+    setStatus(undefined)
     try {
       await deletePosFile(auth, storeId, file.id)
       setFiles(current => current?.filter(item => item.id !== file.id))
-      setStatus(`‘${file.filename}’을 삭제했어요.`)
+      setStatus({ message: `‘${file.filename}’을 삭제했어요.`, operation: 'delete' })
       notifyResultsDataChanged()
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : '파일을 삭제할 수 없어요.')
@@ -139,6 +153,12 @@ export function StorePosFiles({ auth, storeId, initialDate, initialKind }: {
   const dates = inspection?.file === selected ? inspection?.dates : undefined
   const visibleFiles = files?.filter(file => (!filterMonth || calendarDate(file).startsWith(filterMonth))
     && (!filterKind || file.kind === filterKind) && file.filename.toLocaleLowerCase('ko-KR').includes(search.trim().toLocaleLowerCase('ko-KR'))) ?? []
+  const calendar = <PosFileCalendar month={month} today={today} selected={selectedDate} counts={counts}
+    disabled={busy} onMonth={setMonth} onSelect={selectDate} />
+  const uploadFeedback = <>
+    {status && <p role="status">{status.message}</p>}
+    {error && <p className="error" role="alert">{error}</p>}
+  </>
 
   return <section className="form-stack" aria-labelledby="pos-files-title">
     <div className="section-top ruled">
@@ -154,15 +174,16 @@ export function StorePosFiles({ auth, storeId, initialDate, initialKind }: {
           <button type="button" aria-pressed={view === 'calendar'} disabled={busy} onClick={() => setView('calendar')}>달력 보기</button>
           <button type="button" aria-pressed={view === 'all'} disabled={busy} onClick={() => setView('all')}>전체 파일</button>
         </nav>
-        {status && <p role="status">{status}</p>}
-        {error && <p className="error" role="alert">{error}</p>}
-        <div className="pos-calendar-layout" hidden={view !== 'calendar'}>
-          <PosFileCalendar month={month} today={today} selected={selectedDate} counts={counts}
-            disabled={busy} onMonth={setMonth} onSelect={selectDate} />
+        {(!focusUpload || view === 'all') && uploadFeedback}
+        <div className={`pos-calendar-layout${focusUpload ? ' pos-calendar-layout-upload' : ''}`} hidden={view !== 'calendar'}>
+          {!focusUpload && calendar}
           <section className="pos-calendar-registration form-stack" aria-labelledby="pos-selected-day">
             <div>
-              <h3 id="pos-selected-day"><time dateTime={selectedDate}>{selectedDate}</time> POS 기록</h3>
-              <p className="muted">파일은 선택한 날짜에 표시돼요. 매출 집계는 파일 속 거래일을 사용해요.</p>
+              <h3 id="pos-selected-day" ref={uploadHeading} tabIndex={focusUpload ? -1 : undefined}>
+                <time dateTime={selectedDate}>{selectedDate}</time> POS 기록
+              </h3>
+              {focusUpload && <p className="muted">{storeName}{missingPeriod && ` · 필요한 상품 주문 POS ${missingPeriod}`}</p>}
+              {!focusUpload && <p className="muted">파일은 선택한 날짜에 표시돼요. 매출 집계는 파일 속 거래일을 사용해요.</p>}
             </div>
             <form className="pos-library-upload" onSubmit={upload}>
               <label>파일 종류<select value={kind} disabled={busy} onChange={event => {
@@ -186,6 +207,13 @@ export function StorePosFiles({ auth, storeId, initialDate, initialKind }: {
                 </div>
               </details>
             </form>
+            {focusUpload && uploadFeedback}
+            {uploadRequest?.resultTo && <Link className="button secondary pos-upload-result" to={uploadRequest.resultTo}>
+              이 계획의 실행 결과 확인 <span aria-hidden="true">→</span>
+            </Link>}
+            {focusUpload && !uploadRequest?.resultTo && status?.operation === 'upload' &&
+              <button type="button" className="button secondary pos-upload-result"
+                onClick={() => window.dispatchEvent(new Event(showWorkspaceNotifications))}>결과 알림 보기</button>}
             {dates && <div className="pos-calendar-date-preview">
               <p>파일에서 확인한 거래일 · {dates.start}{dates.start === dates.end ? '' : ` ~ ${dates.end}`}</p>
               {dates.end !== selectedDate && dates.end >= '1900-01-01' && dates.end <= today &&
@@ -197,6 +225,7 @@ export function StorePosFiles({ auth, storeId, initialDate, initialKind }: {
             {fileList(files.filter(file => calendarDate(file) === selectedDate),
               files.length ? '이날 등록한 POS 파일이 없어요.' : '저장된 POS 파일이 없어요.', false)}
           </section>
+          {focusUpload && calendar}
         </div>
         {view === 'all' && <>
           <div className="pos-library-filters">
