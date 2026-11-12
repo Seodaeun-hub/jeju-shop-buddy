@@ -159,6 +159,7 @@ export type PromotionDraft = {
     forecast: string | null
     sourceUrl: string | null
     leads: PromotionChannelCopy
+    issuedAt?: string | null
   }
 }
 

@@ -32,6 +32,23 @@ export function shortageOf(item: InventoryDraft) {
   return Math.max(0, usage - stock - incoming) / 1000
 }
 
+export function preparationFor(item: InventoryDraft, perServing: string, low: number, high: number) {
+  const perItem = parseQuantity(perServing)
+  if (perItem === null || perItem === 0) return null
+  const highMilli = BigInt(high) * BigInt(perItem)
+  if (highMilli > 1_000_000_000_000n) return null
+  const lowMilli = Number(BigInt(low) * BigInt(perItem))
+  const highUsage = Number(highMilli)
+  const stock = parseQuantity(item.stock)
+  const incoming = parseQuantity(item.incoming)
+  const available = stock === null || incoming === null ? null : stock + incoming
+  return {
+    usage: [lowMilli / 1000, highUsage / 1000] as const,
+    shortage: available === null ? null
+      : [Math.max(0, lowMilli - available) / 1000, Math.max(0, highUsage - available) / 1000] as const,
+  }
+}
+
 export function parseInventoryCsv(input: string): InventoryDraft[] {
   const rows = parseCsv(input).filter((row) => row.some(Boolean))
   const header = rows.shift()

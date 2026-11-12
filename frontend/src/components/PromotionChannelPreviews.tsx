@@ -56,7 +56,9 @@ export function PromotionChannelPreviews({ plan, draft, generatedImage, imageFai
     {weather && <p className="muted promotion-preview-note">
       게시일 {weather.date} · {weather.area} · {weather.season}
       {weather.forecast ? <> · {weather.forecast}
-        {weather.sourceUrl && <> · <a href={weather.sourceUrl} target="_blank" rel="noopener noreferrer">Open-Meteo 예보 출처</a></>}</>
+        {weather.sourceUrl && <> · <a href={weather.sourceUrl} target="_blank" rel="noopener noreferrer">
+          {weather.issuedAt ? '기상청 단기예보 출처' : '저장 당시 예보 출처'}
+        </a></>}</>
         : ' · 게시일 예보 없이 계절만 반영'}
     </p>}
     <div className="promotion-preview-grid">

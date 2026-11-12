@@ -56,13 +56,17 @@ class ProductPosArchive {
     }
 
     private Days read(FileRef file) {
-        var cached = cache.get(file.id());
-        if (cached != null) return cached;
+        synchronized (cache) {
+            var cached = cache.get(file.id());
+            if (cached != null) return cached;
+        }
         byte[] content = jdbc.sql("SELECT content FROM store_pos_files WHERE id = :id")
                 .param("id", file.id()).query(byte[].class).optional().orElse(null);
         Days days = parse(content, file.workbook(), file.start(), file.end());
-        cache.put(file.id(), days);
-        if (cache.size() > FILE_CACHE_SIZE) cache.pollFirstEntry();
+        synchronized (cache) {
+            cache.put(file.id(), days);
+            if (cache.size() > FILE_CACHE_SIZE) cache.pollFirstEntry();
+        }
         return days;
     }
 
@@ -145,6 +149,18 @@ class ProductPosArchive {
         return gapStart == null
                 ? new Summary(new PromotionImpactController.Totals(quantity, amount, recordedDays), null)
                 : new Summary(null, new PromotionImpactController.Period(gapStart, period.end()));
+    }
+
+    static Long soldOn(List<Days> archive, String product, LocalDate day) {
+        for (Days entry : archive) {
+            if (!entry.covers(day)) continue;
+            var products = entry.orders().get(day);
+            if (products == null || products.values().stream().noneMatch(item -> item.quantity() > 0)) return null;
+            var item = products.get(product);
+            if (item == Item.INVALID) return null;
+            return item == null ? 0L : item.quantity();
+        }
+        return null;
     }
 
     private static long total(String value) {

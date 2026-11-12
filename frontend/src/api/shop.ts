@@ -3,6 +3,41 @@ import type { Analysis, CustomerNotice, InventoryItem, MonthlySales, Plan, Produ
 import { formatEvidence } from '../data/strategyEvidence'
 
 export type Area = { code: string; name: string }
+export type InventoryDemandEstimate = {
+  product: string
+  historical: boolean
+  actualSales: number | null
+  basis: 'WEATHER' | 'WEEKDAY' | 'INSUFFICIENT'
+  low: number | null
+  high: number | null
+  samples: { date: string; quantity: number; rainfallMm: number | null; precipitation: boolean | null }[]
+  weatherMatches: number
+  precipitation: boolean | null
+  observedRainfallMm: number | null
+  station: string | null
+  observationSourceUrl: string | null
+}
+
+export type InventoryWeather = {
+  date: string
+  area: string
+  sourceUrl: string | null
+  forecast: {
+    label: string
+    issuedAt: string
+    minTemperature: number | null
+    maxTemperature: number | null
+    maxPrecipitationProbability: number | null
+  } | null
+  estimate: InventoryDemandEstimate | null
+}
+
+export function fetchInventoryWeather(auth: string, planId: string, date: string, productName?: string) {
+  const params = new URLSearchParams({ date })
+  if (productName) params.set('productName', productName)
+  return request<InventoryWeather>(`/api/plans/${encodeURIComponent(planId)}/inventory-review/forecast?${params}`, auth)
+}
+
 export type StoreInput = {
   name: string
   address: string

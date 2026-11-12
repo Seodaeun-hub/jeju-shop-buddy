@@ -311,6 +311,14 @@
 }
 .promotion-summary > div { flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; }
 .promotion-summary h2 { margin: 0 0 .2rem; }
+.promotion-review-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .35rem .75rem;
+}
+.promotion-review-summary h2, .promotion-review-summary > p { margin: 0; }
+.promotion-review-summary > p { grid-column: 1 / -1; overflow-wrap: anywhere; }
 .promotion-dialog {
   width: min(46rem, calc(100% - 1.5rem));
   max-height: min(48rem, calc(100dvh - 1.5rem));

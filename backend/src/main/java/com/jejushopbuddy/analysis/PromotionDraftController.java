@@ -143,8 +143,7 @@ class PromotionDraftController {
         }
         var previousContext = sameSubject ? plan.draft().weatherContext() : null;
         boolean sameDate = sameSubject && input.publishDate().equals(plan.draft().publishDate());
-        boolean retryForecast = previousContext != null && previousContext.forecast() == null
-                && PromotionWeather.withinForecastWindow(input.publishDate());
+        boolean retryForecast = sameDate && PromotionWeather.shouldRefresh(previousContext, input.publishDate());
         if (sameDate && previousContext != null && !retryForecast
                 && input.publishTime().equals(plan.draft().publishTime()) && Objects.equals(photo, plan.draft().photoDataUrl())
                 && !edited && !generate) {
@@ -156,7 +155,8 @@ class PromotionDraftController {
         var tone = sameSubject && plan.draft().tone() != null ? plan.draft().tone()
                 : Objects.requireNonNullElse(plan.defaultTone(), Tone.FRIENDLY);
         var context = sameDate && previousContext != null && !generateNewCopy && !retryForecast
-                ? PromotionWeather.context(plan.area(), input.publishDate(), previousContext.forecast(), plan.avoidPhrases())
+                ? PromotionWeather.context(plan.area(), input.publishDate(), previousContext.forecast(),
+                        previousContext.issuedAt(), plan.avoidPhrases())
                 : weather.resolve(plan.address(), plan.storeName(), plan.area(), input.publishDate(), plan.avoidPhrases());
         var generated = generate ? generateChannels(plan, product, tone, photo, sourcePage, selected) : null;
         if (sourcePage != null && (generated == null || !generated.researched())) {

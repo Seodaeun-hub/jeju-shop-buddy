@@ -191,7 +191,7 @@ export function PromotionDraftForm({ plan, auth, productNames, reviewFirst, onSa
             <label>게시 날짜<input type="date" required max={plan.endDate} value={publishDate} onChange={event => setPublishDate(event.target.value)} /></label>
             <label>게시 시간<input type="time" required value={publishTime} onChange={event => setPublishTime(event.target.value)} /></label>
           </div>
-          <small className="muted">게시일의 제주 계절과 확인된 예보를 세 채널 문구에 반영해요.</small>
+          <small className="muted">게시일의 제주 계절과 확인된 기상청 예보를 세 채널 문구에 반영해요.</small>
           {!reviewFirst && canSuggestSource && !hasEdits && <details>
             <summary>참고할 매장 페이지 추가</summary>
             <label>공개 매장 페이지 링크 (선택)
