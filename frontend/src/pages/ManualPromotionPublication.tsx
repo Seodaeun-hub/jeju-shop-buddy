@@ -2,10 +2,7 @@ import { useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
 import { saveManualPromotionPublication, type PromotionChannel, type ManualPromotionPublicationStatus } from '../api/shop'
 import { promotionPublicationLabels } from '../data/promotionChannels'
-
-const koreaDate = new Intl.DateTimeFormat('sv-SE', {
-  timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
-})
+import { notifyResultsDataChanged, seoulDate } from '../data/promotionArchive'
 
 export function ManualPromotionPublication({ auth, planId, channel, endDate, resultsTo, defaultProduct, status, onStatus }: {
   auth: string
@@ -22,7 +19,7 @@ export function ManualPromotionPublication({ auth, planId, channel, endDate, res
   const [error, setError] = useState('')
   const publication = status?.publications?.[channel]
   const label = promotionPublicationLabels[channel]
-  const today = koreaDate.format(new Date())
+  const today = seoulDate()
   const latestDate = endDate < today ? endDate : today
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -39,6 +36,7 @@ export function ManualPromotionPublication({ auth, planId, channel, endDate, res
         channel, publishedDate, productName: typeof productName === 'string' ? productName.trim() : undefined,
       }))
       if (details.current) details.current.open = false
+      notifyResultsDataChanged()
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : '게시일을 저장하지 못했어요.')
     } finally {

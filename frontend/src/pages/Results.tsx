@@ -5,6 +5,7 @@ import { deleteSalesResult, fetchSalesResult, saveSalesResult } from '../api/sho
 import type { ResultMetric, SavedSalesResult } from '../api/shop'
 import { Citrus, PageTitle } from '../components/ui'
 import { formatQuantity, parseQuantity } from '../data/inventory'
+import { notifyResultsDataChanged } from '../data/promotionArchive'
 import { addDays, changeRate, formatNumber, formatRate, won } from '../data/shop'
 import type { Plan, SalesPeriod, SalesResult } from '../data/shop'
 import { PromotionImpactPanel } from './PromotionImpactPanel'
@@ -78,7 +79,7 @@ function metricSummary(name: string, metric: ResultMetric) {
   return `하루 평균 ${name}${name === '매출' ? '이' : '가'} ${direction}.`
 }
 
-function SalesResults({ plan, onChange, auth }: { plan: Plan; onChange: (plan: Plan) => void; auth?: string }) {
+function SalesResults({ plan, onChange, auth, storeId }: { plan: Plan; onChange: (plan: Plan) => void; auth?: string; storeId?: string }) {
   const planId = plan.id
   const [savedResult, setSavedResult] = useState<SavedSalesResult | null>()
   const [loadError, setLoadError] = useState('')
@@ -148,6 +149,7 @@ function SalesResults({ plan, onChange, auth }: { plan: Plan; onChange: (plan: P
           before, after, scope: String(fields.get('scope')).trim(),
         }, savedResult?.id)
         setSavedResult(saved)
+        notifyResultsDataChanged()
       } else {
         onChange({ ...plan, salesResult: { before, after } })
       }
@@ -168,6 +170,7 @@ function SalesResults({ plan, onChange, auth }: { plan: Plan; onChange: (plan: P
       setConfirmDelete(false)
       setSavedResult(undefined)
       setReload((value) => value + 1)
+      notifyResultsDataChanged()
     } catch (error) {
       setError(error instanceof Error ? error.message : '실행 결과를 삭제할 수 없어요.')
     } finally {
@@ -181,7 +184,7 @@ function SalesResults({ plan, onChange, auth }: { plan: Plan; onChange: (plan: P
     <PageTitle title="실행 결과 확인" detail={`${plan.store}${showSample ? ' · 시연용 가상 결과' : ''}`} />
     <ResultSummary plan={plan} detail={savedResult?.scope ?? defaultScope} />
     {(plan.strategy === 'promotion' || (plan.marketing && plan.promotionDraft)) && auth && planId &&
-      <PromotionImpactPanel key={planId} auth={auth} planId={planId} review={plan.promotionReview} />}
+      <PromotionImpactPanel key={planId} auth={auth} planId={planId} storeId={storeId} endDate={plan.endDate} review={plan.promotionReview} />}
     {loading && <section className="empty-state compact">
       {loadError ? <>
         <p role="alert" className="error">{loadError}</p>
@@ -223,20 +226,23 @@ function SalesResults({ plan, onChange, auth }: { plan: Plan; onChange: (plan: P
         </section>}
       </aside>
     </div>}
-    {showForm && <form className="receipt result-form" onSubmit={save}>
-      <div className="section-top"><h2>비교할 매출·결제 건수 입력</h2><Citrus stamp /></div>
-      <p>두 기간에서 같은 요일과 시간대의 영업일을 골라 주세요. 매출과 결제 건수 중 비교할 항목만 입력하면 돼요.</p>
-      {planId && <label>공통 비교 기준<input name="scope" required maxLength={100} defaultValue={savedResult?.scope ?? defaultScope} /></label>}
-      <div className="result-form-grid">
-        <ResultFields phase="before" label="실행 전" values={(showSample ? undefined : result?.before) ?? defaults.before} />
-        <ResultFields phase="after" label="실행 기간" values={(showSample ? undefined : result?.after) ?? defaults.after} />
-      </div>
-      {error && <p className="error" role="alert">{error}</p>}
-      <div className="result-form-actions">
-        <button type="submit" className="button primary" disabled={!!pending}>{pending === 'save' ? '저장 중…' : savedResult ? '수정 내용 저장' : '전후 결과 비교하기'}</button>
-        {result && <button type="button" className="button secondary" disabled={!!pending} onClick={() => { setEditing(false); setError('') }}>취소</button>}
-      </div>
-    </form>}
+    {showForm && <details className="result-direct-entry" open={editing || undefined}>
+      <summary>{result ? '직접 입력한 결과 수정' : 'POS 없이 직접 입력'}</summary>
+      <form className="receipt result-form" onSubmit={save}>
+        <div className="section-top"><h2>비교할 매출·결제 건수 입력</h2><Citrus stamp /></div>
+        <p>두 기간에서 같은 요일과 시간대의 영업일을 골라 주세요. 매출과 결제 건수 중 비교할 항목만 입력하면 돼요.</p>
+        {planId && <label>공통 비교 기준<input name="scope" required maxLength={100} defaultValue={savedResult?.scope ?? defaultScope} /></label>}
+        <div className="result-form-grid">
+          <ResultFields phase="before" label="실행 전" values={(showSample ? undefined : result?.before) ?? defaults.before} />
+          <ResultFields phase="after" label="실행 기간" values={(showSample ? undefined : result?.after) ?? defaults.after} />
+        </div>
+        {error && <p className="error" role="alert">{error}</p>}
+        <div className="result-form-actions">
+          <button type="submit" className="button primary" disabled={!!pending}>{pending === 'save' ? '저장 중…' : savedResult ? '수정 내용 저장' : '전후 결과 비교하기'}</button>
+          {result && <button type="button" className="button secondary" disabled={!!pending} onClick={() => { setEditing(false); setError('') }}>취소</button>}
+        </div>
+      </form>
+    </details>}
   </>
 }
 
@@ -305,16 +311,17 @@ function ResultFooter({ to }: { to: string }) {
   return <div className="form-footer"><Link className="button secondary" to={to}>← 실행 관리로 돌아가기</Link></div>
 }
 
-export function Results({ plan, onChange, auth, executionTo }: {
+export function Results({ plan, onChange, auth, storeId, executionTo }: {
   plan: Plan
   onChange: (plan: Plan) => void
   auth?: string
+  storeId?: string
   executionTo: string
 }) {
   if (plan.strategy === 'inventory' && !plan.id) return <InventoryResults plan={plan} onChange={onChange} executionTo={executionTo} />
 
   return <>
-    <SalesResults plan={plan} onChange={onChange} auth={auth} />
+    <SalesResults plan={plan} onChange={onChange} auth={auth} storeId={storeId} />
     {plan.strategy === 'inventory' && <InventoryResults plan={plan} onChange={onChange} executionTo={executionTo} embedded />}
     <ResultFooter to={executionTo} />
   </>

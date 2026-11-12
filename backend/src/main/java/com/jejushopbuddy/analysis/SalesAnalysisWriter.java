@@ -85,27 +85,18 @@ class SalesAnalysisWriter {
             return DeleteStatus.NOT_FOUND;
         }
 
-        var publicationStates = jdbc.sql("""
-                SELECT COALESCE(instagram_publication->>'state', '')
+        var plans = jdbc.sql("""
+                SELECT id, instagram_publication->>'state' AS publication_state
                 FROM execution_plans
                 WHERE analysis_id = :id
                 ORDER BY id
                 FOR UPDATE
-                """).param("id", id).query(String.class).list();
-        if (publicationStates.stream().anyMatch(state ->
-                state.equals("SCHEDULED") || state.equals("PUBLISHING") || state.equals("VERIFY_REQUIRED"))) {
+                """).param("id", id).query(ExecutionPlanWriter.LockedPlan.class).list();
+        if (plans.stream().anyMatch(ExecutionPlanWriter.LockedPlan::publicationPending)) {
             return DeleteStatus.PUBLICATION_PENDING;
         }
 
-        jdbc.sql("""
-                DELETE FROM execution_checklist_items
-                WHERE plan_id IN (SELECT id FROM execution_plans WHERE analysis_id = :id)
-                """).param("id", id).update();
-        jdbc.sql("""
-                DELETE FROM execution_results
-                WHERE plan_id IN (SELECT id FROM execution_plans WHERE analysis_id = :id)
-                """).param("id", id).update();
-        jdbc.sql("DELETE FROM execution_plans WHERE analysis_id = :id").param("id", id).update();
+        ExecutionPlanWriter.deleteLockedPlans(jdbc, plans);
         jdbc.sql("DELETE FROM analysis_monthly_sales WHERE analysis_id = :id").param("id", id).update();
         jdbc.sql("DELETE FROM analysis_time_series WHERE analysis_id = :id").param("id", id).update();
         jdbc.sql("DELETE FROM sales_analyses WHERE id = :id").param("id", id).update();

@@ -4,6 +4,7 @@ import java.security.Principal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.YearMonth;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -21,6 +22,26 @@ class StoreHistoryController {
 
     StoreHistoryController(JdbcClient jdbc) {
         this.jdbc = jdbc;
+    }
+
+    @GetMapping("/api/execution-reminders")
+    ResponseEntity<List<ExecutionReminder>> executionReminders(Principal owner) {
+        var plans = jdbc.sql("""
+                SELECT p.id AS plan_id, p.analysis_id, s.id AS store_id, s.name AS store_name,
+                       p.strategy_snapshot->>'title' AS title, p.end_date,
+                       (p.strategy_code='PROMOTION' OR
+                        COALESCE(p.strategy_code='CUSTOM' AND p.strategy_snapshot @> '{"marketing":true}', false)) AS promotion,
+                       EXISTS (SELECT 1 FROM execution_results r WHERE r.plan_id=p.id) AS has_sales_result
+                FROM execution_plans p JOIN sales_analyses a ON p.analysis_id=a.id
+                JOIN stores s ON a.store_id=s.id JOIN owners o ON s.owner_id=o.id
+                WHERE o.email=:email AND p.end_date < :today
+                ORDER BY p.end_date DESC, p.created_at DESC, p.id DESC
+                """).param("email", owner.getName()).param("today", LocalDate.now(ZoneId.of("Asia/Seoul")))
+                .query((rs, row) -> new ExecutionReminder(rs.getObject("plan_id", UUID.class),
+                        rs.getObject("analysis_id", UUID.class), rs.getObject("store_id", UUID.class),
+                        rs.getString("store_name"), rs.getString("title"), rs.getObject("end_date", LocalDate.class),
+                        rs.getBoolean("promotion"), rs.getBoolean("has_sales_result"))).list();
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(plans);
     }
 
     @GetMapping("/api/stores/{storeId}/analyses")
@@ -71,4 +92,6 @@ class StoreHistoryController {
     record AnalysisSummary(UUID id, String name, String beforeMonth, String afterMonth, String concern,
                            OffsetDateTime createdAt, List<PlanSummary> plans) {}
     record PlanSummary(UUID id, String title, LocalDate startDate, LocalDate endDate, boolean hasResult) {}
+    record ExecutionReminder(UUID planId, UUID analysisId, UUID storeId, String storeName, String title, LocalDate endDate,
+                             boolean promotion, boolean hasSalesResult) {}
 }

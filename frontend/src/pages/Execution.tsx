@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { notifyResultsDataChanged } from '../data/promotionArchive'
 import { Link } from 'react-router'
 import { fetchInstagramPublication, fetchManualPromotionPublication, type InstagramPublicationStatus, type ManualPromotionPublicationStatus } from '../api/shop'
 import { CustomerNoticeDetails } from '../components/CustomerNotice'
@@ -438,7 +439,10 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
                   onSave={async input => { await onSavePromotionDraft(input); setEditingPromotion(false); setReviewFirst(false) }}
                   onRegenerate={onRegeneratePromotionCaption} />}
               {draft && <div hidden={Boolean(showPromotionEditor)}>
-                <PromoDraft plan={plan} auth={auth} instagramStatus={instagramStatus} onInstagramStatus={setInstagramStatus}
+                <PromoDraft plan={plan} auth={auth} instagramStatus={instagramStatus} onInstagramStatus={status => {
+                    setInstagramStatus(status)
+                    if (status.publication?.state === 'PUBLISHED') notifyResultsDataChanged()
+                  }}
                   manualStatus={manualStatus} onManualStatus={setManualStatus} resultsTo={resultsTo} />
               </div>}
             </div>

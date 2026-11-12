@@ -89,6 +89,71 @@ input[type="checkbox"], input[type="radio"] { width: 1.18rem; min-height: 0; hei
 .workspace-header .wordmark .citrus::before,
 .workspace-header .wordmark .citrus::after { background: #bfd3ad; }
 .workspace-header :is(.wordmark, .owner-menu summary, .header-actions > .text-button):focus-visible { outline-color: #fff; }
+.workspace-notifications { position: relative; }
+.workspace-notifications > summary {
+  position: relative;
+  display: grid;
+  place-items: center;
+  list-style: none;
+  width: 2.55rem;
+  height: 2.55rem;
+  border: 1px solid #ffffff65;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.workspace-notifications > summary::-webkit-details-marker { display: none; }
+.workspace-notifications > summary:is(:hover, :focus-visible) { background: #ffffff1f; outline-color: white; }
+.workspace-notification-count {
+  position: absolute;
+  top: -.35rem;
+  right: -.38rem;
+  min-width: 1.2rem;
+  padding: .08rem .22rem;
+  border-radius: 8px;
+  background: #f2d8ad;
+  color: #283226;
+  text-align: center;
+  font-size: .72rem;
+}
+.workspace-notification-panel {
+  position: absolute;
+  z-index: 15;
+  top: calc(100% + .6rem);
+  right: 0;
+  width: min(24rem, calc(100vw - 2rem));
+  max-height: min(65vh, 30rem);
+  overflow: auto;
+  color: var(--ink);
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+  font-weight: 400;
+}
+.workspace-notification-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  padding: .8rem 1rem;
+}
+.workspace-notification-heading h2 { font-size: 1.08rem; font-weight: 750; margin: 0; }
+.workspace-notification-panel > p { padding: 0 1rem .75rem; margin: 0; }
+.workspace-notification-panel ul { list-style: none; margin: 0; padding: 0; }
+.workspace-notification-panel li { border-top: 1px solid var(--line); }
+.workspace-notification-panel li a {
+  display: grid;
+  gap: .2rem;
+  padding: .7rem 1rem;
+  color: inherit;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.workspace-notification-panel li a > span:first-child { color: var(--green); font-size: .78rem; font-weight: 750; }
+.workspace-notification-panel li a[data-unread="true"] { background: #edf2eb; }
+.workspace-notification-panel li a:hover { background: #e1eae0; }
+@media (max-width: 550px) {
+  .workspace-notification-panel { position: fixed; top: 4.15rem; right: .8rem; left: .8rem; width: auto; }
+}
 .workspace-nav-toggle {
   display: grid;
   width: 2.6rem;
