@@ -121,6 +121,21 @@ export const promotionTones = [
 ] as const
 export type PromotionTone = (typeof promotionTones)[number]['value']
 
+export type PromotionChannelCopy = Record<'instagram' | 'naver' | 'daangn', string>
+export type PromotionChannels = {
+  findings: { kind: 'MENU' | 'STORE' | 'HOURS'; text: string; url: string }[]
+  drafts: PromotionChannelCopy
+  researched: boolean
+  offer: string | null
+  basis?: 'WEB' | 'WEB_AND_PHOTO' | 'PHOTO' | 'MENU' | 'BASIC'
+  sourceCheckVersion?: number
+}
+
+export type PromotionReviewSource = { id: string; title: string; url: string; dateLabel: string }
+export type PromotionReviewPoint = { id: string; sentence: string; anchors: string[]; sourceIds: string[] }
+export type PromotionReviewSelection = { sources: PromotionReviewSource[]; points: PromotionReviewPoint[] }
+export type PromotionReviewResearch = PromotionReviewSelection & { id: string; subject: string; searchedAt: string }
+
 export type PromotionDraft = {
   tone?: PromotionTone
   storeName: string
@@ -135,6 +150,8 @@ export type PromotionDraft = {
   copySource: 'GPT' | 'TEMPLATE' | 'EDITED'
   photoDataUrl: string | null
   templateVersion: number
+  channels?: PromotionChannels
+  reviewSelection?: PromotionReviewSelection
 }
 
 export type PromotionDraftInput = {
@@ -144,7 +161,11 @@ export type PromotionDraftInput = {
   publishTime: string
   photoDataUrl?: string
   useSavedPhoto: boolean
-  caption?: string
+  channelEdits?: Partial<PromotionChannelCopy>
+  sourcePageUrl?: string
+  generateNewCopy?: boolean
+  reviewResearchId?: string
+  reviewPointIds?: string[]
 }
 
 export type CustomerNotice = { concern: string; text: string; placement: string }

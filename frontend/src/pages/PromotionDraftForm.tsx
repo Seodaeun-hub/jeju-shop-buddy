@@ -1,39 +1,52 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { fetchPromotionPhoto } from '../api/shop'
+import { PromotionReviewPoints, usePromotionReviews } from '../components/PromotionReviewPoints'
+import type { PromotionReviews } from '../components/PromotionReviewPoints'
 import { prepareMenuPhoto } from '../data/menuPhoto'
+import { promotionCaptionBody, promotionCaptions, promotionChannels } from '../data/promotionChannels'
 import { formatNumber, promotionTones, won } from '../data/shop'
-import type { Plan, PromotionDraftInput, PromotionTone } from '../data/shop'
+import type { Plan, PromotionChannelCopy, PromotionDraftInput, PromotionTone } from '../data/shop'
 
-export function PromotionDraftForm({ plan, auth, productNames, onSubjectChange, onSave, onRegenerate }: {
+export function PromotionDraftForm({ plan, auth, productNames, reviewFirst, preloadedReview, initialSubject, onSave, onRegenerate }: {
   plan: Plan
   auth: string
   productNames?: string[]
-  onSubjectChange: (subject: string) => void
+  reviewFirst: boolean
+  preloadedReview: PromotionReviews
+  initialSubject?: string
   onSave: (input: PromotionDraftInput) => Promise<void>
   onRegenerate: (tone: PromotionTone) => Promise<void>
 }) {
   const review = plan.promotionReview
   const marketing = plan.marketing === true
   const draft = plan.promotionDraft
-  const [subject, setSubject] = useState(marketing ? draft?.headline ?? '' : '')
+  const [subject, setSubject] = useState(marketing ? draft?.headline ?? initialSubject ?? '' : '')
   const menus = [...new Set(productNames)]
   const [customSubject, setCustomSubject] = useState(() => Boolean(subject && !menus.includes(subject)))
   const trimmedSubject = subject.trim()
   const currentDraft = !marketing || draft?.headline === trimmedSubject ? draft : undefined
   const productName = marketing ? trimmedSubject : review?.productName
+  const [selection, setSelection] = useState<{ id: string; points: string[] }>()
+  const usePreload = reviewFirst && productName === preloadedReview.subject
+  const localReview = usePromotionReviews(auth, plan.id, reviewFirst && !usePreload ? productName : undefined)
+  const reviews = usePreload ? preloadedReview : localReview
+  const selectedPoints = selection?.id === reviews.result?.id ? selection?.points ?? [] : []
+  const canSkipReviews = reviewFirst && (Boolean(reviews.error) || reviews.result?.points.length === 0)
   const [publishDate, setPublishDate] = useState(draft?.publishDate ?? plan.startDate)
   const [publishTime, setPublishTime] = useState(draft?.publishTime.slice(0, 5) ?? '11:00')
   const [photoOptions, setPhotoOptions] = useState<{ product: string; dataUrl: string | null }>()
   const savedPhoto = photoOptions?.product === productName ? photoOptions?.dataUrl : undefined
   const [photo, setPhoto] = useState<string>()
-  const [captionEdit, setCaptionEdit] = useState<string>()
+  const [channelEdits, setChannelEdits] = useState<Partial<PromotionChannelCopy>>({})
+  const [sourcePageUrl, setSourcePageUrl] = useState('')
   const [defaultTone, setDefaultTone] = useState<PromotionTone | null>(null)
   const [toneChoice, setToneChoice] = useState<PromotionTone>()
   const [toneMessage, setToneMessage] = useState('')
   const tone = toneChoice ?? currentDraft?.tone ?? defaultTone ?? 'PLAIN'
   const [useSavedPhoto, setUseSavedPhoto] = useState(draft ? Boolean(draft.photoDataUrl) : true)
   const [busy, setBusy] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -58,11 +71,18 @@ export function PromotionDraftForm({ plan, auth, productNames, onSubjectChange, 
   const availablePhoto = savedPhoto ?? currentDraft?.photoDataUrl
   const preview = photo ?? (useSavedPhoto ? availablePhoto : null)
   const cannotSave = marketing ? !trimmedSubject : review?.maxDiscountQuantity === 0
+  const captions = currentDraft && promotionCaptions(plan, currentDraft)
+  const offer = currentDraft?.channels?.offer
+  const hasEdits = Object.values(channelEdits).some(value => value !== undefined)
+  const oldCopy = currentDraft && currentDraft.copySource !== 'EDITED'
+    && (currentDraft.channels?.basis === 'BASIC' || (!currentDraft.channels?.basis && !currentDraft.channels?.researched)
+      || (currentDraft.channels?.basis && (currentDraft.channels.sourceCheckVersion ?? 0) < 2))
+  const canSuggestSource = !currentDraft || (currentDraft.copySource !== 'EDITED' && !currentDraft.channels?.researched)
 
   function changeSubject(value: string) {
     setSubject(value)
-    onSubjectChange(value.trim())
-    setCaptionEdit(undefined)
+    setChannelEdits({})
+    setSelection(undefined)
     setPhoto(undefined)
     setUseSavedPhoto(true)
     setToneChoice(undefined)
@@ -89,9 +109,9 @@ export function PromotionDraftForm({ plan, auth, productNames, onSubjectChange, 
     setToneMessage('')
     try {
       await onRegenerate(tone)
-      setCaptionEdit(undefined)
+      setChannelEdits(({ naver, daangn }) => ({ naver, daangn }))
       setToneChoice(undefined)
-      setToneMessage('이번 게시물의 문구를 다시 만들었어요.')
+      setToneMessage('인스타그램 문구의 말투를 바꿨어요.')
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : '문구를 다시 만들지 못했어요.')
     } finally {
@@ -101,22 +121,21 @@ export function PromotionDraftForm({ plan, auth, productNames, onSubjectChange, 
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (busy || cannotSave) return
+    if (busy || cannotSave || (reviewFirst && !selectedPoints.length && !canSkipReviews)) return
     setBusy(true)
+    setSaving(true)
     setError('')
     try {
       await onSave({ review, subject: marketing ? trimmedSubject : undefined, publishDate, publishTime,
-        photoDataUrl: photo, useSavedPhoto, caption: captionEdit })
-      setCaptionEdit(undefined)
-      if (photo && productName) {
-        setPhotoOptions({ product: productName, dataUrl: photo })
-        setPhoto(undefined)
-        setUseSavedPhoto(true)
-      }
+        photoDataUrl: photo, useSavedPhoto, channelEdits: currentDraft ? channelEdits : undefined,
+        sourcePageUrl: canSuggestSource && !hasEdits ? sourcePageUrl.trim() || undefined : undefined,
+        generateNewCopy: reviewFirst || undefined, reviewResearchId: selectedPoints.length ? reviews.result?.id : undefined,
+        reviewPointIds: selectedPoints.length ? selectedPoints : undefined })
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : '홍보 초안을 저장하지 못했어요.')
     } finally {
       setBusy(false)
+      setSaving(false)
     }
   }
 
@@ -124,8 +143,10 @@ export function PromotionDraftForm({ plan, auth, productNames, onSubjectChange, 
     <form className="form-stack" onSubmit={submit}>
       {review && <p>{review.productName} · {won(review.discountWon)} 할인 · {won(review.discountedPriceWon)} · {formatNumber(review.maxDiscountQuantity)}개 한정</p>}
       <p className="muted">{marketing ? '실행 기간' : '행사 기간'} {plan.startDate} ~ {plan.endDate} · 게시 일정은 한국 시간으로 저장해요.</p>
+      {!reviewFirst && !currentDraft && <p className="muted">매장 공개 정보를 찾아 인스타그램·네이버 플레이스·당근 초안을 함께 만들어요.</p>}
+      {!reviewFirst && oldCopy && !hasEdits && <p className="muted">기본 문구에 직접 손대지 않고 저장하면 AI가 매장 정보와 등록한 사진을 참고해 세 채널 문구를 채워요.</p>}
       <fieldset disabled={busy} className="form-stack">
-        {marketing && <>
+        {marketing && reviewFirst && <>
           {menus.length > 0 && <label>소개할 메뉴
             <select required value={customSubject ? 'custom' : menus.includes(subject) ? `menu:${subject}` : ''}
               onChange={event => {
@@ -144,23 +165,42 @@ export function PromotionDraftForm({ plan, auth, productNames, onSubjectChange, 
           </label>}
           {draft && !currentDraft && <p className="muted">새 홍보 초안을 만들면 선택한 메뉴나 소식으로 미리보기가 바뀌어요.</p>}
         </>}
+        {reviewFirst && <PromotionReviewPoints reviews={reviews} selected={selectedPoints}
+          onToggle={point => {
+            if (!reviews.result) return
+            setSelection({ id: reviews.result.id, points: selectedPoints.includes(point)
+              ? selectedPoints.filter(id => id !== point) : [...selectedPoints, point] })
+          }} />}
         <div className="promotion-datetime">
           <label>게시 날짜<input type="date" required max={plan.endDate} value={publishDate} onChange={event => setPublishDate(event.target.value)} /></label>
           <label>게시 시간<input type="time" required value={publishTime} onChange={event => setPublishTime(event.target.value)} /></label>
         </div>
-        {currentDraft && <div className="form-stack">
-          <label>이번 게시물 말투<select value={tone} onChange={event => {
+        {!reviewFirst && canSuggestSource && !hasEdits && <details>
+          <summary>참고할 매장 페이지 추가</summary>
+          <label>공개 매장 페이지 링크 (선택)
+            <input type="url" maxLength={1000} value={sourcePageUrl}
+              onChange={event => setSourcePageUrl(event.target.value)} placeholder="https://" />
+          </label>
+          <small className="muted">상호와 도로명 주소가 표시된 비짓제주나 네이버 플레이스 소개 링크를 넣을 수 있어요.</small>
+        </details>}
+        {!reviewFirst && currentDraft && <div className="form-stack">
+          <label>인스타그램 게시물 말투<select value={tone} onChange={event => {
             setToneChoice(event.target.value as PromotionTone)
             setToneMessage('')
           }}>
             {promotionTones.map(({value, label}) => <option key={value} value={value}>{label}</option>)}
           </select></label>
           <button type="button" className="button secondary small" onClick={() => void regenerate()}>이 말투로 문구 다시 만들기</button>
-          <small className="muted">이번 게시물 문구를 선택한 말투로 바꿀 수 있어요.</small>
           {toneMessage && <p role="status">{toneMessage}</p>}
         </div>}
-        {currentDraft && <label>홍보 문구<textarea rows={5} required maxLength={2200} value={captionEdit ?? currentDraft.caption}
-          onChange={event => setCaptionEdit(event.target.value)} /></label>}
+        {!reviewFirst && captions && <div className="promotion-edit-captions">
+          {promotionChannels.map(({ id, label }) => <label key={id}>{label} 문구
+            <textarea rows={7} required maxLength={2200 - (offer ? offer.length + 2 : 0)}
+              value={channelEdits[id] ?? promotionCaptionBody(captions[id], offer)}
+              onChange={event => setChannelEdits({ ...channelEdits, [id]: event.target.value })} />
+          </label>)}
+        </div>}
+        {offer && <p className="muted">행사 조건은 세 채널 문구에 자동으로 붙어요.</p>}
         <label>{marketing ? '홍보에 사용할 사진 올리기' : '음식 사진 올리기'}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => {
           const file = event.target.files?.[0]
           if (file) void upload(file)
@@ -171,9 +211,13 @@ export function PromotionDraftForm({ plan, auth, productNames, onSubjectChange, 
       </fieldset>
       {preview && <img src={preview} alt={productName + ' 사진 미리보기'} width={160} />}
       {review?.maxDiscountQuantity === 0 && <p className="muted">할인 예산으로 최소 한 개를 할인할 수 있어야 해요.</p>}
-      <button className="button primary small" disabled={busy || cannotSave}>
-        {busy ? '준비 중…' : currentDraft ? '홍보 초안 변경 저장' : marketing ? '홍보 초안 만들기' : '할인 조건 확정하고 홍보 초안 저장'}
+      <button className="button primary small" disabled={busy || cannotSave || (reviewFirst && !selectedPoints.length && !canSkipReviews)}>
+        {busy ? '준비 중…' : reviewFirst
+          ? canSkipReviews ? '후기 없이 세 채널 초안 만들기' : '선택한 포인트로 세 채널 초안 만들기'
+          : '홍보 초안 변경 저장'}
       </button>
+      {saving && <p role="status">{reviewFirst ? '선택한 내용과 매장 정보를 바탕으로 세 채널 문구를 쓰고 있어요…'
+        : '홍보 초안을 저장하고 있어요…'}</p>}
       {error && <p className="error" role="alert">{error}</p>}
     </form>
   </div>

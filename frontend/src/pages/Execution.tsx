@@ -6,6 +6,8 @@ import { Citrus, PageTitle } from '../components/ui'
 import { ExecutionGuideSteps } from '../components/ExecutionGuidePanel'
 import { StoreNotice } from '../components/StoreNotice'
 import { ExecutionPlanSwitcher } from '../components/ExecutionPlanSwitcher'
+import { PromotionChannelPreviews } from '../components/PromotionChannelPreviews'
+import { usePromotionReviews } from '../components/PromotionReviewPoints'
 import { drawPromotionCard } from '../data/promotionCard'
 import { formatNumber, won } from '../data/shop'
 import type { Analysis, InventoryItem, Plan, PromotionDraftInput, PromotionReviewInput, PromotionTone } from '../data/shop'
@@ -70,26 +72,34 @@ function PromoDraft({ plan, auth, instagramStatus, onInstagramStatus }: {
   const store = saved?.storeName ?? plan.store
   const canvas = useRef<HTMLCanvasElement>(null)
   const [status, setStatus] = useState('')
-  const [rendered, setRendered] = useState<{ photo: string | null; draft: typeof saved }>()
+  const [rendered, setRendered] = useState<{ photo: string | null; draft: typeof saved; preview?: string }>()
+  const [failedPhoto, setFailedPhoto] = useState<string>()
   const photoUrl = saved?.photoDataUrl ?? null
-  const instagram = Boolean(saved) || plan.channel === '인스타그램'
   const ready = rendered?.photo === photoUrl && rendered.draft === saved
 
   useEffect(() => {
-    const context = canvas.current?.getContext('2d')
-    if (!context) return
+    const card = canvas.current
+    const context = card?.getContext('2d')
+    if (!card || !context) return
+    function savePreview(photo: string | null) {
+      setRendered({ photo, draft: saved, preview: saved ? card?.toDataURL('image/jpeg', 0.88) : undefined })
+    }
+    function markPhotoFailed() {
+      if (photoUrl) setFailedPhoto(photoUrl)
+      setStatus('저장된 사진을 표시하지 못했어요.')
+    }
     if (saved && saved.templateVersion >= 2) {
       drawPromotionCard(context, saved)
       if (!photoUrl) {
-        setRendered({ photo: null, draft: saved })
+        savePreview(null)
         return
       }
       const photo = new Image()
       photo.onload = () => {
         drawPromotionCard(context, saved, photo)
-        setRendered({ photo: photoUrl, draft: saved })
+        savePreview(photoUrl)
       }
-      photo.onerror = () => setStatus('저장된 사진을 표시하지 못했어요.')
+      photo.onerror = markPhotoFailed
       photo.src = photoUrl
       return () => { photo.onload = null; photo.onerror = null }
     }
@@ -131,7 +141,7 @@ function PromoDraft({ plan, auth, instagramStatus, onInstagramStatus }: {
       context.beginPath()
       context.ellipse(578, 737, 53, 21, -.43, 0, 2 * Math.PI)
       context.fill()
-      setRendered({ photo: null, draft: saved })
+      savePreview(null)
       return
     }
     const image = new Image()
@@ -140,9 +150,9 @@ function PromoDraft({ plan, auth, instagramStatus, onInstagramStatus }: {
       const width = image.width * scale
       const height = image.height * scale
       context.drawImage(image, (1080 - width) / 2, 695 + (245 - height) / 2, width, height)
-      setRendered({ photo: photoUrl, draft: saved })
+      savePreview(photoUrl)
     }
-    image.onerror = () => setStatus('저장된 사진을 표시하지 못했어요.')
+    image.onerror = markPhotoFailed
     image.src = photoUrl
     return () => { image.onload = null; image.onerror = null }
   }, [detail, feature, headline, photoUrl, saved, store])
@@ -172,26 +182,33 @@ function PromoDraft({ plan, auth, instagramStatus, onInstagramStatus }: {
     }, 'image/png')
   }
 
+  const generatedImage = ready ? rendered.preview : undefined
+  const instagramImage = postedImage ?? generatedImage
+  const previewCanvas = <canvas hidden={Boolean(saved)} ref={canvas} width="1080" height="1080" role="img"
+    aria-label={`${store} 홍보 이미지 · ${headline}${saved?.discountedPrice ? ` · ${saved.discountedPrice}` : ""} · ${feature} · ${detail}`} />
+
+  if (saved) return <section className="execution-material">
+    {previewCanvas}
+    <PromotionChannelPreviews plan={plan} draft={saved} instagramCaption={caption}
+      generatedImage={generatedImage} imageFailed={!ready && failedPhoto === photoUrl}
+      instagramImage={instagramImage} instagramUsername={publication?.username ?? instagramStatus?.username}
+      instagramPublishing={plan.id && auth && onInstagramStatus && <InstagramPublish key={plan.id} auth={auth}
+        planId={plan.id} caption={caption} hasPhoto={Boolean(photoUrl)} endDate={plan.endDate} image={instagramImage}
+        state={instagramStatus} onStatus={onInstagramStatus} />} />
+  </section>
+
   return <section className="execution-material">
-    <div className="ruled"><h2>{publication?.state === 'PUBLISHED' ? '게시한 인스타그램 홍보물' : `${saved ? '인스타그램' : plan.channel} 홍보 초안`}</h2></div>
+    <div className="ruled"><h3>{plan.channel} 홍보 초안</h3></div>
     <div className="receipt promo-draft">
-      {postedImage && <img src={postedImage} alt={`${store} 게시 당시 홍보 이미지`} width={1080} height={1080} />}
-      <canvas hidden={Boolean(postedImage)} ref={canvas} width="1080" height="1080" role="img" aria-label={`${store} 홍보 이미지 · ${headline}${saved?.discountedPrice ? ` · ${saved.discountedPrice}` : ""} · ${feature} · ${detail}`} />
+      {previewCanvas}
       <div className="promo-copy">
-        <span className="badge">{saved?.copySource === 'EDITED' ? '직접 작성' : saved?.copySource === 'GPT' ? 'GPT 문구' : saved ? '기본 문구' : '초안'}</span>
-        {saved && !publication && <p><strong>초안 게시 예정</strong> · {saved.publishDate} {saved.publishTime.slice(0, 5)} 한국 시간</p>}
         <p>{caption}</p>
         <div className="promo-actions">
-          {postedImage ? <a className="button secondary small" href={postedImage} download="가게짝꿍-게시한-홍보물.jpg">이미지 저장</a>
-            : <button type="button" className="button secondary small" disabled={!ready} onClick={saveImage}>이미지 저장</button>}
+          <button type="button" className="button secondary small" disabled={!ready} onClick={saveImage}>이미지 저장</button>
           <button type="button" className="button secondary small" onClick={copyCaption}>문구 복사</button>
         </div>
-        {saved && plan.id && auth && onInstagramStatus && (ready || postedImage) &&
-          <InstagramPublish key={plan.id} auth={auth} planId={plan.id} caption={caption} hasPhoto={Boolean(photoUrl)} endDate={plan.endDate}
-            image={() => postedImage ?? canvas.current?.toDataURL('image/jpeg', 0.88)} state={instagramStatus}
-            onStatus={onInstagramStatus} />}
-        {instagram && <a href="https://www.instagram.com/" target="_blank" rel="noreferrer">인스타그램 열기 ↗</a>}
-        {!publication && <small className="muted">게시 전 날짜와 안내 내용을 확인해 주세요.</small>}
+        {plan.channel === '인스타그램' && <a href="https://www.instagram.com/" target="_blank" rel="noopener noreferrer">인스타그램 열기 ↗</a>}
+        <small className="muted">게시 전 날짜와 안내 내용을 확인해 주세요.</small>
         <small role="status">{status}</small>
       </div>
     </div>
@@ -213,8 +230,9 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
   const [savingIndex, setSavingIndex] = useState<number>()
   const [checklistError, setChecklistError] = useState('')
   const [instagramStatus, setInstagramStatus] = useState<InstagramPublicationStatus>()
-  const [promotionSubject, setPromotionSubject] = useState<string>()
   const [editingPromotion, setEditingPromotion] = useState(false)
+  const [promotionOpen, setPromotionOpen] = useState(false)
+  const [reviewFirst, setReviewFirst] = useState(false)
   const promotionDialog = useRef<HTMLDialogElement>(null)
   const promotionDialogHeading = useRef<HTMLHeadingElement>(null)
   const hasPromotionMaterials = plan.strategy === 'promotion' || plan.marketing === true
@@ -223,18 +241,22 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
   const locked = Boolean(publication)
   const loadingInstagram = trackInstagram && !instagramStatus
   const draft = plan.promotionDraft
-  const showPromotionDraft = draft && (locked || !plan.marketing || promotionSubject === undefined
-    || promotionSubject === draft.headline)
   const promotionEditorReady = !locked && !loadingInstagram && (plan.marketing || plan.promotionReview)
-  const showPromotionEditor = promotionEditorReady && (editingPromotion || !showPromotionDraft)
+  const onlyMenu = analysis.productSales?.length === 1 ? analysis.productSales[0].productName : undefined
+  const reviewSubject = promotionEditorReady ? plan.promotionReview?.productName ?? draft?.headline ?? onlyMenu : undefined
+  const reviewResearch = usePromotionReviews(auth, plan.id, reviewSubject)
+  const showPromotionEditor = promotionOpen && promotionEditorReady && (reviewFirst || editingPromotion)
   const promotionStatus = publication ? publicationLabels[publication.state] : draft ? '초안 저장됨' : '작성 전'
   const promotionSchedule = publication?.state === 'SCHEDULED' && publication.scheduledAt
     ? instagramSchedule.format(new Date(publication.scheduledAt))
-    : !publication && draft ? `${shortDate(draft.publishDate)} ${draft.publishTime.slice(0, 5)} 게시 예정` : undefined
+    : !publication && draft ? `${shortDate(draft.publishDate)} ${draft.publishTime.slice(0, 5)} 게시 희망` : undefined
 
   useEffect(() => {
-    if (promotionDialog.current?.open) promotionDialogHeading.current?.focus()
-  }, [showPromotionEditor])
+    if (promotionOpen && promotionDialog.current?.open) {
+      promotionDialog.current.querySelector('.promotion-dialog-body')?.scrollTo({ top: 0 })
+      promotionDialogHeading.current?.focus()
+    }
+  }, [promotionOpen, showPromotionEditor])
 
   useEffect(() => {
     if (!trackInstagram || !auth || !plan.id) return
@@ -354,36 +376,42 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
           saved={plan.promotionReview} initialBudget={plan.budget} auth={auth} planId={plan.id} readOnly={locked || loadingInstagram} onSave={onSavePromotion} />}
         {hasPromotionMaterials && auth && onSavePromotionDraft && <section className="receipt promotion-summary">
           <div>
-            <h2>인스타 홍보</h2>
-            <p className="muted">{loadingInstagram ? '게시 상태 확인 중…' : [draft?.headline, promotionStatus, promotionSchedule].filter(Boolean).join(' · ')}</p>
-            {!loadingInstagram && !showPromotionDraft && !promotionEditorReady &&
+            <h2>홍보</h2>
+            <p className="muted">{loadingInstagram ? '인스타 게시 상태 확인 중…' : [draft?.headline, promotionStatus, promotionSchedule].filter(Boolean).join(' · ')}</p>
+            {promotionEditorReady && !draft && <p className="muted">인스타그램·네이버 플레이스·당근 초안을 함께 만들어요.</p>}
+            {!loadingInstagram && !draft && !promotionEditorReady &&
               <p className="muted">할인 조건을 저장하면 홍보 초안을 만들 수 있어요.</p>}
           </div>
-          <button type="button" className="button secondary small" aria-haspopup="dialog"
-            disabled={loadingInstagram || (!promotionEditorReady && !showPromotionDraft)}
-            onClick={() => { setEditingPromotion(!showPromotionDraft); promotionDialog.current?.showModal() }}>
-            {showPromotionDraft ? '홍보물 보기' : '홍보 초안 만들기'}
-          </button>
-          <dialog ref={promotionDialog} className="promotion-dialog" aria-labelledby="promotion-dialog-title">
+          <div className="promo-actions">
+            {draft && <button type="button" className="button secondary small" aria-haspopup="dialog"
+              disabled={loadingInstagram}
+              onClick={() => { setReviewFirst(false); setEditingPromotion(false); setPromotionOpen(true); promotionDialog.current?.showModal() }}>
+              홍보물 보기
+            </button>}
+            {promotionEditorReady && <button type="button" className="button primary small" aria-haspopup="dialog"
+              onClick={() => { setReviewFirst(true); setEditingPromotion(false); setPromotionOpen(true); promotionDialog.current?.showModal() }}>
+              홍보물 만들기
+            </button>}
+          </div>
+          <dialog ref={promotionDialog} className={`promotion-dialog${draft ? ' promotion-dialog-wide' : ''}`}
+            onClose={() => setPromotionOpen(false)} aria-labelledby="promotion-dialog-title">
             <header className="promotion-dialog-header">
               <h2 id="promotion-dialog-title" ref={promotionDialogHeading} tabIndex={-1}>
-                {showPromotionEditor ? '홍보 초안과 게시 일정' : '인스타 홍보물'}
+                {reviewFirst ? '홍보에 담을 포인트 고르기' : showPromotionEditor ? '홍보 초안 수정' : '채널별 홍보 미리보기'}
               </h2>
               <div className="promo-actions">
-                {promotionEditorReady && showPromotionDraft && <button type="button" className="button secondary small"
-                  onClick={() => setEditingPromotion(!editingPromotion)}>{editingPromotion ? '저장한 홍보물 보기' : '초안 수정'}</button>}
+                {promotionEditorReady && draft && !reviewFirst && <button type="button" className="button secondary small"
+                  onClick={() => setEditingPromotion(!editingPromotion)}>{editingPromotion ? '저장한 홍보물 보기' : '초안 수정하기'}</button>}
                 <button type="button" className="button secondary small" autoFocus onClick={() => promotionDialog.current?.close()}>닫기</button>
               </div>
             </header>
             <div className="promotion-dialog-body">
-              {promotionEditorReady && <div hidden={!showPromotionEditor}>
-                <PromotionDraftForm key={`${plan.id}:${plan.promotionReview?.productName ?? ''}`} plan={plan} auth={auth}
+              {showPromotionEditor && <PromotionDraftForm key={`${plan.id}:${plan.promotionReview?.productName ?? ''}`} plan={plan} auth={auth}
                   productNames={analysis.productSales?.map(product => product.productName)}
-                  onSubjectChange={setPromotionSubject}
-                  onSave={async input => { await onSavePromotionDraft(input); setEditingPromotion(false) }}
-                  onRegenerate={onRegeneratePromotionCaption} />
-              </div>}
-              {showPromotionDraft && <div hidden={Boolean(showPromotionEditor)}>
+                  reviewFirst={reviewFirst} preloadedReview={reviewResearch} initialSubject={reviewSubject}
+                  onSave={async input => { await onSavePromotionDraft(input); setEditingPromotion(false); setReviewFirst(false) }}
+                  onRegenerate={onRegeneratePromotionCaption} />}
+              {draft && <div hidden={Boolean(showPromotionEditor)}>
                 <PromoDraft plan={plan} auth={auth} instagramStatus={instagramStatus} onInstagramStatus={setInstagramStatus} />
               </div>}
             </div>

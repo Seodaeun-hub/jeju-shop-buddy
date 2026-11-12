@@ -112,17 +112,27 @@ final class StrategyAgentClient {
 
     private record NextPromotionResponse(String explanation) {}
 
-    Optional<String> promotionOpening(String productName) {
+    Optional<PromotionDraftController.ReviewResearch> promotionReviewPoints(PromotionDraftController.ReviewSearch input) {
         if (baseUrl.isEmpty()) return Optional.empty();
-        return post("/internal/promotion-copy", java.util.Map.of("productName", productName),
-                tools.jackson.databind.JsonNode.class).map(node -> node.path("opening").asString()).map(String::strip)
-                .filter(line -> !line.isBlank() && line.length() <= 100
-                        && !java.util.regex.Pattern.compile("[\\p{N}#@\\p{Cntrl}]|https?://").matcher(line).find());
+        return post("/internal/promotion-review-points", input, PromotionDraftController.ReviewResearch.class, Duration.ofSeconds(105))
+                .filter(result -> result.sources() != null && result.points() != null
+                        && result.sources().size() <= 5 && result.points().size() <= 5);
+    }
+
+    Optional<PromotionDraftController.ChannelDrafts> promotionChannels(PromotionDraftController.ChannelInput input) {
+        if (baseUrl.isEmpty()) return Optional.empty();
+        return post("/internal/promotion-channels", input, PromotionDraftController.ChannelDrafts.class, Duration.ofSeconds(105))
+                .filter(result -> result.findings() != null && (result.drafts() == null || (hasText(result.drafts().instagram())
+                        && hasText(result.drafts().naver()) && hasText(result.drafts().daangn()))));
     }
 
     private <T> Optional<T> post(String path, Object payload, Class<T> type) {
+        return post(path, payload, type, Duration.ofSeconds(13));
+    }
+
+    private <T> Optional<T> post(String path, Object payload, Class<T> type, Duration timeout) {
         try {
-            var request = HttpRequest.newBuilder(URI.create(baseUrl + path)).timeout(Duration.ofSeconds(13))
+            var request = HttpRequest.newBuilder(URI.create(baseUrl + path)).timeout(timeout)
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(payload)))
                     .build();

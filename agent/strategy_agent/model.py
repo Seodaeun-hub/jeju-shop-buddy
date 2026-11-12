@@ -77,15 +77,15 @@ followUp은 실행 후 어떤 조건에서
 """
 
 
-def structured_model(schema: type[BaseModel]):
+def structured_model(schema: type[BaseModel], *, timeout: float = 10.0, model: str | None = None):
     key = os.getenv("STRATEGY_AI_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not key:
         raise ValueError("strategy model credentials are missing")
 
     return ChatOpenAI(
-        model=os.getenv("STRATEGY_AI_MODEL", "gpt-4.1-mini"),
+        model=model or os.getenv("STRATEGY_AI_MODEL", "gpt-4.1-mini"),
         api_key=key,
-        timeout=10.0,
+        timeout=timeout,
         max_retries=0,
     ).with_structured_output(schema, method="json_schema", strict=True)
 

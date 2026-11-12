@@ -10,6 +10,8 @@ from .execution_guide import GuideRequest, GuideResponse, build_guide_graph, loa
 from .graph import build_graph
 from .model import structured_model
 from .next_promotion import NextPromotionExplanation, NextPromotionRequest, build_next_promotion_graph
+from .promotion_channels import ChannelRequest, ChannelResponse, generate_channels
+from .promotion_reviews import ReviewRequest, ReviewResearch, research_reviews
 from .schemas import Contract, StrategyRequest, StrategyResponse
 from .store_notice import StoreNoticeDraft, StoreNoticeRequest, generate_store_notice
 
@@ -64,6 +66,22 @@ def store_notice(request: StoreNoticeRequest) -> StoreNoticeDraft:
 
 class PromotionCopyRequest(Contract):
     productName: str
+
+
+@app.post("/internal/promotion-channels", response_model=ChannelResponse)
+def promotion_channels(request: ChannelRequest) -> ChannelResponse:
+    try:
+        return generate_channels(request)
+    except (OpenAIError, OutputParserException, ValueError, TimeoutError):
+        raise HTTPException(status_code=503, detail={"code": "PROMOTION_CHANNELS_UNAVAILABLE"}) from None
+
+
+@app.post("/internal/promotion-review-points", response_model=ReviewResearch)
+def promotion_review_points(request: ReviewRequest) -> ReviewResearch:
+    try:
+        return research_reviews(request)
+    except (OpenAIError, OutputParserException, ValueError, TimeoutError):
+        raise HTTPException(status_code=503, detail={"code": "PROMOTION_REVIEW_SEARCH_UNAVAILABLE"}) from None
 
 
 class PromotionCopy(Contract):
