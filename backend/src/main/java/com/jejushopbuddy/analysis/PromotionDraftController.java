@@ -27,12 +27,15 @@ class PromotionDraftController {
     private final ObjectMapper json;
     private final StrategyAgentClient agent;
     private final StoreProductPhotos photos;
+    private final PromotionWeather weather;
 
-    PromotionDraftController(JdbcClient jdbc, ObjectMapper json, StrategyAgentClient agent, StoreProductPhotos photos) {
+    PromotionDraftController(JdbcClient jdbc, ObjectMapper json, StrategyAgentClient agent, StoreProductPhotos photos,
+                             PromotionWeather weather) {
         this.jdbc = jdbc;
         this.json = json;
         this.agent = agent;
         this.photos = photos;
+        this.weather = weather;
     }
 
     @GetMapping("/api/plans/{planId}/promotion-photo")
@@ -137,7 +140,11 @@ class PromotionDraftController {
         if (sourcePage != null && sameSubject && "EDITED".equals(plan.draft().copySource())) {
             return bad("직접 수정해 저장한 초안은 그대로 편집할 수 있어요. 새 공개 출처를 참고하려면 새 초안을 만들어 주세요.");
         }
-        if (sameSubject && input.publishDate().equals(plan.draft().publishDate())
+        var previousContext = sameSubject ? plan.draft().weatherContext() : null;
+        boolean sameDate = sameSubject && input.publishDate().equals(plan.draft().publishDate());
+        boolean retryForecast = previousContext != null && previousContext.forecast() == null
+                && PromotionWeather.withinForecastWindow(input.publishDate());
+        if (sameDate && previousContext != null && !retryForecast
                 && input.publishTime().equals(plan.draft().publishTime()) && Objects.equals(photo, plan.draft().photoDataUrl())
                 && !edited && !generate) {
             return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(plan.draft());
@@ -147,6 +154,8 @@ class PromotionDraftController {
         String price = review == null ? "" : won(review.discountedPriceWon());
         var tone = sameSubject && plan.draft().tone() != null ? plan.draft().tone()
                 : Objects.requireNonNullElse(plan.defaultTone(), Tone.FRIENDLY);
+        var context = sameDate && previousContext != null && !generateNewCopy && !retryForecast ? previousContext
+                : weather.resolve(plan.address(), plan.storeName(), plan.area(), input.publishDate(), plan.avoidPhrases());
         var generated = generate ? generateChannels(plan, product, tone, photo, sourcePage, selected) : null;
         if (sourcePage != null && (generated == null || !generated.researched())) {
             return ResponseEntity.unprocessableEntity().body(new ApiError("PROMOTION_SOURCE_NOT_VERIFIED",
@@ -161,21 +170,28 @@ class PromotionDraftController {
         var channels = replace ? generated : plan.draft().channels();
         String source = replace ? channels.basis() == Basis.BASIC ? "TEMPLATE" : "GPT" : plan.draft().copySource();
         String caption = replace ? channels.drafts().instagram() : plan.draft().caption();
+        if (channels == null) channels = legacyChannels(plan, product, caption);
+        var copies = channels.drafts();
         if (edited) {
-            if (channels == null) channels = legacyChannels(plan, product, caption);
-            var copies = channels.drafts();
-            caption = editedCopy(instagramEdit, caption, channels.offer());
-            channels = new SavedChannels(channels.findings(), new ChannelCopy(caption,
-                    editedCopy(naverEdit, copies.naver(), channels.offer()), editedCopy(daangnEdit, copies.daangn(), channels.offer())),
-                    channels.researched(), channels.offer(), channels.basis(), channels.sourceCheckVersion());
-            if (caption.length() > 2200 || channels.drafts().naver().length() > 2200 || channels.drafts().daangn().length() > 2200) {
-                return bad("행사 조건을 포함한 홍보 문구는 채널마다 2,200자까지 저장할 수 있어요.");
-            }
+            copies = new ChannelCopy(Objects.requireNonNullElse(instagramEdit, caption).strip(),
+                    Objects.requireNonNullElse(naverEdit, copies.naver()).strip(),
+                    Objects.requireNonNullElse(daangnEdit, copies.daangn()).strip());
             source = "EDITED";
         }
-        var draft = new Draft(plan.storeName(), product, feature, price, detail, caption,
+        var oldLeads = previousContext == null ? new ChannelCopy("", "", "") : previousContext.leads();
+        var leads = context.leads();
+        String offer = offer(plan, product);
+        copies = new ChannelCopy(withWeather(copies.instagram(), oldLeads.instagram(), leads.instagram(), offer, false),
+                withWeather(copies.naver(), oldLeads.naver(), leads.naver(), offer, true),
+                withWeather(copies.daangn(), oldLeads.daangn(), leads.daangn(), offer, true));
+        if (copies.instagram().length() > 2200 || copies.naver().length() > 2200 || copies.daangn().length() > 2200) {
+            return bad("게시일 안내와 행사 조건을 포함한 홍보 문구는 채널마다 2,200자까지 저장할 수 있어요.");
+        }
+        channels = new SavedChannels(channels.findings(), copies, channels.researched(), offer,
+                channels.basis(), channels.sourceCheckVersion());
+        var draft = new Draft(plan.storeName(), product, feature, price, detail, copies.instagram(),
                 input.publishDate(), input.publishTime(), "Asia/Seoul", source, photo, 3, tone, channels,
-                replace ? selected : sameSubject ? plan.draft().reviewSelection() : null);
+                replace ? selected : sameSubject ? plan.draft().reviewSelection() : null, context);
         int updated = jdbc.sql("""
                 UPDATE execution_plans SET promotion_draft=CAST(:draft AS jsonb)
                 WHERE id=:id AND instagram_publication IS NULL
@@ -226,13 +242,18 @@ class PromotionDraftController {
             } else if (channels.offer() != null) {
                 caption = withOffer(defaultCopy(plan, saved.headline(), input.tone()).instagram(), channels.offer());
             }
+            if (saved.weatherContext() != null) {
+                var lead = saved.weatherContext().leads().instagram();
+                caption = withWeather(caption, lead, lead, channels.offer(), false);
+            }
             channels = new SavedChannels(channels.findings(),
                     new ChannelCopy(caption, channels.drafts().naver(), channels.drafts().daangn()), channels.researched(),
                     channels.offer(), channels.basis(), channels.sourceCheckVersion());
         }
         var draft = new Draft(saved.storeName(), saved.headline(), saved.feature(), saved.discountedPrice(),
                 saved.detail(), caption, saved.publishDate(), saved.publishTime(), saved.timeZone(),
-                source, saved.photoDataUrl(), saved.templateVersion(), input.tone(), channels, saved.reviewSelection());
+                source, saved.photoDataUrl(), saved.templateVersion(), input.tone(), channels, saved.reviewSelection(),
+                saved.weatherContext());
         int updated = jdbc.sql("""
                 UPDATE execution_plans SET promotion_draft=CAST(:draft AS jsonb)
                 WHERE id=:id AND instagram_publication IS NULL AND promotion_draft=CAST(:previous AS jsonb)
@@ -269,9 +290,18 @@ class PromotionDraftController {
         var channels = draft.channels();
         if (channels != null && channels.basis() != null && Objects.requireNonNullElse(channels.sourceCheckVersion(), 0) < DRAFT_GENERATION_VERSION
                 && "GPT".equals(draft.copySource())) return true;
-        return channels == null || (!channels.researched()
-                && (channels.basis() == null || channels.basis() == Basis.BASIC)
-                && channels.drafts().equals(withOffer(defaultCopy(plan, product, draft.tone()), channels.offer())));
+        if (channels == null) return true;
+        if (channels.researched() || (channels.basis() != null && channels.basis() != Basis.BASIC)) return false;
+        var copies = channels.drafts();
+        var context = draft.weatherContext();
+        if (context != null) {
+            var leads = context.leads();
+            var offer = channels.offer();
+            copies = withOffer(new ChannelCopy(captionWithoutContext(copies.instagram(), leads.instagram(), offer),
+                    captionWithoutContext(copies.naver(), leads.naver(), offer),
+                    captionWithoutContext(copies.daangn(), leads.daangn(), offer)), offer);
+        }
+        return copies.equals(withOffer(defaultCopy(plan, product, draft.tone()), channels.offer()));
     }
 
     private static ChannelInput channelInput(Saved plan, String product, Tone tone, List<ChannelFinding> findings, String photo, String sourcePage, ReviewSelection selected) {
@@ -310,9 +340,31 @@ class PromotionDraftController {
         return value == null || (!value.isBlank() && value.strip().length() <= 2200);
     }
 
-    private static String editedCopy(String edit, String saved, String offer) {
-        if (edit == null) return saved;
-        return withOffer(edit.strip(), offer);
+    static String withWeather(String copy, String previousLead, String lead, String offer, boolean titled) {
+        String body = captionWithoutContext(copy, previousLead, offer);
+        if (!lead.isBlank()) {
+            int titleEnd = body.indexOf('\n');
+            if (titled && titleEnd > 0 && titleEnd <= 65) {
+                body = body.substring(0, titleEnd + 1) + lead + "\n\n" + body.substring(titleEnd + 1);
+            } else if (titled) {
+                body = body + "\n\n" + lead;
+            } else {
+                body = lead + "\n\n" + body;
+            }
+        }
+        return withOffer(body, offer);
+    }
+
+    private static String captionWithoutContext(String copy, String lead, String offer) {
+        String footer = "\n\n" + offer;
+        if (offer != null && copy.endsWith(footer)) copy = copy.substring(0, copy.length() - footer.length());
+        if (lead.isBlank()) return copy;
+        if (copy.startsWith(lead + "\n\n")) return copy.substring(lead.length() + 2);
+        if (copy.endsWith("\n\n" + lead)) return copy.substring(0, copy.length() - lead.length() - 2);
+        String middle = "\n" + lead + "\n\n";
+        int position = copy.indexOf(middle);
+        if (position < 0) return copy;
+        return copy.substring(0, position) + "\n" + copy.substring(position + middle.length());
     }
 
     private static String withOffer(String body, String offer) {
@@ -325,16 +377,19 @@ class PromotionDraftController {
 
     private Saved find(UUID id, String email) {
         return jdbc.sql("""
-                SELECT s.id AS store_id, s.name, s.address, p.start_date, p.end_date, p.promotion_review, p.promotion_draft,
+                SELECT s.id AS store_id, s.name, s.address, area.name AS area_name,
+                       p.start_date, p.end_date, p.promotion_review, p.promotion_draft,
                        p.strategy_code='CUSTOM' AS marketing, p.promotion_review_research,
                        p.instagram_publication IS NOT NULL AS publication_locked,
                        s.promotion_tone, s.promotion_avoid_phrases
                 FROM execution_plans p JOIN sales_analyses a ON a.id=p.analysis_id
                 JOIN stores s ON s.id=a.store_id JOIN owners o ON o.id=s.owner_id
+                JOIN jeju_areas area ON area.code=s.area_code
                 WHERE p.id=:id AND o.email=:email
                   AND (p.strategy_code='PROMOTION' OR (p.strategy_code='CUSTOM' AND p.strategy_snapshot @> '{"marketing":true}'))
                 """).param("id", id).param("email", email)
                 .query((rs, row) -> new Saved(rs.getObject("store_id", UUID.class), rs.getString("name"), rs.getString("address"),
+                        rs.getString("area_name"),
                         rs.getObject("start_date", LocalDate.class), rs.getObject("end_date", LocalDate.class),
                         rs.getString("promotion_review") == null ? null : json.readValue(rs.getString("promotion_review"), Review.class),
                         rs.getString("promotion_draft") == null ? null : json.readValue(rs.getString("promotion_draft"), Draft.class),
@@ -366,7 +421,7 @@ class PromotionDraftController {
     private static ResponseEntity<ApiError> bad(String message) {
         return ResponseEntity.badRequest().body(new ApiError("INVALID_PROMOTION_DRAFT", message, null));
     }
-    private record Saved(UUID storeId, String storeName, String address, LocalDate start, LocalDate end, Review review, Draft draft,
+    private record Saved(UUID storeId, String storeName, String address, String area, LocalDate start, LocalDate end, Review review, Draft draft,
                          String draftSnapshot, boolean publicationLocked, boolean marketing, Tone defaultTone, String avoidPhrases,
                          ResearchSnapshot research, String researchSnapshot) {}
     record Photo(String photoDataUrl) {}
@@ -398,5 +453,6 @@ class PromotionDraftController {
                  LocalDate publishDate, LocalTime publishTime, String timeZone, String copySource, String photoDataUrl, int templateVersion,
                  @JsonInclude(JsonInclude.Include.NON_NULL) Tone tone,
                  @JsonInclude(JsonInclude.Include.NON_NULL) SavedChannels channels,
-                 @JsonInclude(JsonInclude.Include.NON_NULL) ReviewSelection reviewSelection) {}
+                 @JsonInclude(JsonInclude.Include.NON_NULL) ReviewSelection reviewSelection,
+                 @JsonInclude(JsonInclude.Include.NON_NULL) PromotionWeather.Context weatherContext) {}
 }

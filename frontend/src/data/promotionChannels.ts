@@ -29,3 +29,11 @@ export function promotionCaptionBody(caption: string, offer?: string | null) {
   const footer = `\n\n${offer}`
   return offer && caption.endsWith(footer) ? caption.slice(0, -footer.length) : caption
 }
+
+export function editablePromotionCaption(caption: string, offer?: string | null, lead?: string) {
+  const body = promotionCaptionBody(caption, offer)
+  if (!lead) return body
+  if (body.startsWith(lead + '\n\n')) return body.slice(lead.length + 2)
+  if (body.endsWith('\n\n' + lead)) return body.slice(0, -lead.length - 2)
+  return body.replace('\n' + lead + '\n\n', '\n')
+}

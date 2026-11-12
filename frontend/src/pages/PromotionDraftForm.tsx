@@ -4,7 +4,7 @@ import { fetchPromotionPhoto } from '../api/shop'
 import { PromotionReviewPoints, usePromotionReviews } from '../components/PromotionReviewPoints'
 import type { PromotionReviewSearch } from '../components/PromotionReviewPoints'
 import { prepareMenuPhoto } from '../data/menuPhoto'
-import { promotionCaptionBody, promotionCaptions, promotionChannels } from '../data/promotionChannels'
+import { editablePromotionCaption, promotionCaptions, promotionChannels } from '../data/promotionChannels'
 import { formatNumber, promotionTones, won } from '../data/shop'
 import type { Plan, PromotionChannelCopy, PromotionDraftInput, PromotionTone } from '../data/shop'
 
@@ -190,6 +190,7 @@ export function PromotionDraftForm({ plan, auth, productNames, reviewFirst, onSa
             <label>게시 날짜<input type="date" required max={plan.endDate} value={publishDate} onChange={event => setPublishDate(event.target.value)} /></label>
             <label>게시 시간<input type="time" required value={publishTime} onChange={event => setPublishTime(event.target.value)} /></label>
           </div>
+          <small className="muted">게시일의 제주 계절과 확인된 예보를 세 채널 문구에 반영해요.</small>
           {!reviewFirst && canSuggestSource && !hasEdits && <details>
             <summary>참고할 매장 페이지 추가</summary>
             <label>공개 매장 페이지 링크 (선택)
@@ -211,7 +212,7 @@ export function PromotionDraftForm({ plan, auth, productNames, reviewFirst, onSa
           {!reviewFirst && captions && <div className="promotion-edit-captions">
             {promotionChannels.map(({ id, label }) => <label key={id}>{label} 문구
               <textarea rows={7} required maxLength={2200 - (offer ? offer.length + 2 : 0)}
-                value={channelEdits[id] ?? promotionCaptionBody(captions[id], offer)}
+                value={channelEdits[id] ?? editablePromotionCaption(captions[id], offer, currentDraft?.weatherContext?.leads[id])}
                 onChange={event => setChannelEdits({ ...channelEdits, [id]: event.target.value })} />
             </label>)}
           </div>}
