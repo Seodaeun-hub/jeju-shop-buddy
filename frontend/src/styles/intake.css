@@ -104,6 +104,16 @@
 .sales-optional { margin-left: .3rem; color: var(--muted); font-size: .8rem; font-weight: 400; }
 
 .sales-import-summary { display: grid; gap: .6rem; min-width: 0; }
+.monthly-pos-source button[aria-pressed='true'] { border-color: var(--green); background: var(--pale-green); color: var(--green); }
+.monthly-pos-archive { padding: .8rem 0; }
+.monthly-pos-periods, .monthly-pos-matches { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem .9rem; }
+.monthly-pos-periods label, .monthly-pos-periods input, .monthly-pos-matches select { min-width: 0; width: 100%; }
+.monthly-pos-matches > section { min-width: 0; display: grid; gap: .65rem; padding: .75rem; border: 1px solid var(--line); border-radius: 7px; }
+.monthly-pos-matches h3 { font-size: 1rem; margin: 0; }
+.monthly-pos-file { display: grid; gap: .2rem; font-size: .9rem; overflow-wrap: anywhere; }
+.monthly-pos-file > span:first-child { color: var(--muted); }
+.monthly-pos-file a { width: fit-content; color: var(--green); }
+@media (max-width: 550px) { .monthly-pos-matches { grid-template-columns: 1fr; } }
 .sales-import-summary summary { width: fit-content; color: var(--green); cursor: pointer; font-size: .9rem; }
 .sales-import-summary details > :not(summary) { margin-top: .5rem; }
 .sales-section .input-table thead { background: var(--sales-quiet); }
