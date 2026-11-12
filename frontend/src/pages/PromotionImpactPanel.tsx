@@ -20,8 +20,8 @@ function ImpactRow({ label, before, after, format }: {
     <td>{delta > 0 ? '+' : delta < 0 ? '−' : ''}{format(Math.abs(delta))} · {formatRate(changeRate(before, after))}</td></tr>
 }
 
-export function PromotionImpactPanel({ auth, planId, storeId, endDate, review }: {
-  auth: string; planId: string; storeId?: string; endDate: string; review?: PromotionReview
+export function PromotionImpactPanel({ auth, planId, analysisId, storeId, endDate, review }: {
+  auth: string; planId: string; analysisId?: string; storeId?: string; endDate: string; review?: PromotionReview
 }) {
   const [result, setResult] = useState<PromotionImpact>()
   const [error, setError] = useState('')
@@ -160,7 +160,8 @@ export function PromotionImpactPanel({ auth, planId, storeId, endDate, review }:
     {checkingArchive && <p role="status">내 매장에 보관한 POS에서 행사 전후 자료를 찾고 있어요.</p>}
     {missing.length > 0 && storeId && <div className="result-pos-status">
       <p><strong>상품 주문 POS가 더 필요해요.</strong><br />{describeMissingPos(missing)}</p>
-      <Link className="button secondary small" to={posLibraryPath(storeId, missing[0].end, 'PRODUCT')}>내 매장에 POS 올리기</Link>
+      <Link className="button secondary small" to={posLibraryPath(storeId, { date: missing[0].end, kind: 'PRODUCT',
+        upload: { missingStart: missing[0].start, planId, analysisId } })}>내 매장에 POS 올리기</Link>
     </div>}
     {archiveError && <p role="alert">{archiveError} <button type="button" className="text-button"
       onClick={() => setRevision(value => value + 1)}>다시 확인하기</button></p>}

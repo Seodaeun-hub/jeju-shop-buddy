@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { fetchExecutionReminders, fetchPromotionImpact, listStores } from '../api/shop'
-import { describeMissingPos, loadPromotionArchive, posLibraryPath, promotionArchiveUpdated, reconcilePromotionArchive, resultsDataChanged, seoulDate } from '../data/promotionArchive'
+import { describeMissingPos, loadPromotionArchive, posLibraryPath, promotionArchiveUpdated, reconcilePromotionArchive, resultsDataChanged, seoulDate, showWorkspaceNotifications } from '../data/promotionArchive'
 import { addDays } from '../data/shop'
 
 type Notification = { id: string; category: string; title: string; message: string; to: string }
@@ -14,7 +14,7 @@ async function loadNotifications(auth: string, signal: AbortSignal) {
   const weekly: Notification[] = stores.map(store => ({
     id: `weekly:${store.id}:${week}`, category: '주간 POS', title: store.name,
     message: '지난주 POS를 보관해 두면 종료된 행사 결과를 자동으로 확인할 수 있어요.',
-    to: posLibraryPath(store.id, addDays(week, -1)),
+    to: posLibraryPath(store.id, { date: addDays(week, -1), upload: {} }),
   }))
   const notices: Notification[] = []
   const archives = new Map<string, Awaited<ReturnType<typeof loadPromotionArchive>>>()
@@ -49,7 +49,8 @@ async function loadNotifications(auth: string, signal: AbortSignal) {
         if (missing) notices.push({
           id: `missing:${plan.planId}:${impact.productName}:${missing}`, category: 'POS 자료 필요', title,
           message: `${missing} 상품 주문 POS를 올려 주세요.`,
-          to: posLibraryPath(plan.storeId, reconciliation.missing[0].end, 'PRODUCT'),
+          to: posLibraryPath(plan.storeId, { date: reconciliation.missing[0].end, kind: 'PRODUCT',
+            upload: { missingStart: reconciliation.missing[0].start, planId: plan.planId, analysisId: plan.analysisId } }),
         })
       }
       if (impact.beforeTotals && impact.afterTotals) notices.push({
@@ -101,6 +102,11 @@ export function WorkspaceNotifications({ auth, email }: { auth: string; email: s
     }, 120_000)
     window.addEventListener('focus', refresh)
     window.addEventListener(resultsDataChanged, refresh)
+    const showNotifications = () => {
+      if (panel.current) panel.current.open = true
+      trigger.current?.focus()
+    }
+    window.addEventListener(showWorkspaceNotifications, showNotifications)
     const outside = (event: PointerEvent) => {
       if (panel.current?.open && event.target instanceof Node && !panel.current.contains(event.target)) {
         panel.current.open = false
@@ -111,6 +117,7 @@ export function WorkspaceNotifications({ auth, email }: { auth: string; email: s
       window.clearInterval(poll)
       window.removeEventListener('focus', refresh)
       window.removeEventListener(resultsDataChanged, refresh)
+      window.removeEventListener(showWorkspaceNotifications, showNotifications)
       document.removeEventListener('pointerdown', outside)
     }
   }, [])

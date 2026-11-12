@@ -160,7 +160,7 @@ export function MonthlyPosArchive({ auth, storeId, disabled, onImport, onReading
       <span>{label}</span>
       {files[0] ? <strong>{files[0].filename}</strong> : <>
         <span>{period.partial.has(kind) ? '한 달 전체 내역이 필요해요.' : '보관한 파일이 없어요.'}</span>
-        <Link to={posLibraryPath(storeId, monthEnd(period.month) <= seoulDate() ? monthEnd(period.month) : seoulDate(), kind)}>파일 등록</Link>
+        <Link to={posLibraryPath(storeId, { date: monthEnd(period.month) <= seoulDate() ? monthEnd(period.month) : seoulDate(), kind })}>파일 등록</Link>
       </>}
     </div>
   }

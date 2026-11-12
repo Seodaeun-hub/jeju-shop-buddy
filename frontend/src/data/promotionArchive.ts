@@ -5,11 +5,24 @@ import { addDays } from './shop'
 
 export const resultsDataChanged = 'shop-buddy:results-data-changed'
 export const promotionArchiveUpdated = 'shop-buddy:promotion-archive-updated'
+export const showWorkspaceNotifications = 'shop-buddy:show-notifications'
 export const notifyResultsDataChanged = () => window.dispatchEvent(new Event(resultsDataChanged))
-export function posLibraryPath(storeId: string, date?: string, kind?: PosFileKind) {
+export function posLibraryPath(storeId: string, { date, kind, upload }: {
+  date?: string
+  kind?: PosFileKind
+  upload?: { missingStart?: string; planId?: string; analysisId?: string }
+} = {}) {
   const query = new URLSearchParams({ storeId, section: 'pos-files' })
   if (date) query.set('date', date)
   if (kind) query.set('kind', kind)
+  if (upload) {
+    query.set('focus', 'upload')
+    if (upload.missingStart) query.set('missingStart', upload.missingStart)
+    if (upload.planId && upload.analysisId) {
+      query.set('resultPlanId', upload.planId)
+      query.set('resultAnalysisId', upload.analysisId)
+    }
+  }
   return '/stores?' + query
 }
 const seoulCalendar = new Intl.DateTimeFormat('sv-SE', {

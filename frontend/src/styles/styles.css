@@ -412,11 +412,23 @@ h1, .wordmark {
 @media (max-width: 800px) {
   .shell { width: calc(100% - 1.6rem); }
   .header-inner { min-height: 62px; flex-wrap: wrap; gap: .2rem .65rem; padding-block: .35rem; }
+  .workspace-header .header-inner { flex-wrap: nowrap; }
+  .workspace-header :is(.header-brand, .workspace-notifications),
+  .workspace-header .owner-menu summary::after { flex: none; }
+  .workspace-header :is(.header-actions, .owner-menu, .owner-name) { min-width: 0; }
+  .workspace-header .header-actions { justify-content: flex-end; }
+  .workspace-header .workspace-notifications > summary { width: 44px; height: 44px; }
   .main-nav { order: 3; width: 100%; justify-content: space-between; gap: .4rem; }
   .header-actions { gap: .55rem; }
   .split { grid-template-columns: minmax(0, 1fr); }
   .split > :last-child { border-left: 0; padding-left: 0; }
   .page-heading { gap: .4rem; }
+}
+
+@media (max-width: 550px) {
+  .workspace-header .header-actions { gap: .85rem; }
+  .workspace-header .owner-menu summary { width: 44px; justify-content: center; padding: 0; }
+  .workspace-header .owner-name, .workspace-header .owner-menu summary::after { display: none; }
 }
 
 @media (max-width: 380px) {

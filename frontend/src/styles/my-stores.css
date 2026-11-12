@@ -96,6 +96,8 @@
 .pos-calendar-day small { padding: 0 .25rem; border-radius: 5px; background: #e3eee0; color: var(--green); font-size: .72rem; font-weight: 700; }
 .pos-calendar-registration { min-width: 0; padding: .8rem; border: 1px solid var(--line); border-radius: 9px; }
 .pos-calendar-registration h3 { margin: 0 0 .3rem; }
+.pos-calendar-layout-upload .pos-calendar-registration h3 { scroll-margin-top: 1rem; }
+.pos-upload-result { justify-self: start; }
 .pos-calendar-registration p { margin: 0; }
 .pos-calendar-date-preview { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .65rem; }
 .pos-library-filters { display: flex; flex-wrap: wrap; align-items: end; gap: .6rem; }
@@ -103,6 +105,8 @@
 .pos-library-filters input { max-width: 100%; }
 @media (max-width: 800px) {
   .pos-calendar-layout { grid-template-columns: minmax(0, 1fr); }
+  .pos-calendar-layout-upload .pos-library-upload { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .pos-calendar-layout-upload .pos-library-upload > .button, .pos-upload-result { width: 100%; }
 }
 
 .menu-photo-grid {
