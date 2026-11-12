@@ -42,27 +42,43 @@ class PushController {
     @GetMapping("/api/push/config")
     PushConfig config(Principal owner) {
         String key = push.publicKey();
-        return new PushConfig(key, key != null && weekly.enabled(owner.getName()), weekly.label());
+        var options = key == null ? new WeeklyPosPush.Preferences(false, false) : weekly.preferences(owner.getName());
+        return new PushConfig(key, options.weekly(), options.results(), weekly.label());
     }
 
     @PutMapping("/api/push/weekly-subscription")
     ResponseEntity<?> subscribe(@RequestBody AppleWebPush.Subscription subscription, Principal owner) {
+        return subscribe(subscription, owner, false);
+    }
+
+    @PutMapping("/api/push/result-subscription")
+    ResponseEntity<?> subscribeResults(@RequestBody AppleWebPush.Subscription subscription, Principal owner) {
+        return subscribe(subscription, owner, true);
+    }
+
+    private ResponseEntity<?> subscribe(AppleWebPush.Subscription subscription, Principal owner, boolean results) {
         if (push.publicKey() == null) {
             return error(HttpStatus.SERVICE_UNAVAILABLE, "주간 POS 알림이 아직 설정되지 않았어요.");
         }
         if (!AppleWebPush.valid(subscription)) return invalidSubscription();
         if (latestStore(owner).isEmpty()) return missingStore();
         try {
-            weekly.enable(owner.getName(), subscription);
+            weekly.enable(owner.getName(), subscription, results);
         } catch (DuplicateKeyException alreadyInUse) {
-            return error(HttpStatus.CONFLICT, "다른 계정에서 이 아이폰의 주간 POS 알림을 끈 뒤 다시 시도해 주세요.");
+            return error(HttpStatus.CONFLICT, "다른 계정에서 이 아이폰의 푸시 알림을 끈 뒤 다시 시도해 주세요.");
         }
         return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/api/push/weekly-subscription")
     ResponseEntity<Void> unsubscribe(Principal owner) {
-        weekly.disable(owner.getName());
+        weekly.disable(owner.getName(), false);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/api/push/result-subscription")
+    ResponseEntity<Void> unsubscribeResults(Principal owner) {
+        weekly.disable(owner.getName(), true);
         return ResponseEntity.noContent().build();
     }
 
@@ -130,6 +146,6 @@ class PushController {
         scheduler.shutdownNow();
     }
 
-    record PushConfig(String publicKey, boolean weeklyEnabled, String weeklySchedule) {}
+    record PushConfig(String publicKey, boolean weeklyEnabled, boolean resultEnabled, String weeklySchedule) {}
     record TestAccepted(int delaySeconds) {}
 }

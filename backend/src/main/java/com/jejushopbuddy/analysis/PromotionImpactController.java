@@ -16,6 +16,7 @@ import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -136,6 +137,13 @@ class PromotionImpactController {
             return invalid("상품 주문 시트의 판매량, 실판매금액과 기록된 날짜를 확인해 주세요.");
         }
         var totals = new Totals(upload.quantity(), upload.amount(), upload.recordedDays());
+        var saved = saveTotals(planId, owner.getName(), plan, result, upload.phase(), totals);
+        if (saved == null) return ResponseEntity.status(409)
+                .body(new ApiError("PROMOTION_IMPACT_CHANGED", "게시 상태가 바뀌었어요. 새로고침해 주세요.", null));
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(comparison(saved));
+    }
+
+    private Plan saveTotals(UUID planId, String email, Plan plan, Comparison result, Phase phase, Totals totals) {
         var basis = new ComparisonBasis(result.productName(), result.before(), result.after());
         boolean keepTotals = basis.equals(savedBasis(plan, readSnapshot(plan)));
         var saved = jdbc.sql("""
@@ -151,15 +159,36 @@ class PromotionImpactController {
                 """ + MATCH_PUBLICATION + """
                   AND p.promotion_impact IS NOT DISTINCT FROM CAST(:snapshot AS jsonb)
                 RETURNING p.promotion_impact
-                """).param("phase", upload.phase() == Phase.BEFORE ? "before" : "after")
-                .param("totals", json.writeValueAsString(totals)).param("id", planId).param("email", owner.getName())
+                """).param("phase", phase == Phase.BEFORE ? "before" : "after")
+                .param("totals", json.writeValueAsString(totals)).param("id", planId).param("email", email)
                 .param("basis", json.writeValueAsString(basis)).param("keepTotals", keepTotals).param("snapshot", plan.snapshot())
                 .param("published", plan.instagramPublishedAt()).param("manual", plan.manualSnapshot())
                 .query(String.class).optional();
-        if (saved.isEmpty()) return ResponseEntity.status(409)
-                .body(new ApiError("PROMOTION_IMPACT_CHANGED", "게시 상태가 바뀌었어요. 새로고침해 주세요.", null));
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(comparison(
-                plan.withSnapshot(saved.get())));
+        return saved.map(plan::withSnapshot).orElse(null);
+    }
+
+    ArchiveStatus reconcileArchivedPos(UUID planId, String email, LocalDate today, Supplier<List<ProductPosArchive.Days>> files) {
+        var plan = find(planId, email);
+        if (plan == null) return null;
+        var result = comparison(plan, today);
+        if (!result.afterReady() || result.before() == null) return null;
+        var basis = new ComparisonBasis(result.productName(), result.before(), result.after());
+        if (result.beforeTotals() != null && result.afterTotals() != null) return new ArchiveStatus(basis, null);
+        var archive = files.get();
+        Period firstGap = null;
+        for (Phase phase : Phase.values()) {
+            if ((phase == Phase.BEFORE ? result.beforeTotals() : result.afterTotals()) != null) continue;
+            var period = phase == Phase.BEFORE ? result.before() : result.after();
+            var summary = ProductPosArchive.summarize(archive, result.productName(), period);
+            if (summary.gap() != null) {
+                if (firstGap == null) firstGap = summary.gap();
+                continue;
+            }
+            plan = saveTotals(planId, email, plan, result, phase, summary.totals());
+            if (plan == null) return null;
+            result = comparison(plan, today);
+        }
+        return new ArchiveStatus(basis, firstGap);
     }
 
     @GetMapping("/next-explanation")
@@ -325,6 +354,10 @@ class PromotionImpactController {
     }
 
     private Comparison comparison(Plan plan) {
+        return comparison(plan, LocalDate.now(SEOUL));
+    }
+
+    private Comparison comparison(Plan plan, LocalDate today) {
         var publications = plan.publications();
         var first = publications.stream().min(Comparator.comparing(ChannelPublication::publishedDate)).orElse(null);
         if (first == null || plan.comparisonProduct() == null) {
@@ -340,7 +373,7 @@ class PromotionImpactController {
         var profit = profit(snapshot.before(), snapshot.after(), snapshot.actuals());
         String message = periodsChanged ? "비교 기간이나 품목이 바뀌었어요. 새 기준에 맞는 POS를 올려 주세요." : null;
         return new Comparison(basis.productName(), first, publications, basis.before(), basis.after(),
-                snapshot.before(), snapshot.after(), plan.end().isBefore(LocalDate.now(SEOUL)), message,
+                snapshot.before(), snapshot.after(), plan.end().isBefore(today), message,
                 plan.discountPromotion() ? advice(snapshot.before(), snapshot.after(), snapshot.actuals(), profit) : null,
                 snapshot.nextChecklist(), snapshot.actuals(), profit);
     }
@@ -448,6 +481,7 @@ class PromotionImpactController {
     record ExplanationInput(Totals before, Totals after, Advice advice, Actuals actuals, Profit profit) {}
     record Explanation(ExplanationInput input, String explanation) {}
     record ComparisonBasis(String productName, Period before, Period after) {}
+    record ArchiveStatus(ComparisonBasis basis, Period gap) {}
     record Snapshot(Totals before, Totals after, Map<ChecklistItem, Boolean> nextChecklist, Actuals actuals, ComparisonBasis basis) {}
     record Comparison(String productName, ChannelPublication publication, List<ChannelPublication> publications,
                       Period before, Period after, Totals beforeTotals, Totals afterTotals,

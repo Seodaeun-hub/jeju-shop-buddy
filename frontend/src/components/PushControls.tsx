@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { disableWeeklyPosPush, enableWeeklyPosPush, fetchPushConfig, sendPushTest } from '../api/shop'
+import { disableResultPush, disableWeeklyPosPush, enableResultPush, enableWeeklyPosPush, fetchPushConfig, sendPushTest } from '../api/shop'
 import { useStandaloneApp } from './useStandaloneApp'
 
 type PushSettings = {
@@ -13,6 +13,7 @@ export function PushControls({ auth }: { auth: string }) {
   const [settings, setSettings] = useState<PushSettings>()
   const [busy, setBusy] = useState(false)
   const [enabled, setEnabled] = useState(false)
+  const [resultEnabled, setResultEnabled] = useState(false)
   const [retryAt, setRetryAt] = useState(0)
   const [message, setMessage] = useState('')
   const supported = standalone && 'standalone' in navigator && navigator.standalone === true
@@ -28,6 +29,7 @@ export function PushControls({ auth }: { auth: string }) {
         const base64 = config.publicKey.replace(/-/g, '+').replace(/_/g, '/')
         const bytes = atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '='))
         setEnabled(config.weeklyEnabled)
+        setResultEnabled(config.resultEnabled)
         setSettings({ manager: registration.pushManager,
           key: Uint8Array.from(bytes, value => value.charCodeAt(0)), schedule: config.weeklySchedule })
       }).catch(() => { /* The existing in-app notifications remain available. */ })
@@ -71,6 +73,29 @@ export function PushControls({ auth }: { auth: string }) {
     }
   }
 
+  async function changeResultPush(settings: PushSettings) {
+    setBusy(true)
+    setMessage('')
+    try {
+      if (resultEnabled) {
+        await disableResultPush(auth)
+        setResultEnabled(false)
+        setMessage('실행 결과 푸시를 껐어요.')
+      } else {
+        const subscription = await settings.manager.subscribe({ userVisibleOnly: true, applicationServerKey: settings.key })
+        await enableResultPush(auth, subscription.toJSON())
+        setResultEnabled(true)
+        setMessage('실행 결과가 준비되거나 POS 자료가 필요할 때 알려드려요.')
+      }
+    } catch (error) {
+      setMessage(Notification.permission === 'denied'
+        ? '아이폰 설정의 알림에서 가게짝꿍 알림을 허용해 주세요.'
+        : error instanceof Error && error.name !== 'NotAllowedError' ? error.message : '알림을 허용한 뒤 다시 눌러 주세요.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return <div className="workspace-push-controls">
     <p>{settings.schedule} · 주간 POS 푸시</p>
     <div>
@@ -78,6 +103,8 @@ export function PushControls({ auth }: { auth: string }) {
         onClick={() => void changePush(enabled ? 'disable' : 'enable', settings)}>
         {enabled ? '주간 POS 알림 끄기' : '주간 POS 알림 켜기'}
       </button>
+      <button type="button" className="text-button" disabled={busy}
+        onClick={() => void changeResultPush(settings)}>{resultEnabled ? '실행 결과 알림 끄기' : '실행 결과 알림 켜기'}</button>
       <button type="button" className="text-button" disabled={busy || retryAt > Date.now()}
         onClick={() => void changePush('test', settings)}>아이폰 테스트 알림 받기</button>
     </div>

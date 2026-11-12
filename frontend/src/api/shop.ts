@@ -50,7 +50,7 @@ async function request<T>(...args: Parameters<typeof send>): Promise<T> {
 }
 
 export const fetchPushConfig = (auth: string, signal: AbortSignal) =>
-  request<{ publicKey: string | null; weeklyEnabled: boolean; weeklySchedule: string }>(
+  request<{ publicKey: string | null; weeklyEnabled: boolean; resultEnabled: boolean; weeklySchedule: string }>(
     '/api/push/config', auth, 'GET', undefined, signal)
 
 export const enableWeeklyPosPush = (auth: string, subscription: PushSubscriptionJSON) =>
@@ -58,6 +58,12 @@ export const enableWeeklyPosPush = (auth: string, subscription: PushSubscription
 
 export const disableWeeklyPosPush = (auth: string) =>
   send('/api/push/weekly-subscription', auth, 'DELETE')
+
+export const enableResultPush = (auth: string, subscription: PushSubscriptionJSON) =>
+  send('/api/push/result-subscription', auth, 'PUT', subscription)
+
+export const disableResultPush = (auth: string) =>
+  send('/api/push/result-subscription', auth, 'DELETE')
 
 export const sendPushTest = (auth: string, subscription: PushSubscriptionJSON) =>
   request<{ delaySeconds: number }>('/api/push/test', auth, 'POST', subscription)
