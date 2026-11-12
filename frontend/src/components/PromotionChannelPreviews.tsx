@@ -35,6 +35,7 @@ export function PromotionChannelPreviews({ plan, draft, generatedImage, imageFai
   const basis = checkedChannels?.basis
   const note = basis ? basisNotes[basis] : '이 초안에는 확인된 웹 출처가 표시되지 않아요.'
   const [status, setStatus] = useState<{ channel: keyof PromotionChannelCopy; caption: string; message: string }>()
+  const weather = draft.weatherContext
 
   async function copy(channel: keyof PromotionChannelCopy) {
     const caption = captions[channel]
@@ -52,6 +53,12 @@ export function PromotionChannelPreviews({ plan, draft, generatedImage, imageFai
       <ul>{draft.reviewSelection.points.map(point => <li key={point.id}>{point.sentence}</li>)}</ul>
       <PromotionReviewSources sources={draft.reviewSelection.sources} />
     </div> : <p className="muted promotion-preview-note">{note}</p>}
+    {weather && <p className="muted promotion-preview-note">
+      게시일 {weather.date} · {weather.area} · {weather.season}
+      {weather.forecast ? <> · {weather.forecast}
+        {weather.sourceUrl && <> · <a href={weather.sourceUrl} target="_blank" rel="noopener noreferrer">Open-Meteo 예보 출처</a></>}</>
+        : ' · 게시일 예보 없이 계절만 반영'}
+    </p>}
     <div className="promotion-preview-grid">
       {promotionChannels.map(({ id, label, placement }) => {
         const instagram = id === 'instagram'
@@ -80,6 +87,7 @@ export function PromotionChannelPreviews({ plan, draft, generatedImage, imageFai
             {id === 'naver' && image}
             <p>{body}</p>
             {showOffer && <p className="promotion-post-offer">{offer}</p>}
+            {weather && !weather.leads[id] && <small className="muted">이 채널 문구에는 자동 날씨 안내가 들어가지 않았어요.</small>}
           </div>
           {id === 'daangn' && image}
           <footer className="promotion-post-footer">

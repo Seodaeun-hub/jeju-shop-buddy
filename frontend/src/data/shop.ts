@@ -152,6 +152,14 @@ export type PromotionDraft = {
   templateVersion: number
   channels?: PromotionChannels
   reviewSelection?: PromotionReviewSelection
+  weatherContext?: {
+    date: string
+    area: string
+    season: string
+    forecast: string | null
+    sourceUrl: string | null
+    leads: PromotionChannelCopy
+  }
 }
 
 export type PromotionDraftInput = {

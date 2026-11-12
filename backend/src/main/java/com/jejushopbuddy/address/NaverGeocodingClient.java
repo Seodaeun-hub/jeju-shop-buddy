@@ -17,7 +17,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
-class NaverGeocodingClient {
+public class NaverGeocodingClient {
     private final RestClient client;
     private final boolean configured;
 
@@ -36,6 +36,19 @@ class NaverGeocodingClient {
     }
 
     List<AddressMatch> search(String query) {
+        return jejuMatches(lookup(query));
+    }
+
+    public Optional<Coordinates> coordinates(String address) {
+        if (!configured || address == null || address.isBlank()) return Optional.empty();
+        try {
+            return exactJejuCoordinates(lookup(address), address);
+        } catch (ResponseStatusException unavailable) {
+            return Optional.empty();
+        }
+    }
+
+    private GeocodingResponse lookup(String query) {
         if (!configured) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Address search is not configured.");
         }
@@ -52,7 +65,7 @@ class NaverGeocodingClient {
         if (response == null || !"OK".equals(response.status()) || response.addresses() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Invalid address provider response.");
         }
-        return jejuMatches(response);
+        return response;
     }
 
     static List<AddressMatch> jejuMatches(GeocodingResponse response) {
@@ -63,9 +76,37 @@ class NaverGeocodingClient {
                 .toList();
     }
 
+    static Optional<Coordinates> exactJejuCoordinates(GeocodingResponse response, String address) {
+        String expected = addressKey(address);
+        var matches = response.addresses().stream()
+                .filter(candidate -> candidate.toJejuMatch().isPresent())
+                .filter(candidate -> expected.equals(addressKey(candidate.roadAddress()))
+                        || expected.equals(addressKey(candidate.jibunAddress())))
+                .map(NaverAddress::coordinates).flatMap(Optional::stream).distinct().limit(2).toList();
+        return matches.size() == 1 ? Optional.of(matches.getFirst()) : Optional.empty();
+    }
+
+    private static String addressKey(String address) {
+        return address == null ? "" : address.strip().replaceFirst("(?:\\s+(?:지하\\s*)?\\d+(?:층|호))+$", "")
+                .replaceFirst("^제주(?:특별자치도|도)?\\s+", "")
+                .replaceAll("\\s", "");
+    }
+
+    public record Coordinates(double latitude, double longitude) {}
     record GeocodingResponse(String status, List<NaverAddress> addresses) {}
 
-    record NaverAddress(String roadAddress, String jibunAddress, List<AddressElement> addressElements) {
+    record NaverAddress(String roadAddress, String jibunAddress, List<AddressElement> addressElements, String x, String y) {
+        private Optional<Coordinates> coordinates() {
+            if (x == null || y == null) return Optional.empty();
+            try {
+                double latitude = Double.parseDouble(y);
+                double longitude = Double.parseDouble(x);
+                return latitude >= 33 && latitude < 35 && longitude >= 125 && longitude < 128
+                        ? Optional.of(new Coordinates(latitude, longitude)) : Optional.empty();
+            } catch (NumberFormatException invalid) {
+                return Optional.empty();
+            }
+        }
         private Optional<AddressMatch> toJejuMatch() {
             String province = elementName("SIDO");
             String city = elementName("SIGUGUN");

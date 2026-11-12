@@ -17,6 +17,8 @@ class NaverGeocodingClientTest {
                     {
                       "roadAddress": "",
                       "jibunAddress": "제주특별자치도 제주시 애월읍 예시리 1",
+                      "x": "126.38",
+                      "y": "33.46",
                       "addressElements": [
                         {"types": ["SIDO"], "longName": "제주특별자치도"},
                         {"types": ["SIGUGUN"], "longName": "제주시"},
@@ -37,5 +39,10 @@ class NaverGeocodingClientTest {
 
         assertThat(NaverGeocodingClient.jejuMatches(response))
                 .containsExactly(new AddressMatch("제주특별자치도 제주시 애월읍 예시리 1", "제주시 애월읍"));
+        assertThat(NaverGeocodingClient.exactJejuCoordinates(response, "제주 제주시 애월읍 예시리 1"))
+                .contains(new NaverGeocodingClient.Coordinates(33.46, 126.38));
+        assertThat(NaverGeocodingClient.exactJejuCoordinates(response, "제주 제주시 애월읍 예시리 1 1층"))
+                .contains(new NaverGeocodingClient.Coordinates(33.46, 126.38));
+        assertThat(NaverGeocodingClient.exactJejuCoordinates(response, "제주 제주시 애월읍 예시리 11")).isEmpty();
     }
 }
