@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { fetchPromotionDefaults, type PromotionDefaults } from '../api/shop'
 import type { FormEvent } from 'react'
 import { formatNumber, monthLabel, won } from '../data/shop'
@@ -11,7 +11,7 @@ const moneyFields = [
   { key: 'budgetWon', label: '할인 예산 (원)', min: 0 },
 ] as const
 
-export function PromotionReview({ analysis, saved, initialBudget, onSave, readOnly = false, auth, planId }: {
+type PromotionReviewProps = {
   analysis: Analysis
   saved?: SavedReview
   initialBudget: number
@@ -19,7 +19,37 @@ export function PromotionReview({ analysis, saved, initialBudget, onSave, readOn
   planId?: string
   readOnly?: boolean
   onSave?: (input: PromotionReviewInput) => Promise<void>
-}) {
+}
+
+export function PromotionReview({ postedManually, ...props }: PromotionReviewProps & { postedManually: boolean }) {
+  const dialog = useRef<HTMLDialogElement>(null)
+  const titleId = useId()
+  const [open, setOpen] = useState(false)
+  const { saved } = props
+
+  return <section className="receipt promotion-review-summary">
+    <h2>할인 조건</h2>
+    <button type="button" className="button secondary small" aria-haspopup="dialog" onClick={() => {
+      dialog.current?.showModal()
+      setOpen(true)
+    }}>프로모션 검토</button>
+    <p className="muted">{saved
+      ? `${saved.productName} · ${won(saved.discountedPriceWon)} · 개당 ${won(saved.discountWon)} 할인 · ${formatNumber(saved.maxDiscountQuantity)}개 한정`
+      : '아직 저장한 할인 조건이 없어요.'}</p>
+    <dialog ref={dialog} className="promotion-dialog" aria-labelledby={titleId} onClose={() => setOpen(false)}>
+      <header className="promotion-dialog-header">
+        <h2 id={titleId}>프로모션 검토</h2>
+        <button type="button" className="button secondary small" autoFocus onClick={() => dialog.current?.close()}>닫기</button>
+      </header>
+      <div className="promotion-dialog-body">
+        {postedManually && <p className="muted">게시일을 기록한 행사의 할인 조건은 새 행사 계획에서 바꿀 수 있어요.</p>}
+        {open && <PromotionReviewForm {...props} />}
+      </div>
+    </dialog>
+  </section>
+}
+
+function PromotionReviewForm({ analysis, saved, initialBudget, onSave, readOnly = false, auth, planId }: PromotionReviewProps) {
   const suggestions = useId()
   const [draft, setDraft] = useState({
     productName: saved?.productName ?? '',
@@ -96,8 +126,7 @@ export function PromotionReview({ analysis, saved, initialBudget, onSave, readOn
   }
 
   return <section className="execution-material">
-    <div className="section-top ruled"><h2>프로모션 검토</h2></div>
-    {analysis.productSales?.length ? <details className="ruled-block" open>
+    {analysis.productSales?.length ? <details className="ruled-block" open={!saved}>
       <summary>POS 품목별 판매량 참고</summary>
       <table className="input-table" aria-label="프로모션 검토용 POS 품목별 판매량">
         <thead><tr><th scope="col">상품명</th>

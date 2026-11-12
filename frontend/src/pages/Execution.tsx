@@ -398,9 +398,6 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
         </div>
       </section>
       <div className="form-stack execution-aside">
-        {plan.strategy === 'promotion' && <PromotionReview key={locked ? 'locked' : 'editable'} analysis={analysis}
-          saved={plan.promotionReview} initialBudget={plan.budget} auth={auth} planId={plan.id} readOnly={locked || loadingInstagram || hasManualPublication} onSave={onSavePromotion} />}
-        {plan.strategy === 'promotion' && hasManualPublication && <p className="muted">게시일을 기록한 행사의 할인 조건은 새 행사 계획에서 바꿀 수 있어요.</p>}
         {hasPromotionMaterials && auth && onSavePromotionDraft && <section className="receipt promotion-summary">
           <div>
             <h2>홍보</h2>
@@ -448,7 +445,14 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
             </div>
           </dialog>
         </section>}
+        {plan.strategy === 'promotion' && <PromotionReview analysis={analysis}
+          saved={plan.promotionReview} initialBudget={plan.budget} auth={auth} planId={plan.id}
+          readOnly={locked || loadingInstagram || hasManualPublication} onSave={onSavePromotion}
+          postedManually={hasManualPublication} />}
         {inventory ? <InventoryReview
+          key={plan.id ?? 'demo'}
+          auth={auth}
+          planId={plan.id}
           items={plan.inventoryItems ?? []}
           analysis={analysis}
           onSave={onSaveInventory}
