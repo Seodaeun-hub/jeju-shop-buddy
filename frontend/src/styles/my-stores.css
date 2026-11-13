@@ -49,8 +49,14 @@
 .pos-library-upload label { min-width: 0; }
 .pos-library-upload input { width: 100%; }
 .pos-library-list { list-style: none; padding: 0; margin: 0; }
-.pos-library-list li { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding-block: .7rem; border-bottom: 1px solid var(--line); }
+.pos-library-list li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .5rem 1rem; padding-block: .7rem; border-bottom: 1px solid var(--line); }
 .pos-library-list li > div { min-width: 0; overflow-wrap: anywhere; }
+.pos-file-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+.pos-coverage-dialog { width: min(31rem, calc(100% - 2rem)); border: 1px solid var(--line); border-radius: 12px; padding: 1.25rem; }
+.pos-coverage-dialog::backdrop { background: rgb(24 46 36 / 55%); }
+.pos-coverage-dialog h3, .pos-coverage-dialog p { margin: 0; overflow-wrap: anywhere; }
+.pos-coverage-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: .6rem; border: 0; padding: 0; margin: 0; min-width: 0; }
+.pos-coverage-inputs input { width: 100%; }
 .stored-file-picker { flex: 1 0 100%; margin-top: .25rem; min-width: 0; }
 .stored-file-picker select { width: 100%; }
 .pos-library-note { display: grid; gap: .3rem; }

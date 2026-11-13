@@ -173,6 +173,8 @@ export type StoredPosFile = {
 }
 const posFilesPath = (storeId: string) => `/api/stores/${encodeURIComponent(storeId)}/pos-files`
 const posFilePath = (storeId: string, fileId: string) => `${posFilesPath(storeId)}/${encodeURIComponent(fileId)}`
+export const updatePosFileCoverage = (auth: string, storeId: string, fileId: string, coverageStart: string, coverageEnd: string) =>
+  request<StoredPosFile>(posFilePath(storeId, fileId), auth, 'PATCH', { coverageStart, coverageEnd })
 export const listPosFiles = (auth: string, storeId: string, signal: AbortSignal) =>
   request<StoredPosFile[]>(posFilesPath(storeId), auth, 'GET', undefined, signal)
 export function uploadPosFile(auth: string, storeId: string, kind: PosFileKind, file: File,
