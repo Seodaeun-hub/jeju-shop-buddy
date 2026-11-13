@@ -34,6 +34,27 @@ export type InventoryWeather = {
 }
 
 export type InventoryRecipe = { ingredientName: string; unit: string; amount: string }
+export type InventoryEstimateInput = {
+  date: string
+  product: string
+  low: number
+  high: number
+  basis: 'WEATHER' | 'WEEKDAY'
+}
+export type InventoryEstimateComparison = {
+  estimate: InventoryEstimateInput & { savedAt: string }
+  actualSales: number | null
+  status: 'PENDING_DATE' | 'POS_REQUIRED' | 'WITHIN_RANGE' | 'BELOW_RANGE' | 'ABOVE_RANGE'
+}
+
+const inventoryEstimatesPath = (planId: string) =>
+  `/api/plans/${encodeURIComponent(planId)}/inventory-review/estimates`
+
+export const fetchInventoryEstimates = (auth: string, planId: string, signal?: AbortSignal) =>
+  request<InventoryEstimateComparison[]>(inventoryEstimatesPath(planId), auth, 'GET', undefined, signal)
+
+export const saveInventoryEstimate = (auth: string, planId: string, estimate: InventoryEstimateInput) =>
+  send(inventoryEstimatesPath(planId), auth, 'PUT', estimate)
 
 const inventoryRecipesPath = (planId: string, productName: string) =>
   `/api/plans/${encodeURIComponent(planId)}/inventory-review/recipes?${new URLSearchParams({ productName })}`

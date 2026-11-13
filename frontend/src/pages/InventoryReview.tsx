@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { fetchInventoryRecipes, fetchInventoryWeather, saveInventoryRecipe, type InventoryDemandEstimate,
+import { fetchInventoryEstimates, fetchInventoryRecipes, fetchInventoryWeather, saveInventoryEstimate,
+  saveInventoryRecipe, type InventoryDemandEstimate, type InventoryEstimateComparison,
   type InventoryRecipe, type InventoryWeather } from '../api/shop'
 import { formatQuantity, parseQuantity, preparationFor, quantities, shortageOf } from '../data/inventory'
 import { posLibraryPath, seoulDate } from '../data/promotionArchive'
@@ -30,11 +31,48 @@ function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, m
   const [lookup, setLookup] = useState(initialLookup)
   const [loading, setLoading] = useState(Boolean(initialLookup))
   const [error, setError] = useState('')
+  const [comparisons, setComparisons] = useState<InventoryEstimateComparison[]>()
+  const [comparisonError, setComparisonError] = useState('')
+  const [comparisonRevision, setComparisonRevision] = useState(0)
+  const [savingEstimate, setSavingEstimate] = useState(false)
+  const [estimateSaved, setEstimateSaved] = useState(false)
 
   function clear() {
     setReference(undefined)
     onEstimate(null)
     setError('')
+    setEstimateSaved(false)
+  }
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchInventoryEstimates(auth, planId, controller.signal).then(saved => {
+      if (!controller.signal.aborted) {
+        setComparisons(saved)
+        setComparisonError('')
+      }
+    }).catch(failure => {
+      if (!controller.signal.aborted) setComparisonError(failure instanceof Error ? failure.message : '저장한 예상 판매량을 확인할 수 없어요.')
+    })
+    return () => controller.abort()
+  }, [auth, planId, comparisonRevision])
+
+  async function saveEstimate() {
+    const estimate = reference?.estimate
+    if (!reference || !estimate || estimate.low === null || estimate.high === null || estimate.basis === 'INSUFFICIENT') return
+    setSavingEstimate(true)
+    setComparisonError('')
+    try {
+      await saveInventoryEstimate(auth, planId, {
+        date: reference.date, product: estimate.product, low: estimate.low, high: estimate.high, basis: estimate.basis,
+      })
+      setEstimateSaved(true)
+      setComparisonRevision(value => value + 1)
+    } catch (failure) {
+      setComparisonError(failure instanceof Error ? failure.message : '저장한 예상 판매량을 확인할 수 없어요.')
+    } finally {
+      setSavingEstimate(false)
+    }
   }
 
   useEffect(() => {
@@ -54,7 +92,9 @@ function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, m
   }, [auth, planId, lookup, onEstimate])
 
   const forecast = reference?.forecast
-  const required = reference?.estimate?.requiredPos
+  const estimate = reference?.estimate
+  const required = estimate?.requiredPos
+  const alreadySaved = comparisons?.some(row => row.estimate.date === reference?.date && row.estimate.product === estimate?.product)
   const uploadTo = required && reference && storeId && analysisId && productName.trim()
     ? posLibraryPath(storeId, { date: required.end, kind: required.kind, upload: {
       missingStart: required.start, inventory: { planId, analysisId, date: reference.date, product: productName.trim() },
@@ -63,17 +103,17 @@ function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, m
   return <div className="ruled-block form-stack">
     <h3>날씨로 발주량 살펴보기</h3>
     <label>날씨를 확인할 날짜
-      <input type="date" value={date} disabled={loading} onChange={event => {
+      <input type="date" value={date} disabled={loading || savingEstimate} onChange={event => {
         setDate(event.target.value)
         clear()
       }} />
     </label>
     <label>판매량을 예상할 메뉴
-      <input list={menuOptions} value={productName} maxLength={255} placeholder="POS에 적힌 메뉴 이름" disabled={loading || recipeSaving}
+      <input list={menuOptions} value={productName} maxLength={255} placeholder="POS에 적힌 메뉴 이름" disabled={loading || recipeSaving || savingEstimate}
         onChange={event => { onProduct(event.target.value); clear() }} />
     </label>
     <datalist id={menuOptions}>{menus.map(name => <option value={name} key={name} />)}</datalist>
-    <button type="button" className="button secondary small" disabled={loading || !date} onClick={() => {
+    <button type="button" className="button secondary small" disabled={loading || savingEstimate || !date} onClick={() => {
       clear()
       setLoading(true)
       setLookup({ date, product: productName.trim() })
@@ -92,9 +132,52 @@ function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, m
         </small>
       </> : !reference.estimate?.historical && <p className="muted">선택한 날짜의 기상청 단기예보를 확인할 수 없어요.</p>}
     </div>}
-    {reference?.estimate && <DemandEstimate estimate={reference.estimate} uploadTo={uploadTo} />}
+    {estimate && <DemandEstimate estimate={estimate} uploadTo={uploadTo} />}
+    {estimate && estimate.low !== null && estimate.high !== null && (alreadySaved || estimateSaved
+      ? <p role="status" className="muted">이 날짜와 메뉴의 예상 범위는 아래에 저장돼 있어요.</p>
+      : <button type="button" className="button secondary small" disabled={savingEstimate}
+        onClick={() => void saveEstimate()}>{savingEstimate ? '저장 중…' : '예상 범위 저장'}</button>)}
     {error && <p role="alert" className="error">{error}</p>}
+    {comparisonError && <div role="alert" className="error">{comparisonError}{' '}
+      <button type="button" className="text-button" onClick={() => setComparisonRevision(value => value + 1)}>저장한 범위 다시 불러오기</button>
+    </div>}
+    <SavedEstimateComparisons rows={comparisons ?? []} storeId={storeId} planId={planId} analysisId={analysisId} />
   </div>
+}
+
+const comparisonLabels = {
+  PENDING_DATE: '대상일이 지난 뒤 확인할 수 있어요.',
+  POS_REQUIRED: '이날의 상품 주문 POS가 필요해요.',
+  WITHIN_RANGE: '예상 범위 안',
+  BELOW_RANGE: '예상 범위보다 적음',
+  ABOVE_RANGE: '예상 범위보다 많음',
+}
+
+function SavedEstimateComparisons({ rows, storeId, planId, analysisId }: {
+  rows: InventoryEstimateComparison[]
+  storeId?: string
+  planId: string
+  analysisId?: string
+}) {
+  if (!rows.length) return null
+  return <section className="ruled-block form-stack" aria-label="저장한 예상과 실제 판매량">
+    <h4>저장한 예상과 실제 판매량</h4>
+    <ul className="form-stack">
+      {rows.map(({ estimate, actualSales, status }) => <li key={JSON.stringify([estimate.date, estimate.product])}>
+        <strong>{estimate.date} · {estimate.product}</strong>
+        <p>저장한 예상 범위 · {formatNumber(estimate.low)}~{formatNumber(estimate.high)}개
+          <small className="muted"> · {estimate.basis === 'WEATHER' ? '같은 요일·강수 여부' : '같은 요일'}</small>
+        </p>
+        {actualSales !== null && <p>실제 판매량 · {formatNumber(actualSales)}개</p>}
+        <p><strong>{comparisonLabels[status]}</strong></p>
+        {status === 'POS_REQUIRED' && storeId && analysisId && <Link className="button secondary small"
+          to={posLibraryPath(storeId, { date: estimate.date, kind: 'PRODUCT', upload: {
+            missingStart: estimate.date,
+            inventory: { planId, analysisId, date: estimate.date, product: estimate.product },
+          } })}>이날 상품 주문 POS 올리기</Link>}
+      </li>)}
+    </ul>
+  </section>
 }
 
 const recipeKey = (name: string, unit: string) => JSON.stringify([name.trim(), unit.trim()])
