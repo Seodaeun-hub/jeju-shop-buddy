@@ -22,6 +22,7 @@ function matchesMonth(dates: NonNullable<FileDates>, month: string, file: Stored
   const end = monthEnd(month)
   const observed = [...dates.days].filter(date => date.startsWith(month)).length
   if (!observed) return 'absent'
+  if (file.tossMonth && !file.coverageEnd) return 'partial'
   const completeExport = file.coverageStart && file.coverageEnd && file.coverageStart <= start && file.coverageEnd >= end
     && file.coverageStart <= dates.start && file.coverageEnd >= dates.end
   return completeExport || observed === Number(end.slice(-2)) ? 'complete' : 'partial'

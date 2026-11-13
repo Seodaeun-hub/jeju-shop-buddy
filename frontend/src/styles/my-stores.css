@@ -55,6 +55,7 @@
 .pos-coverage-dialog { width: min(31rem, calc(100% - 2rem)); border: 1px solid var(--line); border-radius: 12px; padding: 1.25rem; }
 .pos-coverage-dialog::backdrop { background: rgb(24 46 36 / 55%); }
 .pos-coverage-dialog h3, .pos-coverage-dialog p { margin: 0; overflow-wrap: anywhere; }
+.pos-library-heading-actions { margin: 0; }
 .pos-coverage-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: .6rem; border: 0; padding: 0; margin: 0; min-width: 0; }
 .pos-coverage-inputs input { width: 100%; }
 .stored-file-picker { flex: 1 0 100%; margin-top: .25rem; min-width: 0; }

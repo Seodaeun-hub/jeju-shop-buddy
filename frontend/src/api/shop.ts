@@ -209,6 +209,7 @@ export type StoredPosFile = {
   id: string; kind: PosFileKind; filename: string; size: number; uploadedAt: string
   coverageStart?: string | null; coverageEnd?: string | null
   calendarDate?: string | null
+  tossMonth?: string | null
 }
 const posFilesPath = (storeId: string) => `/api/stores/${encodeURIComponent(storeId)}/pos-files`
 const posFilePath = (storeId: string, fileId: string) => `${posFilesPath(storeId)}/${encodeURIComponent(fileId)}`
@@ -216,6 +217,13 @@ export const updatePosFileCoverage = (auth: string, storeId: string, fileId: str
   request<StoredPosFile>(posFilePath(storeId, fileId), auth, 'PATCH', { coverageStart, coverageEnd })
 export const listPosFiles = (auth: string, storeId: string, signal: AbortSignal) =>
   request<StoredPosFile[]>(posFilesPath(storeId), auth, 'GET', undefined, signal)
+export type TossPosImport = {
+  saved: boolean; orderCount: number; paymentCount: number; revenue: number; incompleteProductRevenue: number
+}
+export const tossPosConfig = (auth: string, storeId: string, signal: AbortSignal) =>
+  request<{ enabled: boolean }>(posFilesPath(storeId) + '/toss', auth, 'GET', undefined, signal)
+export const importTossPos = (auth: string, storeId: string, month: string) =>
+  request<TossPosImport>(posFilesPath(storeId) + '/toss', auth, 'POST', { month })
 export function uploadPosFile(auth: string, storeId: string, kind: PosFileKind, file: File,
   options: { calendarDate?: string; coverage?: PromotionImpactPeriod } = {}) {
   const body = new FormData()
