@@ -66,7 +66,8 @@ class StoreSecurityConfiguration {
         };
         return http.securityMatcher("/api/session", "/api/session/signup", "/api/session/profile", "/api/session/password", "/api/stores", "/api/stores/{storeId}/analyses",
                         "/api/stores/{storeId}/menu-photos", "/api/stores/{storeId}/promotion-tone",
-                        "/api/stores/{storeId}/pos-files", "/api/stores/{storeId}/pos-files/{fileId}", "/api/execution-reminders",
+                        "/api/stores/{storeId}/pos-files", "/api/stores/{storeId}/pos-files/{fileId}",
+                        "/api/stores/{storeId}/pos-files/toss", "/api/execution-reminders",
                         "/api/push/config", "/api/push/test", "/api/push/weekly-subscription", "/api/push/result-subscription",
                         "/api/analyses/{analysisId}", "/api/analyses/{analysisId}/time-series", "/api/analyses/{analysisId}/strategies", "/api/analyses/{analysisId}/plans",
                         "/api/analyses/{analysisId}/recommendations", "/api/analyses/{analysisId}/execution-guide",

@@ -40,6 +40,7 @@ class ProductPosArchiveTest {
         var badAmount = csv(HEADER + "\n2021-06-25,완료,고기국수,1,", FIRST, LAST);
         assertThat(ProductPosArchive.summarize(List.of(badAmount), PRODUCT, PERIOD).gap())
                 .isEqualTo(new PromotionImpactController.Period(FIRST, FIRST));
+        assertThat(ProductPosArchive.soldOn(List.of(badAmount), PRODUCT, FIRST)).isEqualTo(1L);
         var badCoverage = csv(HEADER + "\n2021-06-30,완료,고기국수,1,8500", FIRST, LAST);
         assertThat(ProductPosArchive.summarize(List.of(badCoverage), PRODUCT, PERIOD).gap()).isEqualTo(PERIOD);
     }

@@ -47,7 +47,7 @@ class StorePosFileController {
             return error(HttpStatus.NOT_FOUND, "STORE_NOT_FOUND", "매장을 찾을 수 없어요.");
         }
         var files = jdbc.sql("""
-                SELECT id, kind, filename, octet_length(content) AS size, uploaded_at, coverage_start, coverage_end, calendar_date
+                SELECT id, kind, filename, octet_length(content) AS size, uploaded_at, coverage_start, coverage_end, calendar_date, toss_month
                 FROM store_pos_files WHERE store_id = :store
                 ORDER BY uploaded_at DESC, id DESC
                 """).param("store", storeId).query(StorePosFileController::metadata).list();
@@ -93,7 +93,7 @@ class StorePosFileController {
                 SELECT :id, s.id, :kind, :filename, :content, :coverageStart, :coverageEnd, :calendarDate
                 FROM stores s JOIN owners o ON o.id = s.owner_id
                 WHERE s.id = :store AND o.email = :email
-                RETURNING id, kind, filename, octet_length(content) AS size, uploaded_at, coverage_start, coverage_end, calendar_date
+                RETURNING id, kind, filename, octet_length(content) AS size, uploaded_at, coverage_start, coverage_end, calendar_date, toss_month
                 """).param("id", UUID.randomUUID()).param("kind", kind).param("filename", filename)
                 .param("content", content).param("store", storeId).param("email", owner.getName())
                 .param("coverageStart", coverageStart).param("coverageEnd", coverageEnd).param("calendarDate", calendarDate)
@@ -132,8 +132,9 @@ class StorePosFileController {
                 UPDATE store_pos_files f SET coverage_start = :start, coverage_end = :end
                 FROM stores s JOIN owners o ON o.id = s.owner_id
                 WHERE f.id = :file AND f.store_id = :store AND s.id = f.store_id AND o.email = :email
+                    AND f.toss_month IS NULL
                 RETURNING f.id, f.kind, f.filename, octet_length(f.content) AS size, f.uploaded_at,
-                          f.coverage_start, f.coverage_end, f.calendar_date
+                          f.coverage_start, f.coverage_end, f.calendar_date, f.toss_month
                 """).param("file", fileId).param("store", storeId).param("email", owner.getName())
                 .param("start", coverage.coverageStart()).param("end", coverage.coverageEnd())
                 .query(StorePosFileController::metadata).optional();
@@ -166,7 +167,7 @@ class StorePosFileController {
         return new PosFile(rs.getObject("id", UUID.class), rs.getString("kind"), rs.getString("filename"),
                 rs.getInt("size"), rs.getObject("uploaded_at", OffsetDateTime.class),
                 rs.getObject("coverage_start", LocalDate.class), rs.getObject("coverage_end", LocalDate.class),
-                rs.getObject("calendar_date", LocalDate.class));
+                rs.getObject("calendar_date", LocalDate.class), rs.getObject("toss_month", LocalDate.class));
     }
 
     private static ResponseEntity<?> missingFile() {
@@ -187,7 +188,7 @@ class StorePosFileController {
     }
 
     private record PosFile(UUID id, String kind, String filename, int size, OffsetDateTime uploadedAt,
-                           LocalDate coverageStart, LocalDate coverageEnd, LocalDate calendarDate) {}
+                           LocalDate coverageStart, LocalDate coverageEnd, LocalDate calendarDate, LocalDate tossMonth) {}
     private record Coverage(LocalDate coverageStart, LocalDate coverageEnd) {}
     private record StoredFile(String filename, byte[] content) {}
 }

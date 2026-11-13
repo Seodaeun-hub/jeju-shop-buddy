@@ -82,6 +82,7 @@ CREATE TABLE store_pos_files (
     coverage_start DATE,
     coverage_end DATE,
     calendar_date DATE,
+    toss_month DATE,
     CONSTRAINT ck_store_pos_files_coverage CHECK (
         (coverage_start IS NULL AND coverage_end IS NULL) OR
         (coverage_start IS NOT NULL AND coverage_end IS NOT NULL AND coverage_start <= coverage_end)
@@ -89,6 +90,7 @@ CREATE TABLE store_pos_files (
 );
 
 CREATE INDEX ix_store_pos_files_store_uploaded ON store_pos_files (store_id, uploaded_at DESC, id DESC);
+CREATE UNIQUE INDEX ux_store_pos_files_toss_month ON store_pos_files (store_id, kind, toss_month);
 
 CREATE TABLE sales_analyses (
     id UUID PRIMARY KEY,

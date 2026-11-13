@@ -132,7 +132,7 @@ class ProductPosArchive {
             }
             var products = file == null ? null : file.orders().get(day);
             var item = products == null ? null : products.get(product);
-            if (file == null || item == Item.INVALID) {
+            if (file == null || item != null && (item.quantity() < 0 || item.amount() < 0)) {
                 if (gapStart == null) gapStart = day;
                 continue;
             }
@@ -157,7 +157,7 @@ class ProductPosArchive {
             var products = entry.orders().get(day);
             if (products == null || products.values().stream().noneMatch(item -> item.quantity() > 0)) return null;
             var item = products.get(product);
-            if (item == Item.INVALID) return null;
+            if (item != null && item.quantity() < 0) return null;
             return item == null ? 0L : item.quantity();
         }
         return null;
@@ -171,6 +171,10 @@ class ProductPosArchive {
         } catch (NumberFormatException invalid) {
             return -1;
         }
+    }
+
+    private static long addTotal(long first, long second) {
+        return first < 0 || second < 0 || first + second > MAX_TOTAL ? -1 : first + second;
     }
 
     private static final class Orders {
@@ -201,9 +205,7 @@ class ProductPosArchive {
             long quantity = total(value(fields, columns[3]));
             long amount = total(value(fields, columns[4]));
             var previous = products.getOrDefault(name, new Item(0, 0));
-            products.put(name, previous == Item.INVALID || quantity < 0 || amount < 0
-                    || previous.quantity() + quantity > MAX_TOTAL || previous.amount() + amount > MAX_TOTAL
-                    ? Item.INVALID : new Item(previous.quantity() + quantity, previous.amount() + amount));
+            products.put(name, new Item(addTotal(previous.quantity(), quantity), addTotal(previous.amount(), amount)));
         }
 
         private static String value(List<String> fields, int index) {
@@ -212,9 +214,7 @@ class ProductPosArchive {
     }
 
     private record FileRef(UUID id, boolean workbook, LocalDate start, LocalDate end) {}
-    record Item(long quantity, long amount) {
-        static final Item INVALID = new Item(-1, -1);
-    }
+    record Item(long quantity, long amount) {}
     record Days(Map<LocalDate, Map<String, Item>> orders, LocalDate start, LocalDate end) {
         static final Days EMPTY = new Days(Map.of(), null, null);
         boolean covers(LocalDate day) {

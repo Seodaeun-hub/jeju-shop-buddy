@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router'
-import { deletePosFile, listPosFiles, updatePosFileCoverage, uploadPosFile } from '../api/shop'
-import type { PosFileKind, StoredPosFile } from '../api/shop'
+import { deletePosFile, importTossPos, listPosFiles, tossPosConfig, updatePosFileCoverage, uploadPosFile } from '../api/shop'
+import type { PosFileKind, StoredPosFile, TossPosImport } from '../api/shop'
 import { PosFileCalendar } from '../components/PosFileCalendar'
 import { useStandaloneApp } from '../components/useStandaloneApp'
 import { inspectPosDates } from '../data/pos'
@@ -16,6 +16,62 @@ function startingDate(value: string | null, today: string) {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value < '1900-01-01' || value > today) return today
   const parsed = new Date(value)
   return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value ? today : value
+}
+
+function TossPosDialog({ today, onClose, onImport }: {
+  today: string; onClose: () => void; onImport: (month: string) => Promise<void>
+}) {
+  const dialog = useRef<HTMLDialogElement>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    const element = dialog.current
+    element?.showModal()
+    return () => element?.close()
+  }, [])
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (loading) return
+    const month = String(new FormData(event.currentTarget).get('month') ?? '')
+    setError('')
+    setLoading(true)
+    try {
+      await onImport(month)
+      onClose()
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : '토스포스 자료를 불러오지 못했어요.')
+      setLoading(false)
+    }
+  }
+
+  return <dialog ref={dialog} className="pos-coverage-dialog" aria-labelledby="toss-pos-title"
+    onCancel={event => { event.preventDefault(); if (!loading) onClose() }}>
+    <form className="form-stack" onSubmit={submit}>
+      <h3 id="toss-pos-title">토스포스에서 불러오기</h3>
+      <p>선택한 달의 결제 내역과 상품 주문을 가져와요. 같은 달을 다시 불러오면 최신 내역으로 갱신돼요.</p>
+      <label>불러올 월<input type="month" name="month" min="1900-01" max={today.slice(0, 7)}
+        defaultValue={today.slice(0, 7)} disabled={loading} required /></label>
+      {loading && <p role="status">토스포스의 주문과 결제를 확인하고 있어요.</p>}
+      {error && <p className="error" role="alert">{error}</p>}
+      <div className="actions end">
+        <button className="button secondary" type="button" onClick={onClose} disabled={loading}>닫기</button>
+        <button className="button primary" type="submit" disabled={loading}>{loading ? '불러오는 중…' : '불러오기'}</button>
+      </div>
+    </form>
+  </dialog>
+}
+
+function tossStatus(result: TossPosImport) {
+  if (!result.paymentCount) {
+    return result.saved ? '승인 결제가 없어 토스포스 보관본을 갱신했어요.' : '선택한 달에 불러올 승인 결제가 없어요.'
+  }
+  const number = new Intl.NumberFormat('ko-KR')
+  const summary = `토스포스 주문 ${number.format(result.orderCount)}건 · 승인 결제 ${number.format(result.paymentCount)}건 · ${number.format(result.revenue)}원을 반영했어요.`
+  return result.incompleteProductRevenue > 0
+    ? summary + ' 품목별 실판매금액을 확인하기 어려운 주문은 판매량만 기록했어요.'
+    : summary
 }
 
 function PosCoverageDialog({ file, today, onClose, onSave }: {
@@ -85,6 +141,8 @@ export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKi
   const input = useRef<HTMLInputElement>(null)
   const uploadHeading = useRef<HTMLHeadingElement>(null)
   const [files, setFiles] = useState<StoredPosFile[]>()
+  const [tossEnabled, setTossEnabled] = useState(false)
+  const [tossOpen, setTossOpen] = useState(false)
   const [editingCoverage, setEditingCoverage] = useState<StoredPosFile>()
   const [kind, setKind] = useState<PosFileKind>(initialKind === 'PRODUCT' ? 'PRODUCT' : 'PAYMENT')
   const [view, setView] = useState<'calendar' | 'all'>('calendar')
@@ -100,7 +158,7 @@ export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKi
   const busy = Boolean(operation)
   const [loadError, setLoadError] = useState('')
   const [error, setError] = useState('')
-  const [status, setStatus] = useState<{ message: string; operation: 'upload' | 'delete' | 'coverage' }>()
+  const [status, setStatus] = useState<{ message: string; operation: 'upload' | 'delete' | 'coverage' | 'toss' }>()
   const [retry, setRetry] = useState(0)
   const filesReady = files !== undefined
   const focusUpload = Boolean(uploadRequest)
@@ -125,6 +183,14 @@ export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKi
     })
     return () => controller.abort()
   }, [auth, storeId, retry])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void tossPosConfig(auth, storeId, controller.signal)
+      .then(config => { if (!controller.signal.aborted) setTossEnabled(config.enabled) })
+      .catch(() => { if (!controller.signal.aborted) setTossEnabled(false) })
+    return () => controller.abort()
+  }, [auth, storeId])
 
   useEffect(() => {
     if (standalone || !focusUpload || !filesReady) return
@@ -206,6 +272,19 @@ export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKi
     notifyResultsDataChanged()
   }
 
+  async function importFromToss(month: string) {
+    const result = await importTossPos(auth, storeId, month)
+    setStatus({ message: tossStatus(result), operation: 'toss' })
+    if (result.saved) {
+      setFilterMonth(month)
+      setFilterKind('')
+      setSearch('')
+      setView('all')
+      setRetry(value => value + 1)
+      notifyResultsDataChanged()
+    }
+  }
+
   function fileList(items: StoredPosFile[], empty: string, showRecordDate: boolean) {
     if (!items.length) return <p className="muted">{empty}</p>
     return <ul className="pos-library-list" aria-label="저장된 POS 파일">
@@ -214,15 +293,15 @@ export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKi
           <p className="muted">{fileKinds[file.kind]}{showRecordDate && ` · 기록일 ${calendarDate(file)}`}
             {' · '}올린 날 {dateFormat.format(new Date(file.uploadedAt))}
             {file.coverageStart && file.coverageEnd ? ` · 내보낸 기간 ${file.coverageStart} ~ ${file.coverageEnd}`
-              : ' · 내보낸 기간 미입력'}</p>
+              : file.tossMonth ? ' · 이번 달 진행 중' : ' · 내보낸 기간 미입력'}</p>
         </div>
         <div className="pos-file-actions">
-          <button type="button" className="button secondary small" disabled={busy} aria-haspopup="dialog"
+          {!file.tossMonth && <button type="button" className="button secondary small" disabled={busy} aria-haspopup="dialog"
             aria-label={file.filename + ' 기간 수정'} onClick={() => {
               setError('')
               setStatus(undefined)
               setEditingCoverage(file)
-            }}>기간 수정</button>
+            }}>기간 수정</button>}
           <button type="button" className="button secondary small" disabled={busy} aria-label={file.filename + ' 삭제'}
             onClick={() => void remove(file)}>삭제</button>
         </div>
@@ -281,8 +360,13 @@ export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKi
   return <section className="form-stack" aria-labelledby="pos-files-title">
     <div className="section-top ruled">
       <div><h2 id="pos-files-title">POS 파일 관리</h2><p className="muted">보관한 POS는 이 매장의 매출 분석과 행사 결과 확인에 쓰여요.</p></div>
-      <Link className="button secondary" to={'/sales?' + new URLSearchParams({ storeId })}>매출 입력하기</Link>
+      <div className="actions pos-library-heading-actions">
+        {tossEnabled && <button className="button secondary" type="button" aria-haspopup="dialog"
+          disabled={busy || !files} onClick={() => setTossOpen(true)}>토스포스에서 불러오기</button>}
+        <Link className="button secondary" to={'/sales?' + new URLSearchParams({ storeId })}>매출 입력하기</Link>
+      </div>
     </div>
+    {tossOpen && <TossPosDialog today={today} onClose={() => setTossOpen(false)} onImport={importFromToss} />}
     {editingCoverage && <PosCoverageDialog file={editingCoverage} today={today}
       onClose={() => setEditingCoverage(undefined)} onSave={(start, end) => saveCoverage(editingCoverage, start, end)} />}
     {loadError ? <p role="alert" className="error">{loadError} <button type="button" className="text-button" onClick={() => {
