@@ -8,6 +8,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import org.springframework.http.CacheControl;
@@ -45,20 +46,30 @@ class InventoryReviewController {
 
     @GetMapping("/api/plans/{planId}/inventory-review/forecast")
     ResponseEntity<?> forecast(@PathVariable UUID planId, @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-                               LocalDate date, @RequestParam(required = false) String productName, Principal owner) {
+                               LocalDate date, @RequestParam(required = false) String productName,
+                               @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+                               List<LocalDate> excludedDates, Principal owner) {
         if (date.getYear() < 1900 || date.getYear() > 9999) return invalid("조회할 날짜를 확인해 주세요.");
         if (productName != null && !validText(productName, 255)) return invalid("확인할 POS 메뉴명을 입력해 주세요.");
+        if (!validExclusions(date, excludedDates) || (productName == null && excludedDates != null && !excludedDates.isEmpty())) {
+            return invalid("계산에서 뺄 비교 날짜를 확인해 주세요.");
+        }
         var location = findStore(planId, owner);
         if (location == null) return notFound();
+        var exclusions = excludedDates == null ? Set.<LocalDate>of() : Set.copyOf(excludedDates);
+        var reference = weatherReference(location, date, productName, exclusions);
+        if (!exclusions.isEmpty() && reference.estimate().excludedDates().size() != exclusions.size()) {
+            return invalid("현재 비교할 수 있는 POS 날짜만 계산에서 뺄 수 있어요.");
+        }
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-                .body(weatherReference(location, date, productName));
+                .body(reference);
     }
 
-    private WeatherReference weatherReference(ForecastStore location, LocalDate date, String productName) {
+    private WeatherReference weatherReference(ForecastStore location, LocalDate date, String productName, Set<LocalDate> exclusions) {
         var point = productName == null ? null : weather.location(location.address(), location.name()).orElse(null);
         var forecast = productName == null ? weather.lookup(location.address(), location.name(), date)
                 : point == null ? null : weather.lookup(point, date);
-        var estimate = productName == null ? null : demand.estimate(location.id(), point, productName.strip(), date, forecast);
+        var estimate = productName == null ? null : demand.estimate(location.id(), point, productName.strip(), date, forecast, exclusions);
         return new WeatherReference(date, location.area(), forecast, forecast == null ? null : KmaForecast.SOURCE_URL, estimate);
     }
 
@@ -69,7 +80,7 @@ class InventoryReviewController {
         if (store == null) return notFound();
         var saved = jdbc.sql("""
                 SELECT d.target_date, d.product_name, d.low, d.high, d.basis, d.saved_at,
-                       d.plan_id = :plan AS current_plan, n.note
+                       d.plan_id = :plan AS current_plan, n.note, d.excluded_dates
                 FROM inventory_demand_snapshots d
                 JOIN execution_plans p ON p.id = d.plan_id
                 JOIN sales_analyses a ON a.id = p.analysis_id
@@ -82,14 +93,15 @@ class InventoryReviewController {
                 .query((rs, row) -> new PlanEstimate(new SavedEstimate(
                         rs.getObject("target_date", LocalDate.class), rs.getString("product_name"), rs.getLong("low"),
                         rs.getLong("high"), InventoryDemand.Basis.valueOf(rs.getString("basis")),
-                        rs.getObject("saved_at", OffsetDateTime.class)), rs.getBoolean("current_plan"), rs.getString("note"))).list();
+                        rs.getObject("saved_at", OffsetDateTime.class)), rs.getBoolean("current_plan"), rs.getString("note"),
+                        List.of(json.readValue(rs.getString("excluded_dates"), String[].class)))).list();
         var today = LocalDate.now(InventoryDemand.SEOUL);
         var archive = saved.stream().anyMatch(row -> row.estimate().date().isBefore(today))
                 ? pos.load(store.id()) : List.<ProductPosArchive.Days>of();
         var comparisons = saved.stream().map(row -> {
             var estimate = row.estimate();
             Long actual = estimate.date().isBefore(today) ? ProductPosArchive.soldOn(archive, estimate.product(), estimate.date()) : null;
-            return new EstimateComparison(estimate, actual, ComparisonStatus.of(estimate, actual, today), row.currentPlan(), row.note());
+            return new EstimateComparison(estimate, actual, ComparisonStatus.of(estimate, actual, today), row.currentPlan(), row.note(), row.excludedDates());
         }).toList();
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(comparisons);
     }
@@ -128,45 +140,57 @@ class InventoryReviewController {
         if (input == null || input.date() == null || input.date().getYear() < 1900 || input.date().getYear() > 9999
                 || !validText(input.product(), 255) || input.low() == null || input.high() == null
                 || input.low() < 0 || input.high() < input.low() || input.high() > 9_007_199_254_740_991L
-                || input.basis() == null || input.basis() == InventoryDemand.Basis.INSUFFICIENT) {
+                || input.basis() == null || input.basis() == InventoryDemand.Basis.INSUFFICIENT
+                || !validExclusions(input.date(), input.excludedDates())) {
             return invalid("저장할 날짜, 메뉴와 예상 판매량 범위를 확인해 주세요.");
         }
         var store = findStore(planId, owner);
         if (store == null) return notFound();
         var product = input.product().strip();
-        var existing = existingEstimate(planId, input, product);
+        var exclusions = input.excludedDates() == null ? Set.<LocalDate>of() : Set.copyOf(input.excludedDates());
+        var excludedJson = json.writeValueAsString(exclusions.stream().sorted().map(LocalDate::toString).toList());
+        var existing = existingEstimate(planId, input, product, excludedJson);
         if (existing != null) return existing;
-        var estimate = weatherReference(store, input.date(), product).estimate();
-        if (!input.low().equals(estimate.low()) || !input.high().equals(estimate.high()) || input.basis() != estimate.basis()) {
+        var estimate = weatherReference(store, input.date(), product, exclusions).estimate();
+        if (!input.low().equals(estimate.low()) || !input.high().equals(estimate.high()) || input.basis() != estimate.basis()
+                || estimate.excludedDates().size() != exclusions.size()) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiError("INVENTORY_ESTIMATE_CHANGED",
                     "예상 판매량이 달라졌어요. 예상 판매량을 다시 조회한 뒤 저장해 주세요.", null));
         }
         int updated = jdbc.sql("""
-                INSERT INTO inventory_demand_snapshots (plan_id, target_date, product_name, low, high, basis)
-                SELECT id, :date, :product, :low, :high, :basis
+                INSERT INTO inventory_demand_snapshots (plan_id, target_date, product_name, low, high, basis, excluded_dates)
+                SELECT id, :date, :product, :low, :high, :basis, CAST(:excludedDates AS jsonb)
                 FROM execution_plans WHERE id = :plan AND strategy_code = 'INVENTORY'
                 ON CONFLICT (plan_id, target_date, product_name) DO NOTHING
                 """).param("plan", planId).param("date", input.date()).param("product", product)
-                .param("low", estimate.low()).param("high", estimate.high()).param("basis", estimate.basis().name()).update();
+                .param("low", estimate.low()).param("high", estimate.high()).param("basis", estimate.basis().name())
+                .param("excludedDates", excludedJson).update();
         if (updated == 0 && findStore(planId, owner) == null) return notFound();
         if (updated == 0) {
-            existing = existingEstimate(planId, input, product);
+            existing = existingEstimate(planId, input, product, excludedJson);
             return existing == null ? notFound() : existing;
         }
         return ResponseEntity.noContent().build();
     }
 
-    private ResponseEntity<?> existingEstimate(UUID planId, EstimateInput input, String product) {
+    private ResponseEntity<?> existingEstimate(UUID planId, EstimateInput input, String product, String excludedJson) {
         return jdbc.sql("""
-                SELECT low, high, basis FROM inventory_demand_snapshots
+                SELECT low, high, basis, excluded_dates = CAST(:excludedDates AS jsonb) AS same_exclusions
+                FROM inventory_demand_snapshots
                 WHERE plan_id = :plan AND target_date = :date AND product_name = :product
-                """).param("plan", planId).param("date", input.date()).param("product", product)
+                """).param("plan", planId).param("date", input.date()).param("product", product).param("excludedDates", excludedJson)
                 .query((rs, row) -> rs.getLong("low") == input.low() && rs.getLong("high") == input.high()
-                        && rs.getString("basis").equals(input.basis().name()))
+                        && rs.getString("basis").equals(input.basis().name()) && rs.getBoolean("same_exclusions"))
                 .optional().<ResponseEntity<?>>map(matches -> matches ? ResponseEntity.noContent().build()
                         : ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiError("INVENTORY_ESTIMATE_ALREADY_SAVED",
                                 "이 날짜와 메뉴에는 이미 저장한 예상 범위가 있어요.", null)))
                 .orElse(null);
+    }
+
+    private static boolean validExclusions(LocalDate target, List<LocalDate> dates) {
+        return dates == null || (dates.size() <= InventoryDemand.LOOKBACK_WEEKS && dates.stream().allMatch(date -> date != null
+                && date.isBefore(target) && !date.isBefore(target.minusWeeks(InventoryDemand.LOOKBACK_WEEKS))
+                && date.getDayOfWeek() == target.getDayOfWeek()));
     }
 
     @GetMapping("/api/plans/{planId}/inventory-review/recipes")
@@ -281,10 +305,11 @@ class InventoryReviewController {
     private record ForecastStore(UUID id, String name, String address, String area) {}
     record Recipe(String ingredientName, String unit, String amount) {}
     record WeatherReference(LocalDate date, String area, KmaForecast.Daily forecast, String sourceUrl, InventoryDemand.Estimate estimate) {}
-    record EstimateInput(LocalDate date, String product, Long low, Long high, InventoryDemand.Basis basis) {}
+    record EstimateInput(LocalDate date, String product, Long low, Long high, InventoryDemand.Basis basis, List<LocalDate> excludedDates) {}
     record SavedEstimate(LocalDate date, String product, long low, long high, InventoryDemand.Basis basis, OffsetDateTime savedAt) {}
-    private record PlanEstimate(SavedEstimate estimate, boolean currentPlan, String note) {}
-    record EstimateComparison(SavedEstimate estimate, Long actualSales, ComparisonStatus status, boolean currentPlan, String note) {}
+    private record PlanEstimate(SavedEstimate estimate, boolean currentPlan, String note, List<String> excludedDates) {}
+    record EstimateComparison(SavedEstimate estimate, Long actualSales, ComparisonStatus status, boolean currentPlan, String note,
+                              List<String> excludedDates) {}
     record EstimateNote(LocalDate date, String product, String note) {}
     enum ComparisonStatus {
         PENDING_DATE, POS_REQUIRED, WITHIN_RANGE, BELOW_RANGE, ABOVE_RANGE;

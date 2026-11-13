@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -39,21 +40,45 @@ class InventoryDemandTest {
                 TARGET.minusWeeks(2), new KmaObservations.Observation(BigDecimal.ZERO, true),
                 TARGET.minusWeeks(1), new KmaObservations.Observation(null, false));
         var required = InventoryDemand.requiredPos(TARGET, TARGET.minusDays(1));
-        var wet = InventoryDemand.summarize(NOODLES, false, null, "제주", null, true, samples, rain, required);
+        var wet = InventoryDemand.summarize(NOODLES, false, null, "제주", null, true, samples, rain, required, Set.of());
         assertThat(wet.basis()).isEqualTo(InventoryDemand.Basis.WEATHER);
         assertThat(wet.low()).isEqualTo(13);
         assertThat(wet.high()).isEqualTo(20);
         assertThat(wet.samples()).hasSize(3);
         assertThat(wet.requiredPos()).isNull();
-        var dry = InventoryDemand.summarize(NOODLES, false, null, "제주", null, false, samples, rain, required);
+        var dry = InventoryDemand.summarize(NOODLES, false, null, "제주", null, false, samples, rain, required, Set.of());
         assertThat(dry.basis()).isEqualTo(InventoryDemand.Basis.WEEKDAY);
         assertThat(dry.high()).isEqualTo(31);
-        var missing = InventoryDemand.summarize(NOODLES, true, 18L, null, null, null, samples.subList(0, 2), Map.of(), required);
+        var missing = InventoryDemand.summarize(NOODLES, true, 18L, null, null, null, samples.subList(0, 2), Map.of(), required, Set.of());
         assertThat(missing.basis()).isEqualTo(InventoryDemand.Basis.INSUFFICIENT);
         assertThat(missing.low()).isNull();
         assertThat(missing.actualSales()).isEqualTo(18);
         assertThat(missing.requiredPos()).isEqualTo(new InventoryDemand.PosRequirement(
                 TARGET.minusWeeks(12), TARGET.minusWeeks(1), "PRODUCT", 3));
+    }
+
+    @Test
+    void filtersSelectedDaysBeforeChoosingWeatherBasisAndKeepsOriginalRange() {
+        var samples = List.of(sample(4, 13), sample(3, 24), sample(2, 16), sample(1, 28));
+        var rain = Map.of(TARGET.minusWeeks(4), new KmaObservations.Observation(BigDecimal.ONE, true),
+                TARGET.minusWeeks(3), new KmaObservations.Observation(BigDecimal.ONE, true),
+                TARGET.minusWeeks(2), new KmaObservations.Observation(BigDecimal.ONE, true),
+                TARGET.minusWeeks(1), new KmaObservations.Observation(BigDecimal.ZERO, false));
+        var excluded = TARGET.minusWeeks(3);
+        var estimate = InventoryDemand.summarize(NOODLES, true, 19L, "제주", BigDecimal.ONE, true,
+                samples, rain, InventoryDemand.requiredPos(TARGET, TARGET), Set.of(excluded));
+        assertThat(estimate.originalBounds()).isEqualTo(new InventoryDemand.Bounds(InventoryDemand.Basis.WEATHER, 13L, 24L));
+        assertThat(estimate.basis()).isEqualTo(InventoryDemand.Basis.WEEKDAY);
+        assertThat(estimate.high()).isEqualTo(28);
+        assertThat(estimate.actualSales()).isEqualTo(19);
+        assertThat(estimate.excludedDates()).containsExactly(excluded);
+        assertThat(estimate.samples()).extracting(InventoryDemand.Sample::date).doesNotContain(excluded);
+        assertThat(estimate.candidates()).extracting(InventoryDemand.Sample::date).contains(excluded);
+
+        var insufficient = InventoryDemand.summarize(NOODLES, true, 19L, "제주", BigDecimal.ONE, true,
+                samples, rain, InventoryDemand.requiredPos(TARGET, TARGET), Set.of(excluded, TARGET.minusWeeks(1)));
+        assertThat(insufficient.basis()).isEqualTo(InventoryDemand.Basis.INSUFFICIENT);
+        assertThat(insufficient.requiredPos()).isNull();
     }
 
     @Test

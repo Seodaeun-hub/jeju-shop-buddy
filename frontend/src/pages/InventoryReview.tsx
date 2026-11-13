@@ -12,7 +12,7 @@ import { InventoryImport } from './InventoryImport'
 
 const koreaTime = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'medium', timeStyle: 'short' })
 const coverageRate = new Intl.NumberFormat('ko-KR', { style: 'percent', maximumFractionDigits: 1 })
-type ForecastSelection = { date: string; product: string }
+type ForecastSelection = { date: string; product: string; excludedDates?: string[] }
 
 function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, menus, productName, recipeSaving, onProduct, onEstimate }: {
   auth: string
@@ -66,6 +66,7 @@ function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, m
     try {
       await saveInventoryEstimate(auth, planId, {
         date: reference.date, product: estimate.product, low: estimate.low, high: estimate.high, basis: estimate.basis,
+        excludedDates: estimate.excludedDates,
       })
       setEstimateSaved(true)
       setComparisonRevision(value => value + 1)
@@ -87,7 +88,7 @@ function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, m
   useEffect(() => {
     if (!lookup) return
     const controller = new AbortController()
-    fetchInventoryWeather(auth, planId, lookup.date, lookup.product, controller.signal)
+    fetchInventoryWeather(auth, planId, lookup.date, lookup.product, lookup.excludedDates ?? [], controller.signal)
       .then(next => {
         if (controller.signal.aborted) return
         setReference(next)
@@ -110,6 +111,14 @@ function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, m
       missingStart: required.start, inventory: { planId, analysisId, date: reference.date, product: productName.trim() },
     } })
     : undefined
+
+  function recalculate(excludedDates: string[]) {
+    if (loading || savingEstimate) return
+    setError('')
+    setLoading(true)
+    setLookup({ date, product: productName.trim(), excludedDates })
+  }
+
   return <div className="ruled-block form-stack">
     <h3>날씨로 발주량 살펴보기</h3>
     <label>날씨를 확인할 날짜
@@ -142,10 +151,11 @@ function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, m
         </small>
       </> : !reference.estimate?.historical && <p className="muted">선택한 날짜의 기상청 단기예보를 확인할 수 없어요.</p>}
     </div>}
-    {estimate && <DemandEstimate estimate={estimate} uploadTo={uploadTo} />}
+    {estimate && <DemandEstimate estimate={estimate} uploadTo={uploadTo} notes={comparisons ?? []}
+      pendingExclusions={loading ? lookup?.excludedDates : undefined} disabled={loading || savingEstimate} onExclusions={recalculate} />}
     {estimate && estimate.low !== null && estimate.high !== null && (alreadySaved || estimateSaved
-      ? <p role="status" className="muted">이 계획에 날짜와 메뉴별 예상 범위를 저장했어요.</p>
-      : <button type="button" className="button secondary small" disabled={savingEstimate}
+      ? <p role="status" className="muted">이 계획에 저장한 예상 범위는 아래 이력에서 확인할 수 있어요.</p>
+      : <button type="button" className="button secondary small" disabled={loading || savingEstimate}
         onClick={() => void saveEstimate()}>{savingEstimate ? '저장 중…' : '예상 범위 저장'}</button>)}
     {error && <p role="alert" className="error">{error}</p>}
     {comparisonError && <div role="alert" className="error">{comparisonError}{' '}
@@ -184,7 +194,8 @@ function SavedEstimateComparisons({ rows, product, storeId, planId, analysisId, 
     if (row.estimate.product !== product) continue
     const first = byDate.get(date)
     if (!first) byDate.set(date, row)
-    else if (row.currentPlan && (first.estimate.low !== low || first.estimate.high !== high)) additional.set(date, row)
+    else if (row.currentPlan && (first.estimate.low !== low || first.estimate.high !== high
+      || (first.excludedDates ?? []).join() !== (row.excludedDates ?? []).join())) additional.set(date, row)
   }
   const daily = [...byDate.values()]
   const compared = daily.filter(row => row.actualSales !== null)
@@ -207,7 +218,7 @@ function SavedEstimateComparisons({ rows, product, storeId, planId, analysisId, 
         <thead><tr><th scope="col">날짜</th><th scope="col">예상 범위</th><th scope="col">실제 판매량</th><th scope="col">결과</th></tr></thead>
         <tbody>{daily.flatMap(first => {
           const later = additional.get(first.estimate.date)
-          return (later ? [first, later] : [first]).map(({ estimate, actualSales, status, note }, index) => {
+          return (later ? [first, later] : [first]).map(({ estimate, actualSales, status, note, excludedDates }, index) => {
             const difference = actualSales === null ? null : status === 'ABOVE_RANGE'
               ? `상한보다 ${formatNumber(actualSales - estimate.high)}개 더 팔렸어요.`
               : status === 'BELOW_RANGE' ? `하한보다 ${formatNumber(estimate.low - actualSales)}개 덜 팔렸어요.` : null
@@ -215,7 +226,9 @@ function SavedEstimateComparisons({ rows, product, storeId, planId, analysisId, 
               <th scope="row"><time dateTime={estimate.date}>{estimate.date}</time>
                 {index > 0 && <small className="muted">이 계획에서 저장</small>}
               </th>
-              <td>{formatNumber(estimate.low)}~{formatNumber(estimate.high)}개</td>
+              <td>{formatNumber(estimate.low)}~{formatNumber(estimate.high)}개
+                {!!excludedDates?.length && <small className="muted">제외 · {excludedDates.join(', ')}</small>}
+              </td>
               <td>{actualSales === null ? '—' : `${formatNumber(actualSales)}개`}</td>
               <td><strong data-status={status}>{comparisonLabels[status]}</strong>
                 {difference && <small className="inventory-history-gap">{difference}</small>}
@@ -284,9 +297,19 @@ function emptyItem(name = '', unit = ''): InventoryItem {
   return { id: crypto.randomUUID(), name, unit, stock: '', expectedUse: '', incoming: '', finalOrder: '' }
 }
 
-function DemandEstimate({ estimate, uploadTo }: { estimate: InventoryDemandEstimate; uploadTo?: string }) {
+function DemandEstimate({ estimate, uploadTo, notes, pendingExclusions, disabled, onExclusions }: {
+  estimate: InventoryDemandEstimate
+  uploadTo?: string
+  notes: InventoryEstimateComparison[]
+  pendingExclusions?: string[]
+  disabled: boolean
+  onExclusions: (dates: string[]) => void
+}) {
   const { product, historical, actualSales, basis, low, high, samples, station, observationSourceUrl,
-    observedRainfallMm, precipitation, requiredPos } = estimate
+    observedRainfallMm, precipitation, requiredPos, candidates, excludedDates, originalBounds } = estimate
+  const usedDates = new Set(samples.map(sample => sample.date))
+  const selectedExclusions = pendingExclusions ?? excludedDates
+  const notesByDate = new Map(notes.filter(row => row.estimate.product === product).map(row => [row.estimate.date, row.note]))
   return <div className="form-stack">
     {historical && <p className="muted">과거 날짜 검증 · 선택한 날짜의 판매량은 비교 범위 계산에서 제외했어요.</p>}
     {historical && precipitation !== null && <p>선택한 날짜 · {precipitation ? '강수 관측됨' : '강수 기록 없음'}
@@ -301,7 +324,8 @@ function DemandEstimate({ estimate, uploadTo }: { estimate: InventoryDemandEstim
           <p className="muted">이 기간에 선택한 날짜와 같은 요일의 영업 기록이 최소 {requiredPos.minimumDays}일 필요해요.
             {samples.length > 0 && ` 지금 ${samples.length}일을 확인했어요.`}</p>
           {uploadTo && <Link className="button secondary small" to={uploadTo}>상품 주문 POS 올리기</Link>}
-        </> : <p className="muted">자료가 있는 날짜를 선택해 다시 확인해 주세요.</p>}
+        </> : excludedDates.length ? <p className="muted">제외한 날짜를 다시 포함해 비교할 판매 기록을 확보해 주세요.</p>
+          : <p className="muted">자료가 있는 날짜를 선택해 다시 확인해 주세요.</p>}
       </div>
       : <>
         <p><strong>{product} 예상 판매량 · {formatNumber(low)}~{formatNumber(high)}개</strong></p>
@@ -310,14 +334,27 @@ function DemandEstimate({ estimate, uploadTo }: { estimate: InventoryDemandEstim
           : `날씨까지 같은 비교일이 부족해 같은 요일 ${samples.length}일의 판매 범위를 참고했어요.`}</p>
         <p className="muted">아래 발주 품목에서 메뉴 한 개당 재료 사용량을 적으면 준비할 양을 계산해요.</p>
       </>}
+    {originalBounds && originalBounds.low !== null && originalBounds.high !== null && <p className="muted">
+      제외 전 {formatNumber(originalBounds.low)}~{formatNumber(originalBounds.high)}개 → 제외 후 {low === null || high === null
+        ? '자료 부족' : `${formatNumber(low)}~${formatNumber(high)}개`}
+    </p>}
     {historical && actualSales !== null && <p>선택한 날짜의 실제 POS 판매량 {formatNumber(actualSales)}개</p>}
-    {samples.length > 0 && <details>
-      <summary>비교한 POS 기록 {samples.length}일 보기</summary>
-      <ul>{samples.map(sample => <li key={sample.date}>
-        {sample.date} · {formatNumber(sample.quantity)}개
-        {sample.precipitation !== null && (sample.precipitation ? ' · 강수 관측됨' : ' · 강수 기록 없음')}
-        {sample.rainfallMm !== null && ` · 강수량 ${sample.rainfallMm}mm`}
-      </li>)}</ul>
+    {candidates.length > 0 && <details className="inventory-comparison-days">
+      <summary>비교할 POS 날짜 선택{selectedExclusions.length > 0 && ` · ${selectedExclusions.length}일 제외`}</summary>
+      <ul>{candidates.map(sample => {
+        const excluded = selectedExclusions.includes(sample.date)
+        return <li key={sample.date}>
+          <span>{sample.date} · {formatNumber(sample.quantity)}개
+            {sample.precipitation !== null && (sample.precipitation ? ' · 강수 관측됨' : ' · 강수 기록 없음')}
+            {sample.rainfallMm !== null && ` · 강수량 ${sample.rainfallMm}mm`}
+            {!pendingExclusions && !excluded && !usedDates.has(sample.date) && ' · 강수 여부가 달라 미반영'}
+          </span>
+          {notesByDate.get(sample.date) && <span><strong>확인 메모</strong> {notesByDate.get(sample.date)}</span>}
+          <label><input type="checkbox" checked={excluded} disabled={disabled}
+            aria-label={`${sample.date} 계산에서 제외`} onChange={event => onExclusions(event.target.checked
+              ? [...excludedDates, sample.date] : excludedDates.filter(day => day !== sample.date))} /> 계산에서 제외</label>
+        </li>
+      })}</ul>
     </details>}
     {observationSourceUrl && <small className="muted">
       {station} 관측소 · <a href={observationSourceUrl} target="_blank" rel="noopener noreferrer">기상청 과거 관측 출처</a>
