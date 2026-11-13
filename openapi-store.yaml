@@ -141,6 +141,17 @@ paths:
                     properties:
                       before: { type: number }
                       after: { type: number }
+                  cardReference:
+                    type: object
+                    required: [before, after, scope, source]
+                    properties:
+                      before: { type: integer, format: int64 }
+                      after: { type: integer, format: int64 }
+                      scope: { type: string }
+                      source: { $ref: '#/components/schemas/MarketSource' }
+                  bsiSources:
+                    type: array
+                    items: { $ref: '#/components/schemas/MarketSource' }
               example:
                 card: { before: 2049456994, after: 2199885864 }
                 bsi: { before: 63.1, after: 64.4 }
@@ -1009,9 +1020,154 @@ paths:
               example:
                 code: PLAN_PUBLICATION_PENDING
                 message: 인스타그램 게시가 예약되어 있거나 확인이 필요해요. 실행 관리에서 게시 상태를 먼저 확인해 주세요.
+  /api/stores/{storeId}/menu-costs:
+    parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getStoreMenuCosts
+      summary: 메뉴 목록 또는 메뉴 원가 조회
+      security:
+        - ownerBasic: []
+      parameters:
+        - name: productName
+          in: query
+          schema: { type: string, maxLength: 255 }
+      responses:
+        '200':
+          description: 메뉴명 목록 또는 재료별 사용량·단가와 합산 원가
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                    items: { type: string }
+                  - $ref: '#/components/schemas/StoreMenuCost'
+        '400':
+          description: 잘못된 메뉴명
+        '404':
+          description: 현재 사업주의 매장을 찾을 수 없음
+    put:
+      operationId: saveStoreMenuCost
+      summary: 메뉴의 재료비 입력값과 합산 원가 저장
+      security:
+        - ownerBasic: []
+      parameters:
+        - name: productName
+          in: query
+          required: true
+          schema: { type: string, maxLength: 255 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              minItems: 1
+              maxItems: 100
+              items:
+                $ref: '#/components/schemas/StoreMenuCostIngredient'
+            example:
+              - { ingredientName: 돼지고기, unit: kg, amount: '0.5', unitPriceWon: 9000 }
+              - { ingredientName: 면, unit: kg, amount: '0.2', unitPriceWon: 4000 }
+      responses:
+        '200':
+          description: 저장된 재료와 합산 원가. POS 판매가는 GET에서 확인할 수 있습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreMenuCost'
+        '400':
+          description: 잘못된 메뉴명 또는 재료 입력
+        '404':
+          description: 현재 사업주의 매장을 찾을 수 없음
+  /api/stores/{storeId}/menu-costs/receipt:
+    parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: readMenuReceipt
+      summary: 영수증 이미지에서 식자재 구매 항목 읽기
+      security:
+        - ownerBasic: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [imageDataUrl]
+              properties:
+                imageDataUrl: { type: string, maxLength: 4200000 }
+      responses:
+        '200':
+          description: 확인용 구매 항목
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lines:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: { type: string }
+                        unit: { type: string, nullable: true }
+                        quantity: { type: string, nullable: true }
+                        totalWon: { type: integer, format: int64, nullable: true }
+        '400':
+          description: 지원하지 않는 영수증 이미지
+        '404':
+          description: 현재 사업주의 매장을 찾을 수 없음
+        '503':
+          description: 영수증 판독을 사용할 수 없음
+  /api/stores/{storeId}/break-even:
+    parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getStoreBreakEven
+      summary: 손익분기점 설정 및 최근 분석 근거 조회
+      security:
+        - ownerBasic: []
+      responses:
+        '200':
+          description: 손익분기점 설정 및 근거
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StoreBreakEven' }
+        '404':
+          description: 현재 사업주의 매장을 찾을 수 없음
+    put:
+      operationId: saveStoreBreakEven
+      summary: 월 고정비·영업일·변동비율 저장
+      security:
+        - ownerBasic: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StoreBreakEvenSettings' }
+      responses:
+        '200':
+          description: 저장한 설정 및 최근 분석 근거
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StoreBreakEven' }
+        '400':
+          description: 잘못된 손익분기점 입력
+        '404':
+          description: 현재 사업주의 매장을 찾을 수 없음
   /api/plans/{planId}/promotion-review/defaults:
     get:
-      summary: 같은 매장의 이전 프로모션 검토 입력값 조회
+      summary: 같은 매장의 메뉴 원가와 이전 프로모션 검토 입력값 조회
       operationId: getPromotionReviewDefaults
       parameters:
         - name: planId
@@ -1020,7 +1176,7 @@ paths:
           schema: { type: string, format: uuid }
       responses:
         '200':
-          description: 최근 할인 예산과 품목별 최근 원가
+          description: 최근 할인 예산과 품목별 원가. 메뉴 원가를 저장한 품목은 그 값을 우선 사용합니다.
           content:
             application/json:
               schema:
@@ -1032,10 +1188,11 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: [productName, costWon]
+                      required: [productName, costWon, source]
                       properties:
                         productName: { type: string }
                         costWon: { type: integer, format: int64 }
+                        source: { type: string, enum: [MENU_COST, PREVIOUS_REVIEW] }
         '404':
           description: 현재 사업주의 프로모션 계획을 찾을 수 없음
   /api/plans/{planId}/promotion-review:
@@ -1664,6 +1821,62 @@ components:
             - { label: 오후 5시 이후, before: 185, after: 165 }
         createdAt: '2026-11-09T10:10:00+09:00'
   schemas:
+    MarketSource:
+      type: object
+      required: [label, url]
+      properties:
+        label: { type: string }
+        url: { type: string, format: uri }
+    StoreBreakEvenSettings:
+      type: object
+      required: [rentWon, payrollWon, otherWon, operatingDays, extraVariablePercent]
+      properties:
+        rentWon: { type: integer, format: int64, minimum: 0, maximum: 1000000000000 }
+        payrollWon: { type: integer, format: int64, minimum: 0, maximum: 1000000000000 }
+        otherWon: { type: integer, format: int64, minimum: 0, maximum: 1000000000000 }
+        operatingDays: { type: integer, minimum: 1, maximum: 31 }
+        extraVariablePercent: { type: number, minimum: 0, maximum: 99.99 }
+        ingredientPercentOverride: { type: number, minimum: 0, maximum: 99.99, nullable: true }
+    StoreBreakEven:
+      type: object
+      required: [settings, saved, evidence]
+      properties:
+        settings: { $ref: '#/components/schemas/StoreBreakEvenSettings' }
+        saved: { type: boolean }
+        evidence:
+          type: object
+          nullable: true
+          properties:
+            month: { type: string }
+            salesWon: { type: integer, format: int64 }
+            coveredRevenueWon: { type: integer, format: int64 }
+            missingProducts: { type: integer, format: int64 }
+            ingredientPercent: { type: number, nullable: true }
+    StoreMenuCost:
+      type: object
+      required: [productName, ingredients, costWon, priceWon]
+      properties:
+        productName: { type: string }
+        ingredients:
+          type: array
+          items:
+            $ref: '#/components/schemas/StoreMenuCostIngredient'
+        costWon: { type: integer, format: int64, nullable: true }
+        priceWon: { type: integer, format: int64, nullable: true }
+    StoreMenuCostIngredient:
+      type: object
+      required: [ingredientName, unit, amount, unitPriceWon]
+      properties:
+        ingredientName: { type: string, maxLength: 50 }
+        unit: { type: string, maxLength: 12 }
+        amount: { type: string, example: '0.5' }
+        unitPriceWon:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9007199254740991
+          nullable: true
+          description: 발주 검토에서 사용량만 불러온 경우 null이며 저장할 때는 필수입니다.
     CreateStoreRequest:
       type: object
       additionalProperties: false
@@ -1963,6 +2176,9 @@ components:
         label:
           type: string
           description: TIME_SERIES 근거에서 사용하는 시간대 이름
+        sources:
+          type: array
+          items: { $ref: '#/components/schemas/MarketSource' }
         before:
           type: number
           minimum: 0

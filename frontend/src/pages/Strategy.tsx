@@ -17,7 +17,7 @@ type StrategyCard = {
   marketing?: boolean
   name: string
   observation: string
-  evidence?: { text: string; source: StrategyEvidence['source'] }[]
+  evidence?: { text: string; source: StrategyEvidence['source']; sources?: StrategyEvidence['sources'] }[]
   reason: string
   followUp: string
   nextAction?: string
@@ -134,6 +134,7 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
         observation: formatEvidence(strategy.evidence[0], saved.response.beforeMonth, saved.response.afterMonth),
         evidence: strategy.evidence.map((item) => ({
           source: item.source,
+          sources: item.sources,
           text: formatEvidence(item, saved.response.beforeMonth, saved.response.afterMonth),
         })),
         reason: strategy.reason, followUp: strategy.followUp, nextAction: strategy.nextAction, steps: strategy.steps,
@@ -253,7 +254,9 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
       <p className="strategy-summary-detail">{summary} {demo?.change && <strong>{demo.change}</strong>}</p>
       {response && bsi && <details className="strategy-market-context">
         <summary>제주 경기동향 참고</summary>
-        <p>{formatEvidence(bsi, response.beforeMonth, response.afterMonth)} · <a href={bsiSource}>소상공인시장진흥공단</a></p>
+        <p>{formatEvidence(bsi, response.beforeMonth, response.afterMonth)}
+          {(bsi.sources ?? [{ url: bsiSource, label: '소상공인시장진흥공단' }]).map(link =>
+            <span key={link.url}> · <a href={link.url}>{link.label}</a></span>)}</p>
       </details>}
     </section>
     <div className="strategy-layout">
@@ -282,9 +285,10 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
               <dl className="reason strategy-evidence">
                 <dt>확인한 변화</dt>
                 <dd>{card.evidence?.length ? <ul className="strategy-evidence-list">
-                  {card.evidence.map(({ text, source }) => <li key={text}>{text}
+                  {card.evidence.map(({ text, source, sources }) => <li key={text}>{text}
                     {source === 'MARKET_CARD_SALES' && <> · <a href={marketSource}>제주데이터허브</a></>}
-                    {source === 'JEJU_BSI' && <> · <a href={bsiSource}>소상공인시장진흥공단</a></>}
+                    {source === 'JEJU_BSI' && (sources ?? [{ url: bsiSource, label: '소상공인시장진흥공단' }]).map(link =>
+                      <span key={link.url}> · <a href={link.url}>{link.label}</a></span>)}
                   </li>)}
                 </ul> : card.observation}</dd>
                 {id !== 'custom' && card.nextAction && <><dt>이어서 할 일</dt><dd>{card.nextAction}</dd></>}

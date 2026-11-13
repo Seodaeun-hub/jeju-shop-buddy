@@ -72,6 +72,24 @@ CREATE TABLE store_inventory_recipes (
     PRIMARY KEY (store_id, product_name, ingredient_name, unit)
 );
 
+CREATE TABLE store_menu_costs (
+    store_id UUID NOT NULL REFERENCES stores (id) ON DELETE CASCADE,
+    product_name VARCHAR(255) NOT NULL CHECK (product_name ~ '[^[:space:]]'),
+    ingredients JSONB NOT NULL CHECK (jsonb_typeof(ingredients) = 'array' AND jsonb_array_length(ingredients) BETWEEN 1 AND 100),
+    cost_won BIGINT NOT NULL CHECK (cost_won BETWEEN 0 AND 9007199254740991),
+    PRIMARY KEY (store_id, product_name)
+);
+
+CREATE TABLE store_break_even_settings (
+    store_id UUID PRIMARY KEY REFERENCES stores(id) ON DELETE CASCADE,
+    rent_won BIGINT NOT NULL CHECK (rent_won BETWEEN 0 AND 1000000000000),
+    payroll_won BIGINT NOT NULL CHECK (payroll_won BETWEEN 0 AND 1000000000000),
+    other_won BIGINT NOT NULL CHECK (other_won BETWEEN 0 AND 1000000000000),
+    operating_days INTEGER NOT NULL CHECK (operating_days BETWEEN 1 AND 31),
+    extra_variable_percent NUMERIC(5,2) NOT NULL CHECK (extra_variable_percent >= 0 AND extra_variable_percent < 100),
+    ingredient_percent_override NUMERIC(5,2) CHECK (ingredient_percent_override >= 0 AND ingredient_percent_override < 100)
+);
+
 CREATE TABLE store_pos_files (
     id UUID PRIMARY KEY,
     store_id UUID NOT NULL REFERENCES stores (id) ON DELETE CASCADE,

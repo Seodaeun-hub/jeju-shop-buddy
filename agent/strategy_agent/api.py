@@ -12,6 +12,7 @@ from .model import structured_model
 from .next_promotion import NextPromotionExplanation, NextPromotionRequest, build_next_promotion_graph
 from .promotion_channels import ChannelRequest, ChannelResponse, generate_channels
 from .promotion_reviews import ReviewRequest, ReviewResearch, research_reviews
+from .receipt import ReceiptDraft, ReceiptRequest, read_receipt
 from .schemas import Contract, StrategyRequest, StrategyResponse
 from .store_notice import StoreNoticeDraft, StoreNoticeRequest, generate_store_notice
 
@@ -86,6 +87,14 @@ def promotion_review_points(request: ReviewRequest) -> ReviewResearch:
 
 class PromotionCopy(Contract):
     opening: str
+
+
+@app.post("/internal/receipt", response_model=ReceiptDraft)
+def receipt(request: ReceiptRequest) -> ReceiptDraft:
+    try:
+        return read_receipt(request)
+    except (OpenAIError, OutputParserException, ValueError, TimeoutError):
+        raise HTTPException(status_code=503, detail={"code": "RECEIPT_UNAVAILABLE"}) from None
 
 
 @app.post("/internal/promotion-copy", response_model=PromotionCopy)

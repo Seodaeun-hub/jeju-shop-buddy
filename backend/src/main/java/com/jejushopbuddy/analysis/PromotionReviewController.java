@@ -2,6 +2,7 @@ package com.jejushopbuddy.analysis;
 
 import com.jejushopbuddy.analysis.SalesAnalysisController.ApiError;
 import java.security.Principal;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.CacheControl;
@@ -50,12 +51,20 @@ class PromotionReviewController {
                 .query((rs, row) -> new DefaultsRow(rs.getString("product_name"),
                         rs.getLong("cost_won"), rs.getLong("budget_won"))).list();
         Long budget = history.isEmpty() ? null : history.getFirst().budgetWon();
-        var costs = history.stream().map(row -> new ProductCost(row.productName(), row.costWon())).toList();
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(new Defaults(budget, costs));
+        var costs = new LinkedHashMap<String, ProductCost>();
+        for (var row : history) {
+            costs.put(row.productName(), new ProductCost(row.productName(), row.costWon(), "PREVIOUS_REVIEW"));
+        }
+        jdbc.sql("""
+                SELECT product_name, cost_won FROM store_menu_costs WHERE store_id = :storeId ORDER BY product_name
+                """).param("storeId", storeId.get())
+                .query((rs, row) -> new ProductCost(rs.getString("product_name"), rs.getLong("cost_won"), "MENU_COST"))
+                .list().forEach(cost -> costs.put(cost.productName(), cost));
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(new Defaults(budget, List.copyOf(costs.values())));
     }
 
     private record DefaultsRow(String productName, long costWon, long budgetWon) {}
-    record ProductCost(String productName, long costWon) {}
+    record ProductCost(String productName, long costWon, String source) {}
     record Defaults(Long budgetWon, List<ProductCost> costs) {}
 
     @PutMapping("/api/plans/{planId}/promotion-review")

@@ -25,11 +25,13 @@ type Topic = {
   figure?: string
 }
 
-function MarketChart({ storeRate, marketRate }: { storeRate: number | null; marketRate: number | null }) {
+function MarketChart({ storeRate, marketRate, label = '상권 카드 이용액' }: {
+  storeRate: number | null; marketRate: number | null; label?: string
+}) {
   const limit = Math.max(10, Math.ceil(Math.max(Math.abs(storeRate ?? 0), Math.abs(marketRate ?? 0)) / 10) * 10)
   const items = [
     { label: '우리 가게 매출', rate: storeRate },
-    { label: '상권 카드 이용액', rate: marketRate },
+    { label, rate: marketRate },
   ]
 
   return <>
@@ -50,7 +52,9 @@ function MarketChart({ storeRate, marketRate }: { storeRate: number | null; mark
   </>
 }
 
-function BsiChart({ months, values }: { months: [string, string]; values: [number, number] }) {
+function BsiChart({ months, values, sources }: {
+  months: [string, string]; values: [number, number]; sources?: MarketContext['bsiSources']
+}) {
   const difference = values[1] - values[0]
   return <>
     <strong className="bsi">{values.map(bsiFormat).join(' → ')}</strong>
@@ -65,7 +69,8 @@ function BsiChart({ months, values }: { months: [string, string]; values: [numbe
     <p className="muted">보합 기준 100</p>
     <details className="source-details">
       <summary>자료 출처 보기</summary>
-      <a href={bsiSource}>소상공인시장진흥공단</a>
+      {(sources ?? [{ label: '소상공인시장진흥공단', url: bsiSource }]).map(source =>
+        <div key={source.url}><a href={source.url}>{source.label}</a></div>)}
     </details>
   </>
 }
@@ -250,6 +255,7 @@ export function Dashboard({ data, auth, analysisId, onSaveTimeSeries, strategyTo
     return () => controller.abort()
   }, [area, industry, before.month, after.month])
   const market = context?.card && { ...context.card, rate: changeRate(context.card.before, context.card.after) }
+  const reference = context?.cardReference
   const bsi = context?.bsi
   const missingContext = context === undefined ? '비교 자료를 불러오는 중이에요.'
     : context === null ? '비교 자료를 불러오지 못했어요.' : undefined
@@ -341,7 +347,7 @@ export function Dashboard({ data, auth, analysisId, onSaveTimeSeries, strategyTo
     suggestion: '같은 기간 제주 경기동향은 어땠나요?',
     answer: bsi ? '제주 전체 소상공인의 경기 체감 지표예요.' : '비교 기간의 제주 체감 BSI 자료가 없어요.',
     figure: bsi ? `${bsi.before} → ${bsi.after}` : undefined,
-    source: '소상공인시장진흥공단',
+    source: context?.bsiSources?.map(item => item.label).join(' · ') ?? '소상공인시장진흥공단',
   }
   const saved = Boolean(auth && analysisId)
   const suggestedTopic = series ? timeTopic : market ? comparisonTopic : monthlyTopic
@@ -437,7 +443,7 @@ export function Dashboard({ data, auth, analysisId, onSaveTimeSeries, strategyTo
           <dd className={!market || market.rate === null ? 'muted' : market.rate < 0 ? 'down' : market.rate > 0 ? 'up' : ''}>
             {market ? formatRate(market.rate) : context === undefined ? '불러오는 중' : '비교 자료 없음'}
           </dd>
-          <dd className="dashboard-kpi-note">같은 지역·업종 카드 이용액</dd>
+          <dd className="dashboard-kpi-note">{reference ? '같은 지역·세부 업종 자료 없음' : '같은 지역·업종 카드 이용액'}</dd>
         </div>
       </dl>
       <Link className="button primary small dashboard-next" to={strategyTo}>대응 전략 보기 <span aria-hidden="true">→</span></Link>
@@ -458,6 +464,14 @@ export function Dashboard({ data, auth, analysisId, onSaveTimeSeries, strategyTo
             <summary>상권 금액과 출처 보기</summary>
             <p>{won(market.before)} → {won(market.after)}</p>
             <a href={marketSource}>제주데이터허브</a>
+          </details>
+        </> : reference ? <>
+          <p className="muted">{reference.scope} 카드 소비 · 세부 업종 비교 자료 없음</p>
+          <MarketChart storeRate={delta} marketRate={changeRate(reference.before, reference.after)} label="음식점업 전체" />
+          <details className="source-details dashboard-market-details">
+            <summary>참고 금액과 출처 보기</summary>
+            <p>{won(reference.before)} → {won(reference.after)}</p>
+            <a href={reference.source.url}>{reference.source.label}</a>
           </details>
         </> : <p className="muted dashboard-source">{missingContext ?? '같은 지역·업종의 두 달치 카드 이용 자료가 없어요.'}</p>}
       </section>
@@ -484,7 +498,7 @@ export function Dashboard({ data, auth, analysisId, onSaveTimeSeries, strategyTo
       {activeInsight === 'bsi' && <section className="dashboard-bsi" data-chart-motion="visible">
         <div className="dashboard-panel-actions"><AskButton label="제주 경기동향 차트 질문" onClick={(button) => openTopic(bsiTopic, button)} /></div>
         {bsi
-          ? <BsiChart months={[before.month, after.month]} values={[bsi.before, bsi.after]} />
+          ? <BsiChart months={[before.month, after.month]} values={[bsi.before, bsi.after]} sources={context?.bsiSources} />
           : <p className="muted">{missingContext ?? '비교한 두 달의 제주 체감 BSI 자료가 없어요.'}</p>}
       </section>}
       {activeInsight === 'time' && <section className="dashboard-time" data-chart-motion="visible">

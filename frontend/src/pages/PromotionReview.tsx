@@ -88,6 +88,11 @@ function PromotionReviewForm({ analysis, saved, initialBudget, onSave, readOnly 
 
   const selectedProduct = analysis.productSales?.find(product => product.productName === draft.productName.trim())
   const posPrice = selectedProduct?.priceWon
+  const defaultCost = defaults?.costs.find(product => product.productName === draft.productName.trim())
+  const suggestedProducts = [...new Set([
+    ...(analysis.productSales?.map(product => product.productName) ?? []),
+    ...(defaults?.costs.map(product => product.productName) ?? []),
+  ])]
 
   function selectProduct(value: string) {
     const name = value.trim()
@@ -143,13 +148,16 @@ function PromotionReviewForm({ analysis, saved, initialBudget, onSave, readOnly 
       <fieldset disabled={readOnly || saving || loadingDefaults} className="form-stack">
         <label>검토할 품목<input list={suggestions} maxLength={255} required value={draft.productName}
           onChange={(event) => selectProduct(event.target.value)} /></label>
-        <datalist id={suggestions}>{analysis.productSales?.map(({ productName }) =>
+        <datalist id={suggestions}>{suggestedProducts.map(productName =>
           <option key={productName} value={productName} />)}</datalist>
         {posPrice != null && draft.priceWon === String(posPrice) && <small className="muted">POS에 기록된 최근 판매가예요. 현재 판매가가 다르면 바꿔 주세요.</small>}
         {moneyFields.map(({ key, label, min }) => <label key={key}>{label}
           <input type="number" inputMode="numeric" min={min} max={key === 'discountWon' && priceWon > 0 ? priceWon : Number.MAX_SAFE_INTEGER}
             step="1" required value={draft[key]} onChange={(event) => update(key, event.target.value)} />
         </label>)}
+        {saved?.productName !== draft.productName.trim() && defaultCost?.source === 'MENU_COST'
+          && draft.costWon === String(defaultCost.costWon)
+          && <small className="muted">내 매장에서 저장한 메뉴 재료비를 불러왔어요. 이번 행사에 적용할 원가는 바꿀 수 있어요.</small>}
       </fieldset>
       {valid ? <div aria-live="polite">
         <dl>
