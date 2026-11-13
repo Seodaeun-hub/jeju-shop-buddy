@@ -38,18 +38,28 @@ class InventoryDemandTest {
                 TARGET.minusWeeks(3), new KmaObservations.Observation(BigDecimal.ONE, true),
                 TARGET.minusWeeks(2), new KmaObservations.Observation(BigDecimal.ZERO, true),
                 TARGET.minusWeeks(1), new KmaObservations.Observation(null, false));
-        var wet = InventoryDemand.summarize(NOODLES, false, null, "제주", null, true, samples, rain);
+        var required = InventoryDemand.requiredPos(TARGET, TARGET.minusDays(1));
+        var wet = InventoryDemand.summarize(NOODLES, false, null, "제주", null, true, samples, rain, required);
         assertThat(wet.basis()).isEqualTo(InventoryDemand.Basis.WEATHER);
         assertThat(wet.low()).isEqualTo(13);
         assertThat(wet.high()).isEqualTo(20);
         assertThat(wet.samples()).hasSize(3);
-        var dry = InventoryDemand.summarize(NOODLES, false, null, "제주", null, false, samples, rain);
+        assertThat(wet.requiredPos()).isNull();
+        var dry = InventoryDemand.summarize(NOODLES, false, null, "제주", null, false, samples, rain, required);
         assertThat(dry.basis()).isEqualTo(InventoryDemand.Basis.WEEKDAY);
         assertThat(dry.high()).isEqualTo(31);
-        var missing = InventoryDemand.summarize(NOODLES, true, 18L, null, null, null, samples.subList(0, 2), Map.of());
+        var missing = InventoryDemand.summarize(NOODLES, true, 18L, null, null, null, samples.subList(0, 2), Map.of(), required);
         assertThat(missing.basis()).isEqualTo(InventoryDemand.Basis.INSUFFICIENT);
         assertThat(missing.low()).isNull();
         assertThat(missing.actualSales()).isEqualTo(18);
+        assertThat(missing.requiredPos()).isEqualTo(new InventoryDemand.PosRequirement(
+                TARGET.minusWeeks(12), TARGET.minusWeeks(1), "PRODUCT", 3));
+    }
+
+    @Test
+    void requestsOnlyEarlierCompletedSameWeekdays() {
+        assertThat(InventoryDemand.requiredPos(TARGET, TARGET.minusWeeks(1)).end()).isEqualTo(TARGET.minusWeeks(2));
+        assertThat(InventoryDemand.requiredPos(TARGET, TARGET.minusWeeks(12))).isNull();
     }
 
     @Test

@@ -1,28 +1,34 @@
 import { useEffect, useId, useState } from 'react'
+import { Link, useSearchParams } from 'react-router'
 import { fetchInventoryRecipes, fetchInventoryWeather, saveInventoryRecipe, type InventoryDemandEstimate,
   type InventoryRecipe, type InventoryWeather } from '../api/shop'
 import { formatQuantity, parseQuantity, preparationFor, quantities, shortageOf } from '../data/inventory'
-import { formatNumber, monthLabel } from '../data/shop'
+import { posLibraryPath, seoulDate } from '../data/promotionArchive'
+import { addDays, formatNumber, monthLabel } from '../data/shop'
 import type { Analysis, InventoryItem } from '../data/shop'
 
 import { InventoryImport } from './InventoryImport'
 
-const koreaDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' })
 const koreaTime = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'medium', timeStyle: 'short' })
+type ForecastSelection = { date: string; product: string }
 
-function InventoryForecast({ auth, planId, menus, productName, recipeSaving, onProduct, onEstimate }: {
+function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, menus, productName, recipeSaving, onProduct, onEstimate }: {
   auth: string
   planId: string
+  analysisId?: string
+  storeId?: string
+  initialLookup?: ForecastSelection
   menus: string[]
   productName: string
   recipeSaving: boolean
   onProduct: (product: string) => void
   onEstimate: (estimate: InventoryDemandEstimate | null) => void
 }) {
-  const [date, setDate] = useState(() => koreaDate.format(new Date(Date.now() + 86_400_000)))
+  const [date, setDate] = useState(() => initialLookup?.date ?? addDays(seoulDate(), 1))
   const menuOptions = useId()
   const [reference, setReference] = useState<InventoryWeather>()
-  const [loading, setLoading] = useState(false)
+  const [lookup, setLookup] = useState(initialLookup)
+  const [loading, setLoading] = useState(Boolean(initialLookup))
   const [error, setError] = useState('')
 
   function clear() {
@@ -31,22 +37,29 @@ function InventoryForecast({ auth, planId, menus, productName, recipeSaving, onP
     setError('')
   }
 
-  async function lookup() {
-    if (!date || loading) return
-    setLoading(true)
-    clear()
-    try {
-      const next = await fetchInventoryWeather(auth, planId, date, productName.trim())
-      setReference(next)
-      onEstimate(next.estimate)
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : '예보를 불러오지 못했어요.')
-    } finally {
-      setLoading(false)
-    }
-  }
+  useEffect(() => {
+    if (!lookup) return
+    const controller = new AbortController()
+    fetchInventoryWeather(auth, planId, lookup.date, lookup.product, controller.signal)
+      .then(next => {
+        if (controller.signal.aborted) return
+        setReference(next)
+        onEstimate(next.estimate)
+      }).catch(failure => {
+        if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : '예보를 불러오지 못했어요.')
+      }).finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
+      })
+    return () => controller.abort()
+  }, [auth, planId, lookup, onEstimate])
 
   const forecast = reference?.forecast
+  const required = reference?.estimate?.requiredPos
+  const uploadTo = required && reference && storeId && analysisId && productName.trim()
+    ? posLibraryPath(storeId, { date: required.end, kind: required.kind, upload: {
+      missingStart: required.start, inventory: { planId, analysisId, date: reference.date, product: productName.trim() },
+    } })
+    : undefined
   return <div className="ruled-block form-stack">
     <h3>날씨로 발주량 살펴보기</h3>
     <label>날씨를 확인할 날짜
@@ -60,7 +73,11 @@ function InventoryForecast({ auth, planId, menus, productName, recipeSaving, onP
         onChange={event => { onProduct(event.target.value); clear() }} />
     </label>
     <datalist id={menuOptions}>{menus.map(name => <option value={name} key={name} />)}</datalist>
-    <button type="button" className="button secondary small" disabled={loading || !date} onClick={() => void lookup()}>
+    <button type="button" className="button secondary small" disabled={loading || !date} onClick={() => {
+      clear()
+      setLoading(true)
+      setLookup({ date, product: productName.trim() })
+    }}>
       {loading ? '기상청과 POS 자료 확인 중…' : productName.trim() ? '예상 판매량 보기' : '기상청 예보 보기'}
     </button>
     {reference && <div role="status">
@@ -75,7 +92,7 @@ function InventoryForecast({ auth, planId, menus, productName, recipeSaving, onP
         </small>
       </> : !reference.estimate?.historical && <p className="muted">선택한 날짜의 기상청 단기예보를 확인할 수 없어요.</p>}
     </div>}
-    {reference?.estimate && <DemandEstimate estimate={reference.estimate} />}
+    {reference?.estimate && <DemandEstimate estimate={reference.estimate} uploadTo={uploadTo} />}
     {error && <p role="alert" className="error">{error}</p>}
   </div>
 }
@@ -86,16 +103,25 @@ function emptyItem(name = '', unit = ''): InventoryItem {
   return { id: crypto.randomUUID(), name, unit, stock: '', expectedUse: '', incoming: '', finalOrder: '' }
 }
 
-function DemandEstimate({ estimate }: { estimate: InventoryDemandEstimate }) {
+function DemandEstimate({ estimate, uploadTo }: { estimate: InventoryDemandEstimate; uploadTo?: string }) {
   const { product, historical, actualSales, basis, low, high, samples, station, observationSourceUrl,
-    observedRainfallMm, precipitation } = estimate
+    observedRainfallMm, precipitation, requiredPos } = estimate
   return <div className="form-stack">
     {historical && <p className="muted">과거 날짜 검증 · 선택한 날짜의 판매량은 비교 범위 계산에서 제외했어요.</p>}
     {historical && precipitation !== null && <p>선택한 날짜 · {precipitation ? '강수 관측됨' : '강수 기록 없음'}
       {observedRainfallMm !== null && ` · 관측 강수량 ${observedRainfallMm}mm`}
     </p>}
     {low === null || high === null
-      ? <p>이 메뉴의 판매량을 예상할 자료가 부족해요. 내 매장 POS 파일 관리에 해당 날짜 직전 12주의 상품 주문 파일을 올려 주세요. 같은 요일의 영업 기록이 최소 3일 필요해요.</p>
+      ? <div className="form-stack">
+        <p>이 메뉴의 판매량을 예상할 자료가 부족해요.</p>
+        {requiredPos ? <>
+          <p><strong>필요한 파일 · 상품 주문 CSV</strong><br />
+            <strong>비교할 기간 · {requiredPos.start} ~ {requiredPos.end}</strong></p>
+          <p className="muted">이 기간에 선택한 날짜와 같은 요일의 영업 기록이 최소 {requiredPos.minimumDays}일 필요해요.
+            {samples.length > 0 && ` 지금 ${samples.length}일을 확인했어요.`}</p>
+          {uploadTo && <Link className="button secondary small" to={uploadTo}>상품 주문 POS 올리기</Link>}
+        </> : <p className="muted">자료가 있는 날짜를 선택해 다시 확인해 주세요.</p>}
+      </div>
       : <>
         <p><strong>{product} 예상 판매량 · {formatNumber(low)}~{formatNumber(high)}개</strong></p>
         <p className="muted">{basis === 'WEATHER'
@@ -118,9 +144,10 @@ function DemandEstimate({ estimate }: { estimate: InventoryDemandEstimate }) {
   </div>
 }
 
-export function InventoryReview({ auth, planId, items, analysis, reviewDate, onChange, onSave }: {
+export function InventoryReview({ auth, planId, analysisId, items, analysis, reviewDate, onChange, onSave }: {
   auth?: string
   planId?: string
+  analysisId?: string
   items: InventoryItem[]
   analysis: Analysis
   reviewDate: string
@@ -130,7 +157,14 @@ export function InventoryReview({ auth, planId, items, analysis, reviewDate, onC
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
-  const [productName, setProductName] = useState('')
+  const [params] = useSearchParams()
+  const [initialLookup] = useState<ForecastSelection | undefined>(() => {
+    const date = params.get('inventoryDate') ?? ''
+    const product = (params.get('inventoryProduct') ?? '').trim()
+    return /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(Date.parse(date)) && product && product.length <= 255
+      ? { date, product } : undefined
+  })
+  const [productName, setProductName] = useState(initialLookup?.product ?? '')
   const product = productName.trim()
   const [estimate, setEstimate] = useState<InventoryDemandEstimate | null>(null)
   const [stored, setStored] = useState<{ product: string; values: InventoryRecipe[]; suggested: InventoryItem[] }>()
@@ -232,7 +266,8 @@ export function InventoryReview({ auth, planId, items, analysis, reviewDate, onC
     <div className="receipt">
       <p>다음 발주분이 들어오기 전까지 쓸 양과 그전에 들어올 물량을 입력해 주세요. 예정된 입고가 없다면 0을 입력해요.</p>
       <p className="muted">발주 검토 예정일 · {reviewDate}</p>
-      {auth && planId && <InventoryForecast auth={auth} planId={planId}
+      {auth && planId && <InventoryForecast auth={auth} planId={planId} analysisId={analysisId}
+        storeId={analysis.storeId} initialLookup={initialLookup}
         menus={analysis.productSales?.map(product => product.productName) ?? []}
         productName={productName} recipeSaving={recipeSaving} onProduct={changeProduct}
         onEstimate={setEstimate} />}

@@ -453,6 +453,7 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
           key={plan.id ?? 'demo'}
           auth={auth}
           planId={plan.id}
+          analysisId={plan.analysisId}
           items={plan.inventoryItems ?? []}
           analysis={analysis}
           onSave={onSaveInventory}

@@ -39,7 +39,15 @@ class InventoryDemand {
         Boolean precipitation = historical ? observed == null ? null : observed.precipitation() : predictedRain;
         var actual = historical ? ProductPosArchive.soldOn(archive, product, date) : null;
         return summarize(product, historical, actual, station == null ? null : station.name(),
-                observed == null ? null : observed.rainfallMm(), precipitation, samples, rainfall);
+                observed == null ? null : observed.rainfallMm(), precipitation, samples, rainfall,
+                requiredPos(date, today));
+    }
+
+    static PosRequirement requiredPos(LocalDate target, LocalDate today) {
+        var start = target.minusWeeks(LOOKBACK_WEEKS);
+        var end = target.minusWeeks(1);
+        while (!end.isBefore(today) && !end.isBefore(start)) end = end.minusWeeks(1);
+        return end.isBefore(start) ? null : new PosRequirement(start, end, "PRODUCT", MIN_SAMPLE_DAYS);
     }
 
     static List<Sample> sameWeekdays(List<ProductPosArchive.Days> archive, String product, LocalDate target, LocalDate today) {
@@ -54,7 +62,8 @@ class InventoryDemand {
     }
 
     static Estimate summarize(String product, boolean historical, Long actual, String station, BigDecimal observed,
-                              Boolean precipitation, List<Sample> samples, Map<LocalDate, KmaObservations.Observation> rainfall) {
+                              Boolean precipitation, List<Sample> samples, Map<LocalDate, KmaObservations.Observation> rainfall,
+                              PosRequirement requiredPos) {
         var dated = samples.stream().map(sample -> {
             var weather = rainfall.get(sample.date());
             return weather == null ? sample : new Sample(sample.date(), sample.quantity(), weather.rainfallMm(), weather.precipitation());
@@ -67,12 +76,13 @@ class InventoryDemand {
                 enough ? used.stream().mapToLong(Sample::quantity).min().orElseThrow() : null,
                 enough ? used.stream().mapToLong(Sample::quantity).max().orElseThrow() : null,
                 used, comparable.size(), precipitation, observed, rainfall.isEmpty() ? null : station,
-                rainfall.isEmpty() ? null : KmaObservations.SOURCE_URL);
+                rainfall.isEmpty() ? null : KmaObservations.SOURCE_URL, enough ? null : requiredPos);
     }
 
     enum Basis { WEATHER, WEEKDAY, INSUFFICIENT }
     record Sample(LocalDate date, long quantity, BigDecimal rainfallMm, Boolean precipitation) {}
+    record PosRequirement(LocalDate start, LocalDate end, String kind, int minimumDays) {}
     record Estimate(String product, boolean historical, Long actualSales, Basis basis, Long low, Long high,
                     List<Sample> samples, int weatherMatches, Boolean precipitation, BigDecimal observedRainfallMm,
-                    String station, String observationSourceUrl) {}
+                    String station, String observationSourceUrl, PosRequirement requiredPos) {}
 }

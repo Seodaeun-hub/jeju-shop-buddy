@@ -10,7 +10,12 @@ export const notifyResultsDataChanged = () => window.dispatchEvent(new Event(res
 export function posLibraryPath(storeId: string, { date, kind, upload }: {
   date?: string
   kind?: PosFileKind
-  upload?: { missingStart?: string; planId?: string; analysisId?: string }
+  upload?: {
+    missingStart?: string
+    planId?: string
+    analysisId?: string
+    inventory?: { planId: string; analysisId: string; date: string; product: string }
+  }
 } = {}) {
   const query = new URLSearchParams({ storeId, section: 'pos-files' })
   if (date) query.set('date', date)
@@ -21,6 +26,13 @@ export function posLibraryPath(storeId: string, { date, kind, upload }: {
     if (upload.planId && upload.analysisId) {
       query.set('resultPlanId', upload.planId)
       query.set('resultAnalysisId', upload.analysisId)
+    }
+    if (upload.inventory) {
+      const { planId, analysisId, date, product } = upload.inventory
+      query.set('inventoryPlanId', planId)
+      query.set('inventoryAnalysisId', analysisId)
+      query.set('inventoryDate', date)
+      query.set('inventoryProduct', product)
     }
   }
   return '/stores?' + query
