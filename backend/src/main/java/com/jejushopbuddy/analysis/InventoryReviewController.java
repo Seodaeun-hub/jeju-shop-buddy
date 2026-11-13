@@ -80,7 +80,7 @@ class InventoryReviewController {
         if (store == null) return notFound();
         var saved = jdbc.sql("""
                 SELECT d.target_date, d.product_name, d.low, d.high, d.basis, d.saved_at,
-                       d.plan_id = :plan AS current_plan, n.note, d.excluded_dates
+                       d.plan_id = :plan AS current_plan, n.note, d.excluded_dates, d.original_bounds
                 FROM inventory_demand_snapshots d
                 JOIN execution_plans p ON p.id = d.plan_id
                 JOIN sales_analyses a ON a.id = p.analysis_id
@@ -94,14 +94,16 @@ class InventoryReviewController {
                         rs.getObject("target_date", LocalDate.class), rs.getString("product_name"), rs.getLong("low"),
                         rs.getLong("high"), InventoryDemand.Basis.valueOf(rs.getString("basis")),
                         rs.getObject("saved_at", OffsetDateTime.class)), rs.getBoolean("current_plan"), rs.getString("note"),
-                        List.of(json.readValue(rs.getString("excluded_dates"), String[].class)))).list();
+                        List.of(json.readValue(rs.getString("excluded_dates"), String[].class)),
+                        json.readValue(rs.getString("original_bounds"), InventoryDemand.Bounds.class))).list();
         var today = LocalDate.now(InventoryDemand.SEOUL);
         var archive = saved.stream().anyMatch(row -> row.estimate().date().isBefore(today))
                 ? pos.load(store.id()) : List.<ProductPosArchive.Days>of();
         var comparisons = saved.stream().map(row -> {
             var estimate = row.estimate();
             Long actual = estimate.date().isBefore(today) ? ProductPosArchive.soldOn(archive, estimate.product(), estimate.date()) : null;
-            return new EstimateComparison(estimate, actual, ComparisonStatus.of(estimate, actual, today), row.currentPlan(), row.note(), row.excludedDates());
+            return new EstimateComparison(estimate, actual, ComparisonStatus.of(estimate, actual, today),
+                    row.currentPlan(), row.note(), row.excludedDates(), row.originalBounds());
         }).toList();
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(comparisons);
     }
@@ -153,18 +155,20 @@ class InventoryReviewController {
         if (existing != null) return existing;
         var estimate = weatherReference(store, input.date(), product, exclusions).estimate();
         if (!input.low().equals(estimate.low()) || !input.high().equals(estimate.high()) || input.basis() != estimate.basis()
-                || estimate.excludedDates().size() != exclusions.size()) {
+                || estimate.excludedDates().size() != exclusions.size()
+                || (input.originalBounds() != null && !input.originalBounds().equals(estimate.originalBounds()))) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiError("INVENTORY_ESTIMATE_CHANGED",
                     "예상 판매량이 달라졌어요. 예상 판매량을 다시 조회한 뒤 저장해 주세요.", null));
         }
         int updated = jdbc.sql("""
-                INSERT INTO inventory_demand_snapshots (plan_id, target_date, product_name, low, high, basis, excluded_dates)
-                SELECT id, :date, :product, :low, :high, :basis, CAST(:excludedDates AS jsonb)
+                INSERT INTO inventory_demand_snapshots (plan_id, target_date, product_name, low, high, basis, excluded_dates, original_bounds)
+                SELECT id, :date, :product, :low, :high, :basis, CAST(:excludedDates AS jsonb), CAST(:originalBounds AS jsonb)
                 FROM execution_plans WHERE id = :plan AND strategy_code = 'INVENTORY'
                 ON CONFLICT (plan_id, target_date, product_name) DO NOTHING
                 """).param("plan", planId).param("date", input.date()).param("product", product)
                 .param("low", estimate.low()).param("high", estimate.high()).param("basis", estimate.basis().name())
-                .param("excludedDates", excludedJson).update();
+                .param("excludedDates", excludedJson)
+                .param("originalBounds", json.writeValueAsString(estimate.originalBounds())).update();
         if (updated == 0 && findStore(planId, owner) == null) return notFound();
         if (updated == 0) {
             existing = existingEstimate(planId, input, product, excludedJson);
@@ -175,12 +179,16 @@ class InventoryReviewController {
 
     private ResponseEntity<?> existingEstimate(UUID planId, EstimateInput input, String product, String excludedJson) {
         return jdbc.sql("""
-                SELECT low, high, basis, excluded_dates = CAST(:excludedDates AS jsonb) AS same_exclusions
+                SELECT low, high, basis, original_bounds, excluded_dates = CAST(:excludedDates AS jsonb) AS same_exclusions
                 FROM inventory_demand_snapshots
                 WHERE plan_id = :plan AND target_date = :date AND product_name = :product
                 """).param("plan", planId).param("date", input.date()).param("product", product).param("excludedDates", excludedJson)
-                .query((rs, row) -> rs.getLong("low") == input.low() && rs.getLong("high") == input.high()
-                        && rs.getString("basis").equals(input.basis().name()) && rs.getBoolean("same_exclusions"))
+                .query((rs, row) -> {
+                    var original = json.readValue(rs.getString("original_bounds"), InventoryDemand.Bounds.class);
+                    return rs.getLong("low") == input.low() && rs.getLong("high") == input.high()
+                            && rs.getString("basis").equals(input.basis().name()) && rs.getBoolean("same_exclusions")
+                            && (input.originalBounds() == null || input.originalBounds().equals(original));
+                })
                 .optional().<ResponseEntity<?>>map(matches -> matches ? ResponseEntity.noContent().build()
                         : ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiError("INVENTORY_ESTIMATE_ALREADY_SAVED",
                                 "이 날짜와 메뉴에는 이미 저장한 예상 범위가 있어요.", null)))
@@ -305,11 +313,13 @@ class InventoryReviewController {
     private record ForecastStore(UUID id, String name, String address, String area) {}
     record Recipe(String ingredientName, String unit, String amount) {}
     record WeatherReference(LocalDate date, String area, KmaForecast.Daily forecast, String sourceUrl, InventoryDemand.Estimate estimate) {}
-    record EstimateInput(LocalDate date, String product, Long low, Long high, InventoryDemand.Basis basis, List<LocalDate> excludedDates) {}
+    record EstimateInput(LocalDate date, String product, Long low, Long high, InventoryDemand.Basis basis,
+                         List<LocalDate> excludedDates, InventoryDemand.Bounds originalBounds) {}
     record SavedEstimate(LocalDate date, String product, long low, long high, InventoryDemand.Basis basis, OffsetDateTime savedAt) {}
-    private record PlanEstimate(SavedEstimate estimate, boolean currentPlan, String note, List<String> excludedDates) {}
+    private record PlanEstimate(SavedEstimate estimate, boolean currentPlan, String note, List<String> excludedDates,
+                                InventoryDemand.Bounds originalBounds) {}
     record EstimateComparison(SavedEstimate estimate, Long actualSales, ComparisonStatus status, boolean currentPlan, String note,
-                              List<String> excludedDates) {}
+                              List<String> excludedDates, InventoryDemand.Bounds originalBounds) {}
     record EstimateNote(LocalDate date, String product, String note) {}
     enum ComparisonStatus {
         PENDING_DATE, POS_REQUIRED, WITHIN_RANGE, BELOW_RANGE, ABOVE_RANGE;

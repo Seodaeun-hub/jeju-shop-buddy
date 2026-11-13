@@ -237,6 +237,7 @@ CREATE TABLE inventory_demand_snapshots (
     high BIGINT NOT NULL CHECK (high >= low AND high <= 9007199254740991),
     basis VARCHAR(16) NOT NULL CHECK (basis IN ('WEATHER', 'WEEKDAY')),
     excluded_dates JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(excluded_dates) = 'array'),
+    original_bounds JSONB NOT NULL DEFAULT 'null'::jsonb CHECK (jsonb_typeof(original_bounds) IN ('object', 'null')),
     saved_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (plan_id, target_date, product_name)
 );

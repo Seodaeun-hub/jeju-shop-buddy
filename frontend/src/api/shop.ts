@@ -47,6 +47,7 @@ export type InventoryEstimateInput = {
   high: number
   basis: 'WEATHER' | 'WEEKDAY'
   excludedDates?: string[]
+  originalBounds?: InventoryDemandBounds | null
 }
 export type InventoryEstimateComparison = {
   estimate: InventoryEstimateInput & { savedAt: string }
@@ -55,6 +56,7 @@ export type InventoryEstimateComparison = {
   currentPlan: boolean
   note: string | null
   excludedDates: string[]
+  originalBounds: InventoryDemandBounds | null
 }
 export type InventoryEstimateNote = { date: string; product: string; note: string }
 
