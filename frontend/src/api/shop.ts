@@ -32,6 +32,17 @@ export type InventoryWeather = {
   estimate: InventoryDemandEstimate | null
 }
 
+export type InventoryRecipe = { ingredientName: string; unit: string; amount: string }
+
+const inventoryRecipesPath = (planId: string, productName: string) =>
+  `/api/plans/${encodeURIComponent(planId)}/inventory-review/recipes?${new URLSearchParams({ productName })}`
+
+export const fetchInventoryRecipes = (auth: string, planId: string, productName: string, signal: AbortSignal) =>
+  request<InventoryRecipe[]>(inventoryRecipesPath(planId, productName), auth, 'GET', undefined, signal)
+
+export const saveInventoryRecipe = (auth: string, planId: string, productName: string, recipe: InventoryRecipe) =>
+  request<InventoryRecipe>(inventoryRecipesPath(planId, productName), auth, 'PUT', recipe)
+
 export function fetchInventoryWeather(auth: string, planId: string, date: string, productName?: string) {
   const params = new URLSearchParams({ date })
   if (productName) params.set('productName', productName)
