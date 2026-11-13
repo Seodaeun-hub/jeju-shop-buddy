@@ -67,6 +67,7 @@ function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, m
       await saveInventoryEstimate(auth, planId, {
         date: reference.date, product: estimate.product, low: estimate.low, high: estimate.high, basis: estimate.basis,
         excludedDates: estimate.excludedDates,
+        originalBounds: estimate.originalBounds,
       })
       setEstimateSaved(true)
       setComparisonRevision(value => value + 1)
@@ -195,6 +196,7 @@ function SavedEstimateComparisons({ rows, product, storeId, planId, analysisId, 
     const first = byDate.get(date)
     if (!first) byDate.set(date, row)
     else if (row.currentPlan && (first.estimate.low !== low || first.estimate.high !== high
+      || first.originalBounds?.low !== row.originalBounds?.low || first.originalBounds?.high !== row.originalBounds?.high
       || (first.excludedDates ?? []).join() !== (row.excludedDates ?? []).join())) additional.set(date, row)
   }
   const daily = [...byDate.values()]
@@ -218,7 +220,10 @@ function SavedEstimateComparisons({ rows, product, storeId, planId, analysisId, 
         <thead><tr><th scope="col">날짜</th><th scope="col">예상 범위</th><th scope="col">실제 판매량</th><th scope="col">결과</th></tr></thead>
         <tbody>{daily.flatMap(first => {
           const later = additional.get(first.estimate.date)
-          return (later ? [first, later] : [first]).map(({ estimate, actualSales, status, note, excludedDates }, index) => {
+          return (later ? [first, later] : [first]).map(({ estimate, actualSales, status, note, excludedDates, originalBounds }, index) => {
+            const originalLow = originalBounds?.low
+            const originalHigh = originalBounds?.high
+            const hasOriginal = originalLow != null && originalHigh != null
             const difference = actualSales === null ? null : status === 'ABOVE_RANGE'
               ? `상한보다 ${formatNumber(actualSales - estimate.high)}개 더 팔렸어요.`
               : status === 'BELOW_RANGE' ? `하한보다 ${formatNumber(estimate.low - actualSales)}개 덜 팔렸어요.` : null
@@ -226,11 +231,14 @@ function SavedEstimateComparisons({ rows, product, storeId, planId, analysisId, 
               <th scope="row"><time dateTime={estimate.date}>{estimate.date}</time>
                 {index > 0 && <small className="muted">이 계획에서 저장</small>}
               </th>
-              <td>{formatNumber(estimate.low)}~{formatNumber(estimate.high)}개
+              <td>{hasOriginal && <div>제외 전 <strong>{formatNumber(originalLow)}~{formatNumber(originalHigh)}개</strong></div>}
+                {hasOriginal && '제외 후 '}{formatNumber(estimate.low)}~{formatNumber(estimate.high)}개
                 {!!excludedDates?.length && <small className="muted">제외 · {excludedDates.join(', ')}</small>}
               </td>
               <td>{actualSales === null ? '—' : `${formatNumber(actualSales)}개`}</td>
-              <td><strong data-status={status}>{comparisonLabels[status]}</strong>
+              <td>{hasOriginal && actualSales !== null
+                ? <ExclusionOutcome actual={actualSales} before={{ low: originalLow, high: originalHigh }} after={estimate} />
+                : <strong data-status={status}>{comparisonLabels[status]}</strong>}
                 {difference && <small className="inventory-history-gap">{difference}</small>}
                 {index === 0 && note && <small><strong>확인 메모</strong> {note}</small>}
                 {index === 0 && status === 'POS_REQUIRED' && storeId && analysisId && <Link className="text-button"
@@ -251,6 +259,23 @@ function SavedEstimateComparisons({ rows, product, storeId, planId, analysisId, 
       </div>}
     </> : <p className="muted">저장한 예상 범위가 아직 없어요.</p>}
   </section>
+}
+
+function ExclusionOutcome({ actual, before, after }: {
+  actual: number
+  before: { low: number; high: number }
+  after: { low: number; high: number }
+}) {
+  const beforeGap = Math.max(before.low - actual, actual - before.high, 0)
+  const afterGap = Math.max(after.low - actual, actual - after.high, 0)
+  const outcome = beforeGap < afterGap ? '제외 전 범위가 더 가까워요.'
+    : afterGap < beforeGap ? '제외 후 범위가 더 가까워요.'
+      : beforeGap === 0 ? '두 범위에 모두 들어요.' : '두 범위와의 차이가 같아요.'
+  return <>
+    <strong>{outcome}</strong>
+    <small>제외 전 {beforeGap === 0 ? '범위 안' : `범위 밖 ${formatNumber(beforeGap)}개`}<br />
+      제외 후 {afterGap === 0 ? '범위 안' : `범위 밖 ${formatNumber(afterGap)}개`}</small>
+  </>
 }
 
 function InventoryEstimateNoteForm({ comparison, onSave }: {
