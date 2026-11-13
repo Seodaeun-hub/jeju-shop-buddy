@@ -62,23 +62,30 @@ class InventoryReviewController {
     }
 
     @GetMapping("/api/plans/{planId}/inventory-review/estimates")
-    ResponseEntity<?> estimates(@PathVariable UUID planId, Principal owner) {
+    ResponseEntity<?> estimates(@PathVariable UUID planId, @RequestParam(defaultValue = "false") boolean includeHistory,
+                                Principal owner) {
         var store = findStore(planId, owner);
         if (store == null) return notFound();
         var saved = jdbc.sql("""
-                SELECT target_date, product_name, low, high, basis, saved_at
-                FROM inventory_demand_snapshots WHERE plan_id = :plan
-                ORDER BY target_date DESC, product_name
-                """).param("plan", planId).query((rs, row) -> new SavedEstimate(
+                SELECT d.target_date, d.product_name, d.low, d.high, d.basis, d.saved_at, d.plan_id = :plan AS current_plan
+                FROM inventory_demand_snapshots d
+                JOIN execution_plans p ON p.id = d.plan_id
+                JOIN sales_analyses a ON a.id = p.analysis_id
+                WHERE a.store_id = :store AND p.strategy_code = 'INVENTORY'
+                  AND (d.plan_id = :plan OR :includeHistory)
+                ORDER BY d.target_date DESC, d.product_name, d.saved_at, d.plan_id
+                """).param("plan", planId).param("store", store.id()).param("includeHistory", includeHistory)
+                .query((rs, row) -> new PlanEstimate(new SavedEstimate(
                         rs.getObject("target_date", LocalDate.class), rs.getString("product_name"), rs.getLong("low"),
                         rs.getLong("high"), InventoryDemand.Basis.valueOf(rs.getString("basis")),
-                        rs.getObject("saved_at", OffsetDateTime.class))).list();
+                        rs.getObject("saved_at", OffsetDateTime.class)), rs.getBoolean("current_plan"))).list();
         var today = LocalDate.now(InventoryDemand.SEOUL);
-        var archive = saved.stream().anyMatch(estimate -> estimate.date().isBefore(today))
+        var archive = saved.stream().anyMatch(row -> row.estimate().date().isBefore(today))
                 ? pos.load(store.id()) : List.<ProductPosArchive.Days>of();
-        var comparisons = saved.stream().map(estimate -> {
+        var comparisons = saved.stream().map(row -> {
+            var estimate = row.estimate();
             Long actual = estimate.date().isBefore(today) ? ProductPosArchive.soldOn(archive, estimate.product(), estimate.date()) : null;
-            return new EstimateComparison(estimate, actual, ComparisonStatus.of(estimate, actual, today));
+            return new EstimateComparison(estimate, actual, ComparisonStatus.of(estimate, actual, today), row.currentPlan());
         }).toList();
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(comparisons);
     }
@@ -243,7 +250,8 @@ class InventoryReviewController {
     record WeatherReference(LocalDate date, String area, KmaForecast.Daily forecast, String sourceUrl, InventoryDemand.Estimate estimate) {}
     record EstimateInput(LocalDate date, String product, Long low, Long high, InventoryDemand.Basis basis) {}
     record SavedEstimate(LocalDate date, String product, long low, long high, InventoryDemand.Basis basis, OffsetDateTime savedAt) {}
-    record EstimateComparison(SavedEstimate estimate, Long actualSales, ComparisonStatus status) {}
+    private record PlanEstimate(SavedEstimate estimate, boolean currentPlan) {}
+    record EstimateComparison(SavedEstimate estimate, Long actualSales, ComparisonStatus status, boolean currentPlan) {}
     enum ComparisonStatus {
         PENDING_DATE, POS_REQUIRED, WITHIN_RANGE, BELOW_RANGE, ABOVE_RANGE;
 

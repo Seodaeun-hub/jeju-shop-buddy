@@ -461,6 +461,13 @@
 .promo-copy > a { color: var(--green); font-weight: 750; text-underline-offset: .2em; }
 .promo-copy [role="status"]:empty { display: none; }
 .promo-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
+.inventory-history { padding-top: .8rem; border-top: 1px solid var(--line); }
+.inventory-history-rate { display: grid; gap: .15rem; padding: .75rem 1rem; background: var(--pale-green); color: var(--green); }
+.inventory-history-rate strong { font-size: 1.4rem; }
+.inventory-history-table { table-layout: fixed; font-size: .88rem; }
+.inventory-history-table th, .inventory-history-table td { vertical-align: top; overflow-wrap: anywhere; }
+.inventory-history-table :is(small, a) { display: block; margin-top: .25rem; }
+.inventory-history-table [data-status="WITHIN_RANGE"] { color: var(--green); }
 .inventory-import { display: grid; gap: .4rem; margin-top: .7rem; padding: .65rem; border: 1px solid var(--line); border-radius: 7px; }
 .inventory-import-title { display: flex; flex-wrap: wrap; gap: .25rem .6rem; justify-content: space-between; }
 .inventory-import a { color: var(--green); font-weight: 750; text-underline-offset: .18em; }

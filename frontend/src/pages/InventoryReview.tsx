@@ -11,6 +11,7 @@ import type { Analysis, InventoryItem } from '../data/shop'
 import { InventoryImport } from './InventoryImport'
 
 const koreaTime = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'medium', timeStyle: 'short' })
+const coverageRate = new Intl.NumberFormat('ko-KR', { style: 'percent', maximumFractionDigits: 1 })
 type ForecastSelection = { date: string; product: string }
 
 function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, menus, productName, recipeSaving, onProduct, onEstimate }: {
@@ -94,7 +95,8 @@ function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, m
   const forecast = reference?.forecast
   const estimate = reference?.estimate
   const required = estimate?.requiredPos
-  const alreadySaved = comparisons?.some(row => row.estimate.date === reference?.date && row.estimate.product === estimate?.product)
+  const alreadySaved = comparisons?.some(row => row.currentPlan && row.estimate.date === reference?.date && row.estimate.product === estimate?.product)
+  const menuNames = [...new Set([...menus, ...(comparisons?.map(row => row.estimate.product) ?? [])])]
   const uploadTo = required && reference && storeId && analysisId && productName.trim()
     ? posLibraryPath(storeId, { date: required.end, kind: required.kind, upload: {
       missingStart: required.start, inventory: { planId, analysisId, date: reference.date, product: productName.trim() },
@@ -112,7 +114,7 @@ function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, m
       <input list={menuOptions} value={productName} maxLength={255} placeholder="POS에 적힌 메뉴 이름" disabled={loading || recipeSaving || savingEstimate}
         onChange={event => { onProduct(event.target.value); clear() }} />
     </label>
-    <datalist id={menuOptions}>{menus.map(name => <option value={name} key={name} />)}</datalist>
+    <datalist id={menuOptions}>{menuNames.map(name => <option value={name} key={name} />)}</datalist>
     <button type="button" className="button secondary small" disabled={loading || savingEstimate || !date} onClick={() => {
       clear()
       setLoading(true)
@@ -134,14 +136,15 @@ function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, m
     </div>}
     {estimate && <DemandEstimate estimate={estimate} uploadTo={uploadTo} />}
     {estimate && estimate.low !== null && estimate.high !== null && (alreadySaved || estimateSaved
-      ? <p role="status" className="muted">이 날짜와 메뉴의 예상 범위는 아래에 저장돼 있어요.</p>
+      ? <p role="status" className="muted">이 계획에 날짜와 메뉴별 예상 범위를 저장했어요.</p>
       : <button type="button" className="button secondary small" disabled={savingEstimate}
         onClick={() => void saveEstimate()}>{savingEstimate ? '저장 중…' : '예상 범위 저장'}</button>)}
     {error && <p role="alert" className="error">{error}</p>}
     {comparisonError && <div role="alert" className="error">{comparisonError}{' '}
       <button type="button" className="text-button" onClick={() => setComparisonRevision(value => value + 1)}>저장한 범위 다시 불러오기</button>
     </div>}
-    <SavedEstimateComparisons rows={comparisons ?? []} storeId={storeId} planId={planId} analysisId={analysisId} />
+    {comparisons && <SavedEstimateComparisons rows={comparisons} product={productName.trim() || comparisons[0]?.estimate.product}
+      storeId={storeId} planId={planId} analysisId={analysisId} />}
   </div>
 }
 
@@ -153,30 +156,58 @@ const comparisonLabels = {
   ABOVE_RANGE: '예상 범위보다 많음',
 }
 
-function SavedEstimateComparisons({ rows, storeId, planId, analysisId }: {
+function SavedEstimateComparisons({ rows, product, storeId, planId, analysisId }: {
   rows: InventoryEstimateComparison[]
+  product?: string
   storeId?: string
   planId: string
   analysisId?: string
 }) {
-  if (!rows.length) return null
-  return <section className="ruled-block form-stack" aria-label="저장한 예상과 실제 판매량">
-    <h4>저장한 예상과 실제 판매량</h4>
-    <ul className="form-stack">
-      {rows.map(({ estimate, actualSales, status }) => <li key={JSON.stringify([estimate.date, estimate.product])}>
-        <strong>{estimate.date} · {estimate.product}</strong>
-        <p>저장한 예상 범위 · {formatNumber(estimate.low)}~{formatNumber(estimate.high)}개
-          <small className="muted"> · {estimate.basis === 'WEATHER' ? '같은 요일·강수 여부' : '같은 요일'}</small>
-        </p>
-        {actualSales !== null && <p>실제 판매량 · {formatNumber(actualSales)}개</p>}
-        <p><strong>{comparisonLabels[status]}</strong></p>
-        {status === 'POS_REQUIRED' && storeId && analysisId && <Link className="button secondary small"
-          to={posLibraryPath(storeId, { date: estimate.date, kind: 'PRODUCT', upload: {
-            missingStart: estimate.date,
-            inventory: { planId, analysisId, date: estimate.date, product: estimate.product },
-          } })}>이날 상품 주문 POS 올리기</Link>}
-      </li>)}
-    </ul>
+  const byDate = new Map<string, InventoryEstimateComparison>()
+  const additional = new Map<string, InventoryEstimateComparison>()
+  for (const row of rows) {
+    const { date, low, high } = row.estimate
+    if (row.estimate.product !== product) continue
+    const first = byDate.get(date)
+    if (!first) byDate.set(date, row)
+    else if (row.currentPlan && (first.estimate.low !== low || first.estimate.high !== high)) additional.set(date, row)
+  }
+  const daily = [...byDate.values()]
+  const compared = daily.filter(row => row.actualSales !== null)
+  const within = compared.filter(row => row.status === 'WITHIN_RANGE').length
+
+  return <section className="inventory-history form-stack" aria-label="지난 예상과 실제 판매량">
+    <h4>{product ? `${product} · 지난 예상과 실제 판매량` : '지난 예상과 실제 판매량'}</h4>
+    {daily.length ? <>
+      <div className="inventory-history-rate">
+        <span>예상 범위에 든 비율</span>
+        {compared.length ? <><strong>{coverageRate.format(within / compared.length)}</strong>
+          <span>판매량을 확인한 {formatNumber(compared.length)}일 중 {formatNumber(within)}일</span></>
+          : <strong>비교할 POS 자료가 아직 없어요.</strong>}
+      </div>
+      <small className="muted">이 매장의 메뉴별 기록이에요. 같은 날짜는 처음 저장한 예상으로 한 번만 비교해요.</small>
+      <table className="input-table inventory-history-table" aria-label={`${product} 날짜별 예상과 판매량`}>
+        <thead><tr><th scope="col">날짜</th><th scope="col">예상 범위</th><th scope="col">실제 판매량</th><th scope="col">결과</th></tr></thead>
+        <tbody>{daily.flatMap(first => {
+          const later = additional.get(first.estimate.date)
+          return (later ? [first, later] : [first]).map(({ estimate, actualSales, status }, index) =>
+            <tr key={`${estimate.date}-${index}`}>
+              <th scope="row"><time dateTime={estimate.date}>{estimate.date}</time>
+                {index > 0 && <small className="muted">이 계획에서 저장</small>}
+              </th>
+              <td>{formatNumber(estimate.low)}~{formatNumber(estimate.high)}개</td>
+              <td>{actualSales === null ? '—' : `${formatNumber(actualSales)}개`}</td>
+              <td><strong data-status={status}>{comparisonLabels[status]}</strong>
+                {index === 0 && status === 'POS_REQUIRED' && storeId && analysisId && <Link className="text-button"
+                  to={posLibraryPath(storeId, { date: estimate.date, kind: 'PRODUCT', upload: {
+                    missingStart: estimate.date,
+                    inventory: { planId, analysisId, date: estimate.date, product: estimate.product },
+                  } })}>이날 상품 주문 POS 올리기</Link>}
+              </td>
+            </tr>)
+        })}</tbody>
+      </table>
+    </> : <p className="muted">저장한 예상 범위가 아직 없어요.</p>}
   </section>
 }
 
