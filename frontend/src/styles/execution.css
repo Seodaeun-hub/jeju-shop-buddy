@@ -468,6 +468,9 @@
 .inventory-history-table th, .inventory-history-table td { vertical-align: top; overflow-wrap: anywhere; }
 .inventory-history-table :is(small, a) { display: block; margin-top: .25rem; }
 .inventory-history-table [data-status="WITHIN_RANGE"] { color: var(--green); }
+.inventory-history-table .inventory-history-gap { font-size: inherit; }
+.inventory-history-check { display: grid; gap: .3rem; padding: .7rem .85rem; border-inline-start: 2px solid var(--green); }
+.inventory-history-check h5 { font-size: .95rem; }
 .inventory-import { display: grid; gap: .4rem; margin-top: .7rem; padding: .65rem; border: 1px solid var(--line); border-radius: 7px; }
 .inventory-import-title { display: flex; flex-wrap: wrap; gap: .25rem .6rem; justify-content: space-between; }
 .inventory-import a { color: var(--green); font-weight: 750; text-underline-offset: .18em; }

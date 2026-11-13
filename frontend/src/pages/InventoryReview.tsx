@@ -156,6 +156,11 @@ const comparisonLabels = {
   ABOVE_RANGE: '예상 범위보다 많음',
 }
 
+const nextOrderChecks = {
+  ABOVE_RANGE: '행사나 단체 주문이 있었는지 확인해 보세요. 비슷한 요일과 날씨에도 상한을 넘겼다면 현재 재고와 입고 예정량을 보고 준비량을 검토해 보세요.',
+  BELOW_RANGE: '품절이나 단축 영업이 있었는지 확인해 보세요. 비슷한 요일과 날씨에도 하한보다 적게 팔렸다면 남은 재고와 폐기량을 확인해 보세요.',
+}
+
 function SavedEstimateComparisons({ rows, product, storeId, planId, analysisId }: {
   rows: InventoryEstimateComparison[]
   product?: string
@@ -175,6 +180,9 @@ function SavedEstimateComparisons({ rows, product, storeId, planId, analysisId }
   const daily = [...byDate.values()]
   const compared = daily.filter(row => row.actualSales !== null)
   const within = compared.filter(row => row.status === 'WITHIN_RANGE').length
+  const latestMiss = compared.find(row => row.status === 'ABOVE_RANGE' || row.status === 'BELOW_RANGE')
+  const nextOrderCheck = latestMiss?.status === 'ABOVE_RANGE' || latestMiss?.status === 'BELOW_RANGE'
+    ? nextOrderChecks[latestMiss.status] : undefined
 
   return <section className="inventory-history form-stack" aria-label="지난 예상과 실제 판매량">
     <h4>{product ? `${product} · 지난 예상과 실제 판매량` : '지난 예상과 실제 판매량'}</h4>
@@ -190,23 +198,32 @@ function SavedEstimateComparisons({ rows, product, storeId, planId, analysisId }
         <thead><tr><th scope="col">날짜</th><th scope="col">예상 범위</th><th scope="col">실제 판매량</th><th scope="col">결과</th></tr></thead>
         <tbody>{daily.flatMap(first => {
           const later = additional.get(first.estimate.date)
-          return (later ? [first, later] : [first]).map(({ estimate, actualSales, status }, index) =>
-            <tr key={`${estimate.date}-${index}`}>
+          return (later ? [first, later] : [first]).map(({ estimate, actualSales, status }, index) => {
+            const difference = actualSales === null ? null : status === 'ABOVE_RANGE'
+              ? `상한보다 ${formatNumber(actualSales - estimate.high)}개 더 팔렸어요.`
+              : status === 'BELOW_RANGE' ? `하한보다 ${formatNumber(estimate.low - actualSales)}개 덜 팔렸어요.` : null
+            return <tr key={`${estimate.date}-${index}`}>
               <th scope="row"><time dateTime={estimate.date}>{estimate.date}</time>
                 {index > 0 && <small className="muted">이 계획에서 저장</small>}
               </th>
               <td>{formatNumber(estimate.low)}~{formatNumber(estimate.high)}개</td>
               <td>{actualSales === null ? '—' : `${formatNumber(actualSales)}개`}</td>
               <td><strong data-status={status}>{comparisonLabels[status]}</strong>
+                {difference && <small className="inventory-history-gap">{difference}</small>}
                 {index === 0 && status === 'POS_REQUIRED' && storeId && analysisId && <Link className="text-button"
                   to={posLibraryPath(storeId, { date: estimate.date, kind: 'PRODUCT', upload: {
                     missingStart: estimate.date,
                     inventory: { planId, analysisId, date: estimate.date, product: estimate.product },
                   } })}>이날 상품 주문 POS 올리기</Link>}
               </td>
-            </tr>)
+            </tr>
+          })
         })}</tbody>
       </table>
+      {latestMiss && nextOrderCheck && <div className="inventory-history-check">
+        <h5>다음 발주 전에 확인할 것</h5>
+        <p><time dateTime={latestMiss.estimate.date}>{latestMiss.estimate.date}</time> 판매 기록 · {nextOrderCheck}</p>
+      </div>}
     </> : <p className="muted">저장한 예상 범위가 아직 없어요.</p>}
   </section>
 }
