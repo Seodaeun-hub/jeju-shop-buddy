@@ -1,8 +1,8 @@
 import { useEffect, useId, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { fetchInventoryEstimates, fetchInventoryRecipes, fetchInventoryWeather, saveInventoryEstimate,
+import { fetchInventoryEstimates, fetchInventoryRecipes, fetchInventoryWeather, saveInventoryEstimate, saveInventoryEstimateNote,
   saveInventoryRecipe, type InventoryDemandEstimate, type InventoryEstimateComparison,
-  type InventoryRecipe, type InventoryWeather } from '../api/shop'
+  type InventoryEstimateNote, type InventoryRecipe, type InventoryWeather } from '../api/shop'
 import { formatQuantity, parseQuantity, preparationFor, quantities, shortageOf } from '../data/inventory'
 import { posLibraryPath, seoulDate } from '../data/promotionArchive'
 import { addDays, formatNumber, monthLabel } from '../data/shop'
@@ -76,6 +76,14 @@ function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, m
     }
   }
 
+  async function saveNote(input: InventoryEstimateNote) {
+    const saved = await saveInventoryEstimateNote(auth, planId, input)
+    setComparisons(current => current?.map(row => row.estimate.date === saved.date && row.estimate.product === saved.product
+      ? { ...row, note: saved.note } : row))
+    setComparisonRevision(value => value + 1)
+    return saved.note
+  }
+
   useEffect(() => {
     if (!lookup) return
     const controller = new AbortController()
@@ -144,7 +152,7 @@ function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, m
       <button type="button" className="text-button" onClick={() => setComparisonRevision(value => value + 1)}>저장한 범위 다시 불러오기</button>
     </div>}
     {comparisons && <SavedEstimateComparisons rows={comparisons} product={productName.trim() || comparisons[0]?.estimate.product}
-      storeId={storeId} planId={planId} analysisId={analysisId} />}
+      storeId={storeId} planId={planId} analysisId={analysisId} onSaveNote={saveNote} />}
   </div>
 }
 
@@ -161,12 +169,13 @@ const nextOrderChecks = {
   BELOW_RANGE: '품절이나 단축 영업이 있었는지 확인해 보세요. 비슷한 요일과 날씨에도 하한보다 적게 팔렸다면 남은 재고와 폐기량을 확인해 보세요.',
 }
 
-function SavedEstimateComparisons({ rows, product, storeId, planId, analysisId }: {
+function SavedEstimateComparisons({ rows, product, storeId, planId, analysisId, onSaveNote }: {
   rows: InventoryEstimateComparison[]
   product?: string
   storeId?: string
   planId: string
   analysisId?: string
+  onSaveNote: (input: InventoryEstimateNote) => Promise<string>
 }) {
   const byDate = new Map<string, InventoryEstimateComparison>()
   const additional = new Map<string, InventoryEstimateComparison>()
@@ -198,7 +207,7 @@ function SavedEstimateComparisons({ rows, product, storeId, planId, analysisId }
         <thead><tr><th scope="col">날짜</th><th scope="col">예상 범위</th><th scope="col">실제 판매량</th><th scope="col">결과</th></tr></thead>
         <tbody>{daily.flatMap(first => {
           const later = additional.get(first.estimate.date)
-          return (later ? [first, later] : [first]).map(({ estimate, actualSales, status }, index) => {
+          return (later ? [first, later] : [first]).map(({ estimate, actualSales, status, note }, index) => {
             const difference = actualSales === null ? null : status === 'ABOVE_RANGE'
               ? `상한보다 ${formatNumber(actualSales - estimate.high)}개 더 팔렸어요.`
               : status === 'BELOW_RANGE' ? `하한보다 ${formatNumber(estimate.low - actualSales)}개 덜 팔렸어요.` : null
@@ -210,6 +219,7 @@ function SavedEstimateComparisons({ rows, product, storeId, planId, analysisId }
               <td>{actualSales === null ? '—' : `${formatNumber(actualSales)}개`}</td>
               <td><strong data-status={status}>{comparisonLabels[status]}</strong>
                 {difference && <small className="inventory-history-gap">{difference}</small>}
+                {index === 0 && note && <small><strong>확인 메모</strong> {note}</small>}
                 {index === 0 && status === 'POS_REQUIRED' && storeId && analysisId && <Link className="text-button"
                   to={posLibraryPath(storeId, { date: estimate.date, kind: 'PRODUCT', upload: {
                     missingStart: estimate.date,
@@ -223,9 +233,49 @@ function SavedEstimateComparisons({ rows, product, storeId, planId, analysisId }
       {latestMiss && nextOrderCheck && <div className="inventory-history-check">
         <h5>다음 발주 전에 확인할 것</h5>
         <p><time dateTime={latestMiss.estimate.date}>{latestMiss.estimate.date}</time> 판매 기록 · {nextOrderCheck}</p>
+        <InventoryEstimateNoteForm key={JSON.stringify([latestMiss.estimate.product, latestMiss.estimate.date])}
+          comparison={latestMiss} onSave={onSaveNote} />
       </div>}
     </> : <p className="muted">저장한 예상 범위가 아직 없어요.</p>}
   </section>
+}
+
+function InventoryEstimateNoteForm({ comparison, onSave }: {
+  comparison: InventoryEstimateComparison
+  onSave: (input: InventoryEstimateNote) => Promise<string>
+}) {
+  const [note, setNote] = useState(comparison.note ?? '')
+  const [saving, setSaving] = useState(false)
+  const [feedback, setFeedback] = useState<{ text: string; error?: boolean }>()
+  const { date, product } = comparison.estimate
+  const placeholder = comparison.status === 'ABOVE_RANGE' ? '예: 점심에 단체 주문이 있었어요' : '예: 오후에 고기국수가 품절됐어요'
+
+  return <form className="inventory-history-note form-stack" onSubmit={async event => {
+    event.preventDefault()
+    const trimmed = note.trim()
+    if (saving || !trimmed || trimmed === comparison.note) return
+    setSaving(true)
+    setFeedback(undefined)
+    try {
+      setNote(await onSave({ date, product, note: trimmed }))
+      setFeedback({ text: '확인 메모를 저장했어요.' })
+    } catch (failure) {
+      setFeedback({ text: failure instanceof Error ? failure.message : '확인 메모를 저장하지 못했어요.', error: true })
+    } finally {
+      setSaving(false)
+    }
+  }}>
+    <label>확인한 내용 한 줄
+      <input value={note} maxLength={200} placeholder={placeholder} disabled={saving} onChange={event => {
+        setNote(event.target.value)
+        setFeedback(undefined)
+      }} />
+    </label>
+    <button type="submit" className="button secondary small" disabled={saving || !note.trim() || note.trim() === comparison.note}>
+      {saving ? '저장 중…' : '확인 메모 저장'}
+    </button>
+    {feedback && <p role={feedback.error ? 'alert' : 'status'} className={feedback.error ? 'error' : undefined}>{feedback.text}</p>}
+  </form>
 }
 
 const recipeKey = (name: string, unit: string) => JSON.stringify([name.trim(), unit.trim()])
