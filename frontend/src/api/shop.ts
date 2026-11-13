@@ -16,6 +16,7 @@ export type InventoryDemandEstimate = {
   observedRainfallMm: number | null
   station: string | null
   observationSourceUrl: string | null
+  requiredPos: { start: string; end: string; kind: 'PRODUCT'; minimumDays: number } | null
 }
 
 export type InventoryWeather = {
@@ -43,10 +44,10 @@ export const fetchInventoryRecipes = (auth: string, planId: string, productName:
 export const saveInventoryRecipe = (auth: string, planId: string, productName: string, recipe: InventoryRecipe) =>
   request<InventoryRecipe>(inventoryRecipesPath(planId, productName), auth, 'PUT', recipe)
 
-export function fetchInventoryWeather(auth: string, planId: string, date: string, productName?: string) {
+export function fetchInventoryWeather(auth: string, planId: string, date: string, productName?: string, signal?: AbortSignal) {
   const params = new URLSearchParams({ date })
   if (productName) params.set('productName', productName)
-  return request<InventoryWeather>(`/api/plans/${encodeURIComponent(planId)}/inventory-review/forecast?${params}`, auth)
+  return request<InventoryWeather>(`/api/plans/${encodeURIComponent(planId)}/inventory-review/forecast?${params}`, auth, 'GET', undefined, signal)
 }
 
 export type StoreInput = {

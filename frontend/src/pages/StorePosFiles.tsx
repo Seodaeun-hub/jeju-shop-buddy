@@ -78,7 +78,7 @@ function PosCoverageDialog({ file, today, onClose, onSave }: {
 
 export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKind, uploadRequest }: {
   auth: string; storeId: string; storeName: string; initialDate: string | null; initialKind: string | null
-  uploadRequest?: { missingStart: string | null; resultTo?: string }
+  uploadRequest?: { missingStart: string | null; resultTo?: string; inventoryTo?: string }
 }) {
   const today = seoulDate()
   const standalone = useStandaloneApp()
@@ -239,7 +239,11 @@ export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKi
   const registrationHelp = focusUpload
     ? <p className="muted">{storeName}{missingPeriod && ` · 필요한 상품 주문 POS ${missingPeriod}`}</p>
     : <p className="muted">파일은 선택한 날짜에 표시돼요. 매출 집계는 파일 속 거래일을 사용해요.</p>
-  const fileHelp = <p className="muted">행사 결과에는 상품 주문 CSV나 상품 주문 시트가 포함된 엑셀을 사용해요.</p>
+  const fileHelp = <p className="muted">
+    {uploadRequest?.inventoryTo
+      ? '발주 검토에 필요한 기간의 상품 주문 CSV를 올려 주세요. 여러 파일로 나뉘어 있으면 하나씩 저장할 수 있어요.'
+      : '행사 결과에는 상품 주문 CSV나 상품 주문 시트가 포함된 엑셀을 사용해요.'}
+  </p>
   const uploadForm = <form className="pos-library-upload" onSubmit={upload}>
     <label>파일 종류<select value={kind} disabled={busy} onChange={event => {
       setKind(event.target.value === 'PRODUCT' ? 'PRODUCT' : 'PAYMENT')
@@ -312,7 +316,10 @@ export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKi
             {uploadRequest?.resultTo && <Link className="button secondary pos-upload-result" to={uploadRequest.resultTo}>
               이 계획의 실행 결과 확인 <span aria-hidden="true">→</span>
             </Link>}
-            {focusUpload && !uploadRequest?.resultTo && status?.operation === 'upload' &&
+            {uploadRequest?.inventoryTo && <Link className="button secondary pos-upload-result" to={uploadRequest.inventoryTo}>
+              같은 발주 검토로 돌아가기 <span aria-hidden="true">→</span>
+            </Link>}
+            {focusUpload && !uploadRequest?.resultTo && !uploadRequest?.inventoryTo && status?.operation === 'upload' &&
               <button type="button" className="button secondary pos-upload-result"
                 onClick={() => window.dispatchEvent(new Event(showWorkspaceNotifications))}>결과 알림 보기</button>}
             {!standalone && <>{datePreview}{fileHelp}</>}

@@ -157,10 +157,19 @@ export function MyStores({ auth, ownerEmail, onAnalysisDeleted, onPlanDeleted }:
   const section = storeSections.find(item => item.id === params.get('section'))?.id ?? 'history'
   const resultPlanId = params.get('resultPlanId')
   const resultAnalysisId = params.get('resultAnalysisId')
+  const inventoryPlanId = params.get('inventoryPlanId')
+  const inventoryAnalysisId = params.get('inventoryAnalysisId')
+  const inventoryDate = params.get('inventoryDate')
+  const inventoryProduct = params.get('inventoryProduct')
   const upload = params.get('focus') === 'upload' ? {
     missingStart: params.get('missingStart'),
     resultTo: resultPlanId && resultAnalysisId
       ? '/results?' + new URLSearchParams({ id: resultPlanId, analysisId: resultAnalysisId })
+      : undefined,
+    inventoryTo: inventoryPlanId && inventoryAnalysisId && inventoryDate && inventoryProduct
+      ? '/execution?' + new URLSearchParams({
+        id: inventoryPlanId, analysisId: inventoryAnalysisId, inventoryDate, inventoryProduct,
+      })
       : undefined,
   } : undefined
 
