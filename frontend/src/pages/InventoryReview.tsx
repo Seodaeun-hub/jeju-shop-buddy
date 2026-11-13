@@ -1,5 +1,6 @@
-import { useId, useState } from 'react'
-import { fetchInventoryWeather, type InventoryDemandEstimate, type InventoryWeather } from '../api/shop'
+import { useEffect, useId, useState } from 'react'
+import { fetchInventoryRecipes, fetchInventoryWeather, saveInventoryRecipe, type InventoryDemandEstimate,
+  type InventoryRecipe, type InventoryWeather } from '../api/shop'
 import { formatQuantity, parseQuantity, preparationFor, quantities, shortageOf } from '../data/inventory'
 import { formatNumber, monthLabel } from '../data/shop'
 import type { Analysis, InventoryItem } from '../data/shop'
@@ -9,14 +10,16 @@ import { InventoryImport } from './InventoryImport'
 const koreaDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' })
 const koreaTime = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'medium', timeStyle: 'short' })
 
-function InventoryForecast({ auth, planId, menus, onEstimate }: {
+function InventoryForecast({ auth, planId, menus, productName, recipeSaving, onProduct, onEstimate }: {
   auth: string
   planId: string
   menus: string[]
+  productName: string
+  recipeSaving: boolean
+  onProduct: (product: string) => void
   onEstimate: (estimate: InventoryDemandEstimate | null) => void
 }) {
   const [date, setDate] = useState(() => koreaDate.format(new Date(Date.now() + 86_400_000)))
-  const [productName, setProductName] = useState('')
   const menuOptions = useId()
   const [reference, setReference] = useState<InventoryWeather>()
   const [loading, setLoading] = useState(false)
@@ -53,8 +56,8 @@ function InventoryForecast({ auth, planId, menus, onEstimate }: {
       }} />
     </label>
     <label>판매량을 예상할 메뉴
-      <input list={menuOptions} value={productName} maxLength={255} placeholder="POS에 적힌 메뉴 이름" disabled={loading}
-        onChange={event => { setProductName(event.target.value); clear() }} />
+      <input list={menuOptions} value={productName} maxLength={255} placeholder="POS에 적힌 메뉴 이름" disabled={loading || recipeSaving}
+        onChange={event => { onProduct(event.target.value); clear() }} />
     </label>
     <datalist id={menuOptions}>{menus.map(name => <option value={name} key={name} />)}</datalist>
     <button type="button" className="button secondary small" disabled={loading || !date} onClick={() => void lookup()}>
@@ -75,6 +78,12 @@ function InventoryForecast({ auth, planId, menus, onEstimate }: {
     {reference?.estimate && <DemandEstimate estimate={reference.estimate} />}
     {error && <p role="alert" className="error">{error}</p>}
   </div>
+}
+
+const recipeKey = (name: string, unit: string) => JSON.stringify([name.trim(), unit.trim()])
+
+function emptyItem(name = '', unit = ''): InventoryItem {
+  return { id: crypto.randomUUID(), name, unit, stock: '', expectedUse: '', incoming: '', finalOrder: '' }
 }
 
 function DemandEstimate({ estimate }: { estimate: InventoryDemandEstimate }) {
@@ -121,14 +130,74 @@ export function InventoryReview({ auth, planId, items, analysis, reviewDate, onC
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [productName, setProductName] = useState('')
+  const product = productName.trim()
   const [estimate, setEstimate] = useState<InventoryDemandEstimate | null>(null)
-  const [recipe, setRecipe] = useState<Record<string, { product: string; amount: string }>>({})
-  const range = estimate && estimate.low !== null && estimate.high !== null
-    ? { product: estimate.product, low: estimate.low, high: estimate.high } : null
+  const [stored, setStored] = useState<{ product: string; values: InventoryRecipe[]; suggested: InventoryItem[] }>()
+  const [loadError, setLoadError] = useState('')
+  const [recipeEdits, setRecipeEdits] = useState<Record<string, string>>({})
+  const [recipeSaving, setRecipeSaving] = useState(false)
+  const [recipeMessage, setRecipeMessage] = useState<{ key: string; text: string; error?: boolean }>()
+  const [dismissed, setDismissed] = useState<string[]>([])
+  const range = estimate && estimate.low !== null && estimate.high !== null ? { low: estimate.low, high: estimate.high } : null
+  const currentRecipes = stored?.product === product ? stored : undefined
+  const visibleItems = [...items, ...(currentRecipes?.suggested.filter(row => {
+    const key = recipeKey(row.name, row.unit)
+    return !dismissed.includes(JSON.stringify([product, key])) && !items.some(item => recipeKey(item.name, item.unit) === key)
+  }) ?? [])]
   const months = analysis.monthly.slice(-2)
-  const recorded = items.filter((item) =>
+  const recorded = visibleItems.filter((item) =>
     item.name.trim() && item.unit.trim() && shortageOf(item) !== null,
   ).length
+
+  useEffect(() => {
+    if (!auth || !planId || !product || product.length > 255) return
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      fetchInventoryRecipes(auth, planId, product, controller.signal).then(values => {
+        if (!controller.signal.aborted) setStored({ product, values,
+          suggested: values.map(value => emptyItem(value.ingredientName, value.unit)) })
+      }).catch(() => {
+        if (!controller.signal.aborted) setLoadError('매장에 저장한 사용량을 불러오지 못했어요. 메뉴를 다시 선택해 주세요.')
+      })
+    }, 250)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [auth, planId, product])
+
+  function changeProduct(value: string) {
+    setProductName(value)
+    if (value.trim() === product) return
+    setLoadError('')
+    setStored(undefined)
+    setRecipeMessage(undefined)
+  }
+
+  async function saveRecipe(item: InventoryItem, key: string, amount: string) {
+    if (!auth || !planId || recipeSaving) return
+    setRecipeSaving(true)
+    setRecipeMessage(undefined)
+    try {
+      const saved = await saveInventoryRecipe(auth, planId, product, { ingredientName: item.name, unit: item.unit, amount })
+      setStored(current => {
+        const values = current?.product === product ? current.values : []
+        return { product, values: [...values.filter(value => recipeKey(value.ingredientName, value.unit) !== recipeKey(item.name, item.unit)), saved],
+          suggested: current?.product === product ? current.suggested : [] }
+      })
+      setRecipeEdits(current => {
+        const next = { ...current }
+        delete next[key]
+        return next
+      })
+      setRecipeMessage({ key, text: '매장에 저장했어요. 다음 발주 검토에서도 불러와요.' })
+    } catch (failure) {
+      setRecipeMessage({ key, error: true, text: failure instanceof Error ? failure.message : '사용량을 저장하지 못했어요.' })
+    } finally {
+      setRecipeSaving(false)
+    }
+  }
 
   function updateItems(next: InventoryItem[]) {
     setMessage('')
@@ -152,28 +221,22 @@ export function InventoryReview({ auth, planId, items, analysis, reviewDate, onC
   }
 
   function addItem() {
-    updateItems([...items, {
-      id: crypto.randomUUID(),
-      name: '',
-      unit: '',
-      stock: '',
-      expectedUse: '',
-      incoming: '',
-      finalOrder: '',
-    }])
+    updateItems([...items, emptyItem()])
   }
 
   return <section className="execution-material inventory-review">
     <div className="section-top ruled">
       <h2>발주량 검토표</h2>
-      <span className="badge" aria-live="polite">{recorded} / {items.length}품목 기록</span>
+      <span className="badge" aria-live="polite">{recorded} / {visibleItems.length}품목 기록</span>
     </div>
     <div className="receipt">
       <p>다음 발주분이 들어오기 전까지 쓸 양과 그전에 들어올 물량을 입력해 주세요. 예정된 입고가 없다면 0을 입력해요.</p>
       <p className="muted">발주 검토 예정일 · {reviewDate}</p>
       {auth && planId && <InventoryForecast auth={auth} planId={planId}
         menus={analysis.productSales?.map(product => product.productName) ?? []}
+        productName={productName} recipeSaving={recipeSaving} onProduct={changeProduct}
         onEstimate={setEstimate} />}
+      {loadError && <p role="alert" className="error">{loadError}</p>}
       {analysis.productSales?.length ? <details className="ruled-block" open>
         <summary>POS 품목별 판매량 참고</summary>
         <p className="muted">판매량을 참고해 발주 품목의 사용량을 정해 주세요. 메뉴 판매량과 재료 사용량의 단위는 다를 수 있어요.</p>
@@ -187,17 +250,23 @@ export function InventoryReview({ auth, planId, items, analysis, reviewDate, onC
           </tr>)}</tbody>
         </table>
       </details> : <p className="muted">이 분석에 저장된 POS 품목별 판매량이 없어요.</p>}
-      <fieldset disabled={saving} aria-label="발주 검토 입력">
+      <fieldset disabled={saving || recipeSaving} aria-label="발주 검토 입력">
       <InventoryImport onImport={(imported) => updateItems([...items, ...imported])} />
       <div className="inventory-rows">
-        {items.map((item, index) => {
+        {visibleItems.map((item, index) => {
           const shortage = item.shortage ?? shortageOf(item)
           const unit = item.unit.trim()
-          const savedRecipe = recipe[item.id]
-          const perServing = savedRecipe && savedRecipe.product === range?.product ? savedRecipe.amount : ''
+          const ingredientKey = recipeKey(item.name, item.unit)
+          const editKey = JSON.stringify([product, ingredientKey])
+          const savedRecipe = currentRecipes?.values.find(value => recipeKey(value.ingredientName, value.unit) === ingredientKey)
+          const perServing = recipeEdits[editKey] ?? savedRecipe?.amount ?? ''
           const preparation = range && preparationFor(item, perServing, range.low, range.high)
           function update(field: Exclude<keyof InventoryItem, 'id' | 'shortage'>, value: string) {
-            updateItems(items.map((row) => row.id === item.id ? { ...row, [field]: value, shortage: undefined } : row))
+            const changed = { ...item, [field]: value, shortage: undefined }
+            if ((field === 'name' || field === 'unit') && savedRecipe) setDismissed(current => [...current, editKey])
+            updateItems(items.some(row => row.id === item.id)
+              ? items.map(row => row.id === item.id ? changed : row)
+              : [...items, changed])
           }
           return <fieldset key={item.id} className="inventory-row">
             <legend>품목 {index + 1}</legend>
@@ -214,17 +283,27 @@ export function InventoryReview({ auth, planId, items, analysis, reviewDate, onC
               <label>최종 발주량
                 <input type="number" inputMode="decimal" min="0" max="1000000000" step="0.001" value={item.finalOrder} aria-invalid={item.finalOrder !== '' && parseQuantity(item.finalOrder) === null} onChange={(event) => update('finalOrder', event.target.value)} />
               </label>
-              <button type="button" className="text-button inventory-remove" aria-label={`품목 ${index + 1} 삭제`} onClick={() => updateItems(items.filter((row) => row.id !== item.id))}>삭제</button>
+              <button type="button" className="text-button inventory-remove" aria-label={`품목 ${index + 1} 삭제`} onClick={() => {
+                setDismissed(current => [...current, editKey])
+                updateItems(items.filter((row) => row.id !== item.id))
+              }}>삭제</button>
             </div>
-            {range && <div className="ruled-block form-stack">
-              <label>{range.product} 한 개당 재료 사용량{unit && ` (${unit})`}
+            {product && <div className="ruled-block form-stack">
+              <label>{product} 한 개당 재료 사용량{unit && ` (${unit})`}
                 <input type="number" inputMode="decimal" min="0.001" step="0.001" value={perServing}
                   onChange={event => {
                     const amount = event.target.value
-                    setRecipe(current => ({ ...current, [item.id]: { product: range.product, amount } }))
+                    setRecipeEdits(current => ({ ...current, [editKey]: amount }))
+                    setRecipeMessage(undefined)
                   }} />
               </label>
               {!unit && <small className="muted">위에 재고와 같은 재료 단위를 먼저 입력해 주세요.</small>}
+              {auth && planId && <button type="button" className="button secondary small"
+                disabled={!item.name.trim() || !unit || !parseQuantity(perServing) || perServing === savedRecipe?.amount || !currentRecipes && !loadError}
+                onClick={() => void saveRecipe(item, editKey, perServing)}>매장에 사용량 저장</button>}
+              {savedRecipe && recipeEdits[editKey] === undefined && <small className="muted">매장에 저장된 사용량</small>}
+              {recipeMessage?.key === editKey && <p role={recipeMessage.error ? 'alert' : 'status'}
+                className={recipeMessage.error ? 'error' : undefined}>{recipeMessage.text}</p>}
               {preparation && unit && <>
                 <p>예상 재료 사용량 <strong>{formatQuantity(preparation.usage[0])}~{formatQuantity(preparation.usage[1])} {unit}</strong></p>
                 {preparation.shortage
@@ -239,8 +318,8 @@ export function InventoryReview({ auth, planId, items, analysis, reviewDate, onC
       </div>
       <button type="button" className="button secondary small inventory-add" onClick={addItem}>+ 품목 추가</button>
       </fieldset>
-      {items.length > 0 && <p className="muted inventory-hint">수량은 품목마다 같은 단위로, 소수점 셋째 자리까지 입력해 주세요. 최종 발주량은 주문 단위와 여유분을 고려해 정할 수 있어요.</p>}
-      {onSave && <button type="button" className="button primary small" disabled={saving} onClick={() => void save()}>
+      {visibleItems.length > 0 && <p className="muted inventory-hint">수량은 품목마다 같은 단위로, 소수점 셋째 자리까지 입력해 주세요. 최종 발주량은 주문 단위와 여유분을 고려해 정할 수 있어요.</p>}
+      {onSave && <button type="button" className="button primary small" disabled={saving || recipeSaving} onClick={() => void save()}>
         {saving ? '저장 중…' : '발주 검토표 저장'}
       </button>}
       {message && <p role="status">{message}</p>}

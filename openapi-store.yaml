@@ -1106,6 +1106,63 @@ paths:
           description: 로그인 필요
         '404':
           description: 조회할 수 있는 발주 검토 계획이 없음
+  /api/plans/{planId}/inventory-review/recipes:
+    parameters:
+      - name: planId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: productName
+        in: query
+        required: true
+        schema: { type: string, minLength: 1, maxLength: 255 }
+    get:
+      operationId: listInventoryRecipes
+      tags: [실행 계획]
+      summary: 매장에 저장된 메뉴별 재료 사용량 조회
+      security:
+        - ownerBasic: []
+      responses:
+        '200':
+          description: 해당 메뉴의 재료별 사용량
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InventoryRecipe'
+        '400':
+          description: 메뉴명이 잘못된 요청
+        '401':
+          description: 로그인 필요
+        '404':
+          description: 조회할 수 있는 발주 검토 계획이 없음
+    put:
+      operationId: saveInventoryRecipe
+      tags: [실행 계획]
+      summary: 매장에 메뉴 한 개당 재료 사용량 저장
+      description: 같은 매장·메뉴·재료·단위의 기존 값이 있으면 교체한다.
+      security:
+        - ownerBasic: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryRecipe'
+      responses:
+        '200':
+          description: 저장된 재료 사용량
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryRecipe'
+        '400':
+          description: 메뉴명, 재료명, 단위 또는 사용량이 잘못된 요청
+        '401':
+          description: 로그인 필요
+        '404':
+          description: 저장할 수 있는 발주 검토 계획이 없음
   /api/plans/{planId}/checklist/{itemId}:
     patch:
       operationId: updateExecutionChecklistItem
@@ -2060,6 +2117,16 @@ components:
         incoming: { type: string, example: '2' }
         finalOrder: { type: string, example: '6' }
       description: 수량은 0 이상 10억 이하의 소수점 셋째 자리까지 입력한다. 미입력 값은 빈 문자열로 저장한다.
+    InventoryRecipe:
+      type: object
+      required: [ingredientName, unit, amount]
+      properties:
+        ingredientName: { type: string, minLength: 1, maxLength: 50 }
+        unit: { type: string, minLength: 1, maxLength: 12 }
+        amount:
+          type: string
+          description: 0 초과 10억 이하의 재료 사용량. 소수점 셋째 자리까지 입력한다.
+          example: '0.5'
     InventoryReviewItem:
       allOf:
         - $ref: '#/components/schemas/InventoryReviewInput'
