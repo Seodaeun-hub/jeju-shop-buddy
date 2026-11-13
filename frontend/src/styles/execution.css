@@ -474,6 +474,10 @@
 .inventory-history-note { margin-top: .35rem; }
 .inventory-history-note input { width: 100%; min-width: 0; }
 .inventory-history-note button { justify-self: start; }
+.inventory-comparison-days ul { padding: 0; list-style: none; }
+.inventory-comparison-days li { display: grid; gap: .3rem; padding: .55rem 0; border-bottom: 1px solid var(--line); }
+.inventory-comparison-days label { display: flex; align-items: center; gap: .45rem; justify-self: start; }
+.inventory-comparison-days input[type="checkbox"] { width: 1rem; height: 1rem; accent-color: var(--green); }
 .inventory-import { display: grid; gap: .4rem; margin-top: .7rem; padding: .65rem; border: 1px solid var(--line); border-radius: 7px; }
 .inventory-import-title { display: flex; flex-wrap: wrap; gap: .25rem .6rem; justify-content: space-between; }
 .inventory-import a { color: var(--green); font-weight: 750; text-underline-offset: .18em; }

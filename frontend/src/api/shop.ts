@@ -3,21 +3,27 @@ import type { Analysis, CustomerNotice, InventoryItem, MonthlySales, Plan, Produ
 import { formatEvidence } from '../data/strategyEvidence'
 
 export type Area = { code: string; name: string }
+type InventoryDemandSample = { date: string; quantity: number; rainfallMm: number | null; precipitation: boolean | null }
+type InventoryDemandBounds = {
+  basis: 'WEATHER' | 'WEEKDAY' | 'INSUFFICIENT'
+  low: number | null
+  high: number | null
+}
 export type InventoryDemandEstimate = {
   product: string
   historical: boolean
   actualSales: number | null
-  basis: 'WEATHER' | 'WEEKDAY' | 'INSUFFICIENT'
-  low: number | null
-  high: number | null
-  samples: { date: string; quantity: number; rainfallMm: number | null; precipitation: boolean | null }[]
+  samples: InventoryDemandSample[]
+  candidates: InventoryDemandSample[]
+  excludedDates: string[]
+  originalBounds: InventoryDemandBounds | null
   weatherMatches: number
   precipitation: boolean | null
   observedRainfallMm: number | null
   station: string | null
   observationSourceUrl: string | null
   requiredPos: { start: string; end: string; kind: 'PRODUCT'; minimumDays: number } | null
-}
+} & InventoryDemandBounds
 
 export type InventoryWeather = {
   date: string
@@ -40,6 +46,7 @@ export type InventoryEstimateInput = {
   low: number
   high: number
   basis: 'WEATHER' | 'WEEKDAY'
+  excludedDates?: string[]
 }
 export type InventoryEstimateComparison = {
   estimate: InventoryEstimateInput & { savedAt: string }
@@ -47,6 +54,7 @@ export type InventoryEstimateComparison = {
   status: 'PENDING_DATE' | 'POS_REQUIRED' | 'WITHIN_RANGE' | 'BELOW_RANGE' | 'ABOVE_RANGE'
   currentPlan: boolean
   note: string | null
+  excludedDates: string[]
 }
 export type InventoryEstimateNote = { date: string; product: string; note: string }
 
@@ -71,9 +79,10 @@ export const fetchInventoryRecipes = (auth: string, planId: string, productName:
 export const saveInventoryRecipe = (auth: string, planId: string, productName: string, recipe: InventoryRecipe) =>
   request<InventoryRecipe>(inventoryRecipesPath(planId, productName), auth, 'PUT', recipe)
 
-export function fetchInventoryWeather(auth: string, planId: string, date: string, productName?: string, signal?: AbortSignal) {
+export function fetchInventoryWeather(auth: string, planId: string, date: string, productName: string, excludedDates: string[], signal: AbortSignal) {
   const params = new URLSearchParams({ date })
   if (productName) params.set('productName', productName)
+  for (const day of excludedDates) params.append('excludedDates', day)
   return request<InventoryWeather>(`/api/plans/${encodeURIComponent(planId)}/inventory-review/forecast?${params}`, auth, 'GET', undefined, signal)
 }
 

@@ -7,13 +7,14 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
 @Service
 class InventoryDemand {
     static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
-    private static final int LOOKBACK_WEEKS = 12;
+    static final int LOOKBACK_WEEKS = 12;
     private static final int MIN_SAMPLE_DAYS = 3;
     private final ProductPosArchive pos;
     private final KmaObservations observations;
@@ -23,7 +24,8 @@ class InventoryDemand {
         this.observations = observations;
     }
 
-    Estimate estimate(UUID store, Coordinates location, String product, LocalDate date, KmaForecast.Daily forecast) {
+    Estimate estimate(UUID store, Coordinates location, String product, LocalDate date, KmaForecast.Daily forecast,
+                      Set<LocalDate> excludedDates) {
         LocalDate today = LocalDate.now(SEOUL);
         boolean historical = date.isBefore(today);
         var archive = pos.load(store);
@@ -40,7 +42,7 @@ class InventoryDemand {
         var actual = historical ? ProductPosArchive.soldOn(archive, product, date) : null;
         return summarize(product, historical, actual, station == null ? null : station.name(),
                 observed == null ? null : observed.rainfallMm(), precipitation, samples, rainfall,
-                requiredPos(date, today));
+                requiredPos(date, today), excludedDates);
     }
 
     static PosRequirement requiredPos(LocalDate target, LocalDate today) {
@@ -63,26 +65,40 @@ class InventoryDemand {
 
     static Estimate summarize(String product, boolean historical, Long actual, String station, BigDecimal observed,
                               Boolean precipitation, List<Sample> samples, Map<LocalDate, KmaObservations.Observation> rainfall,
-                              PosRequirement requiredPos) {
+                              PosRequirement requiredPos, Set<LocalDate> excludedDates) {
         var dated = samples.stream().map(sample -> {
             var weather = rainfall.get(sample.date());
             return weather == null ? sample : new Sample(sample.date(), sample.quantity(), weather.rainfallMm(), weather.precipitation());
         }).toList();
-        var comparable = dated.stream().filter(sample -> precipitation != null && precipitation.equals(sample.precipitation())).toList();
+        var excluded = dated.stream().map(Sample::date).filter(excludedDates::contains).toList();
+        var original = range(dated, precipitation);
+        var selected = excluded.isEmpty() ? original
+                : range(dated.stream().filter(sample -> !excludedDates.contains(sample.date())).toList(), precipitation);
+        return new Estimate(product, historical, actual, selected.bounds().basis(), selected.bounds().low(), selected.bounds().high(),
+                selected.samples(), selected.weatherMatches(), precipitation, observed, rainfall.isEmpty() ? null : station,
+                rainfall.isEmpty() ? null : KmaObservations.SOURCE_URL,
+                original.bounds().basis() == Basis.INSUFFICIENT ? requiredPos : null,
+                dated, excluded, excluded.isEmpty() ? null : original.bounds());
+    }
+
+    private static SampleRange range(List<Sample> samples, Boolean precipitation) {
+        var comparable = samples.stream().filter(sample -> precipitation != null && precipitation.equals(sample.precipitation())).toList();
         boolean weatherMatch = comparable.size() >= MIN_SAMPLE_DAYS;
-        var used = weatherMatch ? comparable : dated;
-        boolean enough = used.size() >= MIN_SAMPLE_DAYS;
-        return new Estimate(product, historical, actual, enough ? weatherMatch ? Basis.WEATHER : Basis.WEEKDAY : Basis.INSUFFICIENT,
-                enough ? used.stream().mapToLong(Sample::quantity).min().orElseThrow() : null,
-                enough ? used.stream().mapToLong(Sample::quantity).max().orElseThrow() : null,
-                used, comparable.size(), precipitation, observed, rainfall.isEmpty() ? null : station,
-                rainfall.isEmpty() ? null : KmaObservations.SOURCE_URL, enough ? null : requiredPos);
+        var used = weatherMatch ? comparable : samples;
+        boolean enough = used.size() >= MIN_SAMPLE_DAYS && samples.stream().anyMatch(sample -> sample.quantity() > 0);
+        var bounds = enough ? new Bounds(weatherMatch ? Basis.WEATHER : Basis.WEEKDAY,
+                used.stream().mapToLong(Sample::quantity).min().orElseThrow(),
+                used.stream().mapToLong(Sample::quantity).max().orElseThrow()) : new Bounds(Basis.INSUFFICIENT, null, null);
+        return new SampleRange(bounds, used, comparable.size());
     }
 
     enum Basis { WEATHER, WEEKDAY, INSUFFICIENT }
     record Sample(LocalDate date, long quantity, BigDecimal rainfallMm, Boolean precipitation) {}
     record PosRequirement(LocalDate start, LocalDate end, String kind, int minimumDays) {}
+    record Bounds(Basis basis, Long low, Long high) {}
+    private record SampleRange(Bounds bounds, List<Sample> samples, int weatherMatches) {}
     record Estimate(String product, boolean historical, Long actualSales, Basis basis, Long low, Long high,
                     List<Sample> samples, int weatherMatches, Boolean precipitation, BigDecimal observedRainfallMm,
-                    String station, String observationSourceUrl, PosRequirement requiredPos) {}
+                    String station, String observationSourceUrl, PosRequirement requiredPos,
+                    List<Sample> candidates, List<LocalDate> excludedDates, Bounds originalBounds) {}
 }
