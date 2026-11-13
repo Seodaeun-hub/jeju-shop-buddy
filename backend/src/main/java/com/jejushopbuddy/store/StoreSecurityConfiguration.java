@@ -74,7 +74,7 @@ class StoreSecurityConfiguration {
                         "/api/analyses/{analysisId}/questions", "/api/analyses/{analysisId}/concern-check", "/api/analyses/{analysisId}/hourly-sales",
                         "/api/plans/{planId}", "/api/plans/{planId}/checklist/{itemId}", "/api/plans/{planId}/results",
                         "/api/plans/{planId}/results/{resultId}", "/api/plans/{planId}/inventory-review", "/api/plans/{planId}/inventory-review/forecast",
-                        "/api/plans/{planId}/inventory-review/recipes",
+                        "/api/plans/{planId}/inventory-review/recipes", "/api/plans/{planId}/inventory-review/estimates",
                         "/api/plans/{planId}/promotion-review", "/api/plans/{planId}/promotion-review/defaults", "/api/plans/{planId}/promotion-review-points", "/api/plans/{planId}/promotion-draft", "/api/plans/{planId}/promotion-draft/caption",
                         "/api/plans/{planId}/promotion-photo", "/api/plans/{planId}/store-notice", "/api/plans/{planId}/instagram-publication", "/api/plans/{planId}/promotion-impact",
                         "/api/plans/{planId}/promotion-impact/publication", "/api/plans/{planId}/promotion-impact/next-checklist", "/api/plans/{planId}/promotion-impact/next-explanation",

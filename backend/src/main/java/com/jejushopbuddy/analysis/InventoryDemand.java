@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service;
 
 @Service
 class InventoryDemand {
-    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+    static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final int LOOKBACK_WEEKS = 12;
     private static final int MIN_SAMPLE_DAYS = 3;
     private final ProductPosArchive pos;

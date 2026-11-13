@@ -4,12 +4,14 @@ import com.jejushopbuddy.analysis.SalesAnalysisController.ApiError;
 import java.math.BigDecimal;
 import java.security.Principal;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -30,12 +32,14 @@ class InventoryReviewController {
     private final ObjectMapper json;
     private final KmaForecast weather;
     private final InventoryDemand demand;
+    private final ProductPosArchive pos;
 
-    InventoryReviewController(JdbcClient jdbc, ObjectMapper json, KmaForecast weather, InventoryDemand demand) {
+    InventoryReviewController(JdbcClient jdbc, ObjectMapper json, KmaForecast weather, InventoryDemand demand, ProductPosArchive pos) {
         this.jdbc = jdbc;
         this.json = json;
         this.weather = weather;
         this.demand = demand;
+        this.pos = pos;
     }
 
     @GetMapping("/api/plans/{planId}/inventory-review/forecast")
@@ -45,12 +49,84 @@ class InventoryReviewController {
         if (productName != null && !validText(productName, 255)) return invalid("확인할 POS 메뉴명을 입력해 주세요.");
         var location = findStore(planId, owner);
         if (location == null) return notFound();
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(weatherReference(location, date, productName));
+    }
+
+    private WeatherReference weatherReference(ForecastStore location, LocalDate date, String productName) {
         var point = productName == null ? null : weather.location(location.address(), location.name()).orElse(null);
         var forecast = productName == null ? weather.lookup(location.address(), location.name(), date)
                 : point == null ? null : weather.lookup(point, date);
         var estimate = productName == null ? null : demand.estimate(location.id(), point, productName.strip(), date, forecast);
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-                .body(new WeatherReference(date, location.area(), forecast, forecast == null ? null : KmaForecast.SOURCE_URL, estimate));
+        return new WeatherReference(date, location.area(), forecast, forecast == null ? null : KmaForecast.SOURCE_URL, estimate);
+    }
+
+    @GetMapping("/api/plans/{planId}/inventory-review/estimates")
+    ResponseEntity<?> estimates(@PathVariable UUID planId, Principal owner) {
+        var store = findStore(planId, owner);
+        if (store == null) return notFound();
+        var saved = jdbc.sql("""
+                SELECT target_date, product_name, low, high, basis, saved_at
+                FROM inventory_demand_snapshots WHERE plan_id = :plan
+                ORDER BY target_date DESC, product_name
+                """).param("plan", planId).query((rs, row) -> new SavedEstimate(
+                        rs.getObject("target_date", LocalDate.class), rs.getString("product_name"), rs.getLong("low"),
+                        rs.getLong("high"), InventoryDemand.Basis.valueOf(rs.getString("basis")),
+                        rs.getObject("saved_at", OffsetDateTime.class))).list();
+        var today = LocalDate.now(InventoryDemand.SEOUL);
+        var archive = saved.stream().anyMatch(estimate -> estimate.date().isBefore(today))
+                ? pos.load(store.id()) : List.<ProductPosArchive.Days>of();
+        var comparisons = saved.stream().map(estimate -> {
+            Long actual = estimate.date().isBefore(today) ? ProductPosArchive.soldOn(archive, estimate.product(), estimate.date()) : null;
+            return new EstimateComparison(estimate, actual, ComparisonStatus.of(estimate, actual, today));
+        }).toList();
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(comparisons);
+    }
+
+    @PutMapping("/api/plans/{planId}/inventory-review/estimates")
+    ResponseEntity<?> saveEstimate(@PathVariable UUID planId, @RequestBody EstimateInput input, Principal owner) {
+        if (input == null || input.date() == null || input.date().getYear() < 1900 || input.date().getYear() > 9999
+                || !validText(input.product(), 255) || input.low() == null || input.high() == null
+                || input.low() < 0 || input.high() < input.low() || input.high() > 9_007_199_254_740_991L
+                || input.basis() == null || input.basis() == InventoryDemand.Basis.INSUFFICIENT) {
+            return invalid("저장할 날짜, 메뉴와 예상 판매량 범위를 확인해 주세요.");
+        }
+        var store = findStore(planId, owner);
+        if (store == null) return notFound();
+        var product = input.product().strip();
+        var existing = existingEstimate(planId, input, product);
+        if (existing != null) return existing;
+        var estimate = weatherReference(store, input.date(), product).estimate();
+        if (!input.low().equals(estimate.low()) || !input.high().equals(estimate.high()) || input.basis() != estimate.basis()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiError("INVENTORY_ESTIMATE_CHANGED",
+                    "예상 판매량이 달라졌어요. 예상 판매량을 다시 조회한 뒤 저장해 주세요.", null));
+        }
+        int updated = jdbc.sql("""
+                INSERT INTO inventory_demand_snapshots (plan_id, target_date, product_name, low, high, basis)
+                SELECT id, :date, :product, :low, :high, :basis
+                FROM execution_plans WHERE id = :plan AND strategy_code = 'INVENTORY'
+                ON CONFLICT (plan_id, target_date, product_name) DO NOTHING
+                """).param("plan", planId).param("date", input.date()).param("product", product)
+                .param("low", estimate.low()).param("high", estimate.high()).param("basis", estimate.basis().name()).update();
+        if (updated == 0 && findStore(planId, owner) == null) return notFound();
+        if (updated == 0) {
+            existing = existingEstimate(planId, input, product);
+            return existing == null ? notFound() : existing;
+        }
+        return ResponseEntity.noContent().build();
+    }
+
+    private ResponseEntity<?> existingEstimate(UUID planId, EstimateInput input, String product) {
+        return jdbc.sql("""
+                SELECT low, high, basis FROM inventory_demand_snapshots
+                WHERE plan_id = :plan AND target_date = :date AND product_name = :product
+                """).param("plan", planId).param("date", input.date()).param("product", product)
+                .query((rs, row) -> rs.getLong("low") == input.low() && rs.getLong("high") == input.high()
+                        && rs.getString("basis").equals(input.basis().name()))
+                .optional().<ResponseEntity<?>>map(matches -> matches ? ResponseEntity.noContent().build()
+                        : ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiError("INVENTORY_ESTIMATE_ALREADY_SAVED",
+                                "이 날짜와 메뉴에는 이미 저장한 예상 범위가 있어요.", null)))
+                .orElse(null);
     }
 
     @GetMapping("/api/plans/{planId}/inventory-review/recipes")
@@ -165,6 +241,20 @@ class InventoryReviewController {
     private record ForecastStore(UUID id, String name, String address, String area) {}
     record Recipe(String ingredientName, String unit, String amount) {}
     record WeatherReference(LocalDate date, String area, KmaForecast.Daily forecast, String sourceUrl, InventoryDemand.Estimate estimate) {}
+    record EstimateInput(LocalDate date, String product, Long low, Long high, InventoryDemand.Basis basis) {}
+    record SavedEstimate(LocalDate date, String product, long low, long high, InventoryDemand.Basis basis, OffsetDateTime savedAt) {}
+    record EstimateComparison(SavedEstimate estimate, Long actualSales, ComparisonStatus status) {}
+    enum ComparisonStatus {
+        PENDING_DATE, POS_REQUIRED, WITHIN_RANGE, BELOW_RANGE, ABOVE_RANGE;
+
+        static ComparisonStatus of(SavedEstimate estimate, Long actual, LocalDate today) {
+            if (!estimate.date().isBefore(today)) return PENDING_DATE;
+            if (actual == null) return POS_REQUIRED;
+            if (actual < estimate.low()) return BELOW_RANGE;
+            if (actual > estimate.high()) return ABOVE_RANGE;
+            return WITHIN_RANGE;
+        }
+    }
     record Input(UUID id, String name, String unit, String stock, String expectedUse, String incoming, String finalOrder) {}
     record Item(UUID id, String name, String unit, String stock, String expectedUse, String incoming, String finalOrder,
                 BigDecimal shortage) {

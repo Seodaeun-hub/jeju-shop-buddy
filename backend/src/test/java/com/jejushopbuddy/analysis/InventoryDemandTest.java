@@ -63,6 +63,25 @@ class InventoryDemandTest {
     }
 
     @Test
+    void comparesCompletedDaysWithInclusiveSavedBounds() {
+        var saved = new InventoryReviewController.SavedEstimate(TARGET, NOODLES, 13, 24,
+                InventoryDemand.Basis.WEATHER, null);
+        var today = TARGET.plusDays(1);
+        assertThat(InventoryReviewController.ComparisonStatus.of(saved, null, TARGET))
+                .isEqualTo(InventoryReviewController.ComparisonStatus.PENDING_DATE);
+        assertThat(InventoryReviewController.ComparisonStatus.of(saved, null, today))
+                .isEqualTo(InventoryReviewController.ComparisonStatus.POS_REQUIRED);
+        assertThat(InventoryReviewController.ComparisonStatus.of(saved, 13L, today))
+                .isEqualTo(InventoryReviewController.ComparisonStatus.WITHIN_RANGE);
+        assertThat(InventoryReviewController.ComparisonStatus.of(saved, 24L, today))
+                .isEqualTo(InventoryReviewController.ComparisonStatus.WITHIN_RANGE);
+        assertThat(InventoryReviewController.ComparisonStatus.of(saved, 12L, today))
+                .isEqualTo(InventoryReviewController.ComparisonStatus.BELOW_RANGE);
+        assertThat(InventoryReviewController.ComparisonStatus.of(saved, 28L, today))
+                .isEqualTo(InventoryReviewController.ComparisonStatus.ABOVE_RANGE);
+    }
+
+    @Test
     void keepsOnlyValidObservationsFromTheStoresStationAndDateRange() {
         assertThat(KmaObservations.nearest(new Coordinates(33.4985768, 126.4591668)).id()).isEqualTo(184);
         var payload = JsonMapper.builder().build().readTree("""
