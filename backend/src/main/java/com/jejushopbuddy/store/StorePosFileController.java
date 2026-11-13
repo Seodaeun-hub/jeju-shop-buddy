@@ -20,8 +20,10 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -77,10 +79,8 @@ class StorePosFileController {
         if (calendarDate != null && (calendarDate.getYear() < 1900 || calendarDate.isAfter(today))) {
             return error(HttpStatus.BAD_REQUEST, "INVALID_POS_CALENDAR_DATE", "POS를 기록할 날짜를 확인해 주세요.");
         }
-        if ((coverageStart == null) != (coverageEnd == null) || (coverageStart != null
-                && (coverageStart.getYear() < 1900 || coverageStart.isAfter(coverageEnd)
-                || coverageEnd.isAfter(today)))) {
-            return error(HttpStatus.BAD_REQUEST, "INVALID_POS_COVERAGE", "POS를 내보낸 시작일과 종료일을 확인해 주세요.");
+        if ((coverageStart != null || coverageEnd != null) && !validCoverage(coverageStart, coverageEnd, today)) {
+            return invalidCoverage();
         }
         byte[] content;
         try {
@@ -122,6 +122,24 @@ class StorePosFileController {
                 .body(stored.content());
     }
 
+    @PatchMapping(path = "/{fileId}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<?> updateCoverage(@PathVariable UUID storeId, @PathVariable UUID fileId,
+                                     @RequestBody Coverage coverage, Principal owner) {
+        if (coverage == null || !validCoverage(coverage.coverageStart(), coverage.coverageEnd(), LocalDate.now(SEOUL))) {
+            return invalidCoverage();
+        }
+        var saved = jdbc.sql("""
+                UPDATE store_pos_files f SET coverage_start = :start, coverage_end = :end
+                FROM stores s JOIN owners o ON o.id = s.owner_id
+                WHERE f.id = :file AND f.store_id = :store AND s.id = f.store_id AND o.email = :email
+                RETURNING f.id, f.kind, f.filename, octet_length(f.content) AS size, f.uploaded_at,
+                          f.coverage_start, f.coverage_end, f.calendar_date
+                """).param("file", fileId).param("store", storeId).param("email", owner.getName())
+                .param("start", coverage.coverageStart()).param("end", coverage.coverageEnd())
+                .query(StorePosFileController::metadata).optional();
+        return saved.isEmpty() ? missingFile() : ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(saved.get());
+    }
+
     @DeleteMapping("/{fileId}")
     ResponseEntity<?> delete(@PathVariable UUID storeId, @PathVariable UUID fileId, Principal owner) {
         int deleted = jdbc.sql("""
@@ -155,6 +173,14 @@ class StorePosFileController {
         return error(HttpStatus.NOT_FOUND, "POS_FILE_NOT_FOUND", "저장된 파일을 찾을 수 없어요. 파일 목록을 다시 확인해 주세요.");
     }
 
+    private static boolean validCoverage(LocalDate start, LocalDate end, LocalDate today) {
+        return start != null && end != null && start.getYear() >= 1900 && !start.isAfter(end) && !end.isAfter(today);
+    }
+
+    private static ResponseEntity<?> invalidCoverage() {
+        return error(HttpStatus.BAD_REQUEST, "INVALID_POS_COVERAGE", "POS를 내보낸 시작일과 종료일을 확인해 주세요.");
+    }
+
     private static ResponseEntity<?> error(HttpStatus status, String code, String message) {
         return ResponseEntity.status(status).cacheControl(CacheControl.noStore())
                 .body(new StoreController.ApiError(code, message, null));
@@ -162,5 +188,6 @@ class StorePosFileController {
 
     private record PosFile(UUID id, String kind, String filename, int size, OffsetDateTime uploadedAt,
                            LocalDate coverageStart, LocalDate coverageEnd, LocalDate calendarDate) {}
+    private record Coverage(LocalDate coverageStart, LocalDate coverageEnd) {}
     private record StoredFile(String filename, byte[] content) {}
 }

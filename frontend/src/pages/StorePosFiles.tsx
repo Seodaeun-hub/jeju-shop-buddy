@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router'
-import { deletePosFile, listPosFiles, uploadPosFile } from '../api/shop'
+import { deletePosFile, listPosFiles, updatePosFileCoverage, uploadPosFile } from '../api/shop'
 import type { PosFileKind, StoredPosFile } from '../api/shop'
 import { PosFileCalendar } from '../components/PosFileCalendar'
 import { useStandaloneApp } from '../components/useStandaloneApp'
@@ -18,6 +18,64 @@ function startingDate(value: string | null, today: string) {
   return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value ? today : value
 }
 
+function PosCoverageDialog({ file, today, onClose, onSave }: {
+  file: StoredPosFile; today: string; onClose: () => void
+  onSave: (start: string, end: string) => Promise<void>
+}) {
+  const dialog = useRef<HTMLDialogElement>(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    const element = dialog.current
+    element?.showModal()
+    return () => element?.close()
+  }, [])
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (saving) return
+    const fields = new FormData(event.currentTarget)
+    const start = String(fields.get('coverageStart') ?? '')
+    const end = String(fields.get('coverageEnd') ?? '')
+    if (!start || !end || start > end) {
+      setError('POS를 내보낸 시작일과 종료일을 확인해 주세요.')
+      return
+    }
+    setError('')
+    setSaving(true)
+    try {
+      await onSave(start, end)
+      onClose()
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : '내보내기 기간을 저장할 수 없어요.')
+      setSaving(false)
+    }
+  }
+
+  return <dialog ref={dialog} className="pos-coverage-dialog" aria-labelledby="pos-coverage-title"
+    onCancel={event => { event.preventDefault(); if (!saving) onClose() }}>
+    <form className="form-stack" onSubmit={submit}>
+      <div>
+        <h3 id="pos-coverage-title">내보내기 기간 수정</h3>
+        <p className="muted">{file.filename}</p>
+      </div>
+      <p>쉰 날이나 주문이 없던 날도 포함한 전체 내보내기 기간을 적어 주세요.</p>
+      <fieldset className="pos-coverage-inputs" disabled={saving}>
+        <label>내보내기 시작일<input type="date" name="coverageStart" min="1900-01-01" max={today}
+          defaultValue={file.coverageStart ?? ''} required /></label>
+        <label>내보내기 종료일<input type="date" name="coverageEnd" min="1900-01-01" max={today}
+          defaultValue={file.coverageEnd ?? ''} required /></label>
+      </fieldset>
+      {error && <p className="error" role="alert">{error}</p>}
+      <div className="actions end">
+        <button className="button secondary" type="button" onClick={onClose} disabled={saving}>취소</button>
+        <button className="button primary" type="submit" disabled={saving}>{saving ? '저장 중…' : '기간 저장'}</button>
+      </div>
+    </form>
+  </dialog>
+}
+
 export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKind, uploadRequest }: {
   auth: string; storeId: string; storeName: string; initialDate: string | null; initialKind: string | null
   uploadRequest?: { missingStart: string | null; resultTo?: string }
@@ -27,6 +85,7 @@ export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKi
   const input = useRef<HTMLInputElement>(null)
   const uploadHeading = useRef<HTMLHeadingElement>(null)
   const [files, setFiles] = useState<StoredPosFile[]>()
+  const [editingCoverage, setEditingCoverage] = useState<StoredPosFile>()
   const [kind, setKind] = useState<PosFileKind>(initialKind === 'PRODUCT' ? 'PRODUCT' : 'PAYMENT')
   const [view, setView] = useState<'calendar' | 'all'>('calendar')
   const [selectedDate, setSelectedDate] = useState(() => startingDate(initialDate, today))
@@ -41,7 +100,7 @@ export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKi
   const busy = Boolean(operation)
   const [loadError, setLoadError] = useState('')
   const [error, setError] = useState('')
-  const [status, setStatus] = useState<{ message: string; operation: 'upload' | 'delete' }>()
+  const [status, setStatus] = useState<{ message: string; operation: 'upload' | 'delete' | 'coverage' }>()
   const [retry, setRetry] = useState(0)
   const filesReady = files !== undefined
   const focusUpload = Boolean(uploadRequest)
@@ -140,6 +199,13 @@ export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKi
     }
   }
 
+  async function saveCoverage(file: StoredPosFile, start: string, end: string) {
+    const saved = await updatePosFileCoverage(auth, storeId, file.id, start, end)
+    setFiles(current => current?.map(item => item.id === saved.id ? saved : item))
+    setStatus({ message: `‘${saved.filename}’의 내보내기 기간을 저장했어요.`, operation: 'coverage' })
+    notifyResultsDataChanged()
+  }
+
   function fileList(items: StoredPosFile[], empty: string, showRecordDate: boolean) {
     if (!items.length) return <p className="muted">{empty}</p>
     return <ul className="pos-library-list" aria-label="저장된 POS 파일">
@@ -147,10 +213,19 @@ export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKi
         <div><strong>{file.filename}</strong>
           <p className="muted">{fileKinds[file.kind]}{showRecordDate && ` · 기록일 ${calendarDate(file)}`}
             {' · '}올린 날 {dateFormat.format(new Date(file.uploadedAt))}
-            {file.coverageStart && file.coverageEnd && ` · 내보낸 기간 ${file.coverageStart} ~ ${file.coverageEnd}`}</p>
+            {file.coverageStart && file.coverageEnd ? ` · 내보낸 기간 ${file.coverageStart} ~ ${file.coverageEnd}`
+              : ' · 내보낸 기간 미입력'}</p>
         </div>
-        <button type="button" className="button secondary small" disabled={busy} aria-label={file.filename + ' 삭제'}
-          onClick={() => void remove(file)}>삭제</button>
+        <div className="pos-file-actions">
+          <button type="button" className="button secondary small" disabled={busy} aria-haspopup="dialog"
+            aria-label={file.filename + ' 기간 수정'} onClick={() => {
+              setError('')
+              setStatus(undefined)
+              setEditingCoverage(file)
+            }}>기간 수정</button>
+          <button type="button" className="button secondary small" disabled={busy} aria-label={file.filename + ' 삭제'}
+            onClick={() => void remove(file)}>삭제</button>
+        </div>
       </li>)}
     </ul>
   }
@@ -204,6 +279,8 @@ export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKi
       <div><h2 id="pos-files-title">POS 파일 관리</h2><p className="muted">보관한 POS는 이 매장의 매출 분석과 행사 결과 확인에 쓰여요.</p></div>
       <Link className="button secondary" to={'/sales?' + new URLSearchParams({ storeId })}>매출 입력하기</Link>
     </div>
+    {editingCoverage && <PosCoverageDialog file={editingCoverage} today={today}
+      onClose={() => setEditingCoverage(undefined)} onSave={(start, end) => saveCoverage(editingCoverage, start, end)} />}
     {loadError ? <p role="alert" className="error">{loadError} <button type="button" className="text-button" onClick={() => {
       setLoadError('')
       setRetry(value => value + 1)
