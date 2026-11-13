@@ -46,7 +46,8 @@ final class StrategyAgentClient {
             "EXPECTED_USAGE", "다음 입고까지 예상 사용량",
             "INCOMING_STOCK", "입고 예정량");
 
-    private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).build();
+    private final HttpClient http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)
+            .connectTimeout(Duration.ofSeconds(1)).build();
     private final ObjectMapper json;
     private final JejuMarketContext market;
     private final String baseUrl;
@@ -67,7 +68,8 @@ final class StrategyAgentClient {
             String fingerprint = fingerprint(json.writeValueAsString(input));
             var request = new AgentRequest(VERSION, analysis.id(), fingerprint, input);
             return post("/internal/strategy-recommendations", request, AgentResponse.class)
-                    .map(result -> new Generated(fingerprint, mapResponse(analysis, fingerprint, input.strategies(), facts, result)));
+                    .map(result -> new Generated(fingerprint, mapResponse(analysis, fingerprint, input.strategies(), facts, result,
+                            market.forStore(analysis.storeId(), analysis.beforeMonth(), analysis.afterMonth()).context().bsiSources())));
         } catch (JacksonException | IllegalArgumentException error) {
             LOG.debug("Strategy Agent unavailable or invalid ({})", error.getClass().getSimpleName());
             return Optional.empty();
@@ -100,6 +102,11 @@ final class StrategyAgentClient {
         if (baseUrl.isEmpty()) return Optional.empty();
         return post("/internal/store-notice", input, StoreNoticeController.Draft.class)
                 .filter(draft -> hasText(draft.title()) && hasText(draft.message()));
+    }
+
+    Optional<MenuCostController.ReceiptDraft> receipt(MenuCostController.ReceiptInput input) {
+        return baseUrl.isEmpty() ? Optional.empty()
+                : post("/internal/receipt", input, MenuCostController.ReceiptDraft.class, Duration.ofSeconds(35));
     }
 
     Optional<String> nextPromotionExplanation(PromotionImpactController.ExplanationInput input) {
@@ -230,7 +237,7 @@ final class StrategyAgentClient {
     }
 
     private static Response mapResponse(AnalysisResponse analysis, String fingerprint, List<Candidate> candidates,
-                                        Map<String, Fact> facts, AgentResponse response) {
+                                        Map<String, Fact> facts, AgentResponse response, List<JejuMarketContext.Source> bsiSources) {
         require(response != null && VERSION.equals(response.schemaVersion()) && analysis.id().equals(response.analysisId())
                 && fingerprint.equals(response.inputFingerprint()) && "OK".equals(response.status())
                 && response.requiredInputs() != null && response.requiredInputs().isEmpty()
@@ -269,7 +276,8 @@ final class StrategyAgentClient {
                     custom && Boolean.TRUE.equals(card.marketing()) ? Boolean.TRUE : null));
         }
         return new Response(analysis.id(), analysis.beforeMonth(), analysis.afterMonth(), List.copyOf(suggestions),
-                "AGENT", contextIds.stream().map(id -> facts.get(id).toEvidence()).toList());
+                "AGENT", contextIds.stream().map(facts::get).map(fact ->
+                        new Evidence(fact.type(), fact.unit(), fact.label(), fact.before(), fact.after(), bsiSources)).toList());
     }
 
     private static boolean allowedEvidence(String code, String type) {

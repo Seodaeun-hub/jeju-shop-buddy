@@ -58,7 +58,7 @@ final class SalesStrategies {
         }
         var bsi = context.bsi();
         if (bsi != null) {
-            outreachEvidence.add(new Evidence("JEJU_BSI", "INDEX", null, bsi.before(), bsi.after()));
+            outreachEvidence.add(new Evidence("JEJU_BSI", "INDEX", null, bsi.before(), bsi.after(), context.bsiSources()));
             outreachReason += " 제주 전체 소상공인 체감 BSI는 " + bsi.before() + "에서 " + bsi.after()
                     + "로 바뀌었어요. 제주 경기 흐름을 참고하는 지표예요.";
         }
@@ -144,7 +144,12 @@ final class SalesStrategies {
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    record Evidence(String source, String metric, String label, BigDecimal before, BigDecimal after) {
+    record Evidence(String source, String metric, String label, BigDecimal before, BigDecimal after,
+                    List<JejuMarketContext.Source> sources) {
+        Evidence(String source, String metric, String label, BigDecimal before, BigDecimal after) {
+            this(source, metric, label, before, after, null);
+        }
+
         Evidence(String source, String metric, String label, long before, long after) {
             this(source, metric, label, BigDecimal.valueOf(before), BigDecimal.valueOf(after));
         }

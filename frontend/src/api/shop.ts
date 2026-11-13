@@ -370,7 +370,10 @@ export type StrategyCode = 'OUTREACH' | 'PROMOTION' | 'INVENTORY' | 'CUSTOM'
 export type MarketContext = {
   card?: { before: number; after: number }
   bsi?: { before: number; after: number }
+  cardReference?: { before: number; after: number; scope: string; source: MarketSource }
+  bsiSources?: MarketSource[]
 }
+export type MarketSource = { label: string; url: string }
 
 export function fetchMarketContext(area: string, industry: string, beforeMonth: string, afterMonth: string, signal: AbortSignal) {
   const query = new URLSearchParams({ area, industry, beforeMonth, afterMonth })
@@ -383,6 +386,7 @@ export type StrategyEvidence = {
   label?: string
   before: number
   after: number
+  sources?: MarketSource[]
 }
 export type SavedStrategy = {
   marketing?: boolean
@@ -473,7 +477,47 @@ export function saveInventoryReview(auth: string, id: string, items: InventoryIt
     items.map(({ shortage: _shortage, ...input }) => input))
 }
 
-export type PromotionDefaults = { budgetWon: number | null; costs: { productName: string; costWon: number }[] }
+export type PromotionDefaults = {
+  budgetWon: number | null
+  costs: { productName: string; costWon: number; source?: 'MENU_COST' | 'PREVIOUS_REVIEW' }[]
+}
+
+type MenuCostIngredient = InventoryRecipe & { unitPriceWon: number | null }
+export type MenuCost = {
+  productName: string
+  ingredients: MenuCostIngredient[]
+  costWon: number | null
+  priceWon: number | null
+}
+
+const menuCostsPath = (storeId: string) => `/api/stores/${encodeURIComponent(storeId)}/menu-costs`
+const breakEvenPath = (storeId: string) => `/api/stores/${encodeURIComponent(storeId)}/break-even`
+export type BreakEvenSettings = {
+  rentWon: number; payrollWon: number; otherWon: number; operatingDays: number
+  extraVariablePercent: number; ingredientPercentOverride: number | null
+}
+export type BreakEvenReview = {
+  settings: BreakEvenSettings; saved: boolean
+  evidence: { month: string; salesWon: number; coveredRevenueWon: number; missingProducts: number; ingredientPercent: number | null } | null
+}
+export const fetchBreakEven = (auth: string, storeId: string, signal: AbortSignal) =>
+  request<BreakEvenReview>(breakEvenPath(storeId), auth, 'GET', undefined, signal)
+export const saveBreakEven = (auth: string, storeId: string, settings: BreakEvenSettings) =>
+  request<BreakEvenReview>(breakEvenPath(storeId), auth, 'PUT', settings)
+const menuCostPath = (storeId: string, productName: string) =>
+  `${menuCostsPath(storeId)}?${new URLSearchParams({ productName })}`
+
+export const listMenuCosts = (auth: string, storeId: string, signal: AbortSignal) =>
+  request<string[]>(menuCostsPath(storeId), auth, 'GET', undefined, signal)
+
+export const fetchMenuCost = (auth: string, storeId: string, productName: string, signal: AbortSignal) =>
+  request<MenuCost>(menuCostPath(storeId, productName), auth, 'GET', undefined, signal)
+
+export const saveMenuCost = (auth: string, storeId: string, productName: string, ingredients: MenuCostIngredient[]) =>
+  request<MenuCost>(menuCostPath(storeId, productName), auth, 'PUT', ingredients)
+export type ReceiptLine = { name: string; unit: string | null; quantity: string | null; totalWon: number | null }
+export const readMenuReceipt = (auth: string, storeId: string, imageDataUrl: string, signal: AbortSignal) =>
+  request<{ lines: ReceiptLine[] }>(menuCostsPath(storeId) + '/receipt', auth, 'POST', { imageDataUrl }, signal)
 
 export function fetchPromotionDefaults(auth: string, id: string, signal: AbortSignal) {
   return request<PromotionDefaults>(`/api/plans/${encodeURIComponent(id)}/promotion-review/defaults`, auth, 'GET', undefined, signal)

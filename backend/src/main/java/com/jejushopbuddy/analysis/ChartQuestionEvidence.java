@@ -58,9 +58,10 @@ class ChartQuestionEvidence {
                     "제주데이터허브", "https://data.edmgr.kr/dataView.do?id=jejudatahub-net-748"));
         }
         if (context.bsi() != null) {
+            var sources = context.bsiSources();
+            var source = sources.getLast();
             snapshot.add(metric(analysis, "bsi", "JEJU_BSI", "소상공인 경기 체감지수", "제주 전체", "INDEX",
-                    context.bsi().before(), context.bsi().after(), "소상공인시장진흥공단",
-                    "https://www.data.go.kr/data/3060077/fileData.do"));
+                    context.bsi().before(), context.bsi().after(), source.label(), source.url()));
         }
         var fingerprint = agent.fingerprintFor(analysis);
         var recommendation = jdbc.sql("""
