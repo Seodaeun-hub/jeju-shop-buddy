@@ -55,7 +55,7 @@ METRICS = {
     "STOCK": ("STOCK", "품목별 재고", "현재 재고·예상 사용량·입고 예정량"),
 }
 TOPICS = {"AFTERNOON_ORDER": "오후 주문 안내", "PARKING": "주차", "WAIT_TIME": "대기시간"}
-STRATEGIES = {"OUTREACH": "주문 안내 점검", "PROMOTION": "시간대 혜택 검토", "INVENTORY": "발주량 검토"}
+STRATEGIES = {"OUTREACH": "주문 안내 점검", "PROMOTION": "시간대 혜택 검토", "INVENTORY": "발주량 검토", "CUSTOM": "맞춤 대응 전략"}
 TOKEN = re.compile(r"\{\{([\w-]+)\.([\w.]+)\}\}")
 TIME_DROP_QUESTION = re.compile(
     r"(?:(?:우리\s*가게|매장)\s*)?"

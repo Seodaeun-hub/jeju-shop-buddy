@@ -144,6 +144,22 @@ class ChartQuestionTest(unittest.TestCase):
         self.assertIsNone(answer["planId"])
         self.assert_text(answer, "63.1", "64.4", "오후 2~5시 결제 건수", "337건", "189건")
 
+    def test_saved_custom_strategy_and_plan_allow_chart_questions(self):
+        payload = fixture()
+        for fact in payload["availableEvidence"]:
+            if fact["kind"] == "STRATEGY":
+                fact.update(code="CUSTOM", label=None)
+            elif fact["kind"] == "PLAN":
+                fact["strategyCode"] = "CUSTOM"
+        payload["allowedActions"].append({"type": "OPEN_STRATEGY", "targetId": "CUSTOM"})
+
+        answer = self.ask(payload, QUESTIONS[1][0], classified(["BSI", "TIME_SLOT"], largestTimeDrop=True))
+        self.assert_economy_and_time_answer(answer)
+
+        answer = self.ask(payload, "맞춤 전략은 뭔가요?", classified(["STRATEGY"], strategyCode="CUSTOM"))
+        self.assert_text(answer, "맞춤 대응 전략")
+        self.assertIn({"type": "OPEN_STRATEGY", "targetId": "CUSTOM"}, answer["actions"])
+
     def test_economy_and_time_does_not_pick_up_execution_intents(self):
         payload = fixture()
         payload["context"].update(recentQuestions=[QUESTIONS[0][0]], focusedEvidenceIds=["e1", "e3"])

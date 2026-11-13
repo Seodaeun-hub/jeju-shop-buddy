@@ -4,7 +4,7 @@ from urllib.parse import urlsplit
 
 from pydantic import Field, StrictFloat, StrictInt, field_validator, model_validator
 
-from .schemas import Contract
+from .schemas import Contract, StrategyCode
 
 Chart = Literal["MONTHLY_SALES", "MARKET_CARD_SALES", "JEJU_BSI", "TIME_SERIES"]
 Intent = Literal[
@@ -72,7 +72,7 @@ class MetricFact(Fact):
 
 class StrategyFact(Fact):
     kind: Literal["STRATEGY"]
-    code: Literal["OUTREACH", "PROMOTION", "INVENTORY"]
+    code: StrategyCode
     reason: str | None = None
     evidenceIds: list[str] = Field(default_factory=list)
 
@@ -81,7 +81,7 @@ class GuideFact(Fact):
     kind: Literal["GUIDE"]
     action: str
     when: str | None = None
-    strategyCode: Literal["OUTREACH", "PROMOTION", "INVENTORY"] = "OUTREACH"
+    strategyCode: StrategyCode = "OUTREACH"
 
 
 class ReviewFact(Fact):
@@ -96,7 +96,7 @@ class PlanFact(Fact):
     planId: str
     completed: int = Field(ge=0)
     total: int = Field(ge=0)
-    strategyCode: Literal["OUTREACH", "PROMOTION", "INVENTORY"] | None = None
+    strategyCode: StrategyCode | None = None
     startDate: str | None = None
     endDate: str | None = None
 
@@ -157,7 +157,7 @@ class QuestionIntent(Contract):
     intents: list[Intent]
     timeMetric: Literal["COUNT", "KRW"] | None
     reviewTopic: Topic | None
-    strategyCode: Literal["OUTREACH", "PROMOTION", "INVENTORY"] | None
+    strategyCode: StrategyCode | None
     focusEvidenceId: str | None
     reviewPeriod: PeriodPair | None
     largestTimeDrop: bool
