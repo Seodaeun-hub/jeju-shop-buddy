@@ -26,6 +26,7 @@ import tools.jackson.databind.ObjectMapper;
 @RestController
 class InventoryReviewController {
     private static final int MAX_ITEMS = 500;
+    private static final int MAX_ESTIMATE_NOTE_LENGTH = 200;
     private static final BigDecimal MAX_QUANTITY = BigDecimal.valueOf(1_000_000_000);
     private static final Pattern QUANTITY = Pattern.compile("[0-9]+(\\.[0-9]{1,3})?");
     private final JdbcClient jdbc;
@@ -67,10 +68,13 @@ class InventoryReviewController {
         var store = findStore(planId, owner);
         if (store == null) return notFound();
         var saved = jdbc.sql("""
-                SELECT d.target_date, d.product_name, d.low, d.high, d.basis, d.saved_at, d.plan_id = :plan AS current_plan
+                SELECT d.target_date, d.product_name, d.low, d.high, d.basis, d.saved_at,
+                       d.plan_id = :plan AS current_plan, n.note
                 FROM inventory_demand_snapshots d
                 JOIN execution_plans p ON p.id = d.plan_id
                 JOIN sales_analyses a ON a.id = p.analysis_id
+                LEFT JOIN inventory_demand_notes n ON n.store_id = a.store_id
+                    AND n.target_date = d.target_date AND n.product_name = d.product_name
                 WHERE a.store_id = :store AND p.strategy_code = 'INVENTORY'
                   AND (d.plan_id = :plan OR :includeHistory)
                 ORDER BY d.target_date DESC, d.product_name, d.saved_at, d.plan_id
@@ -78,16 +82,45 @@ class InventoryReviewController {
                 .query((rs, row) -> new PlanEstimate(new SavedEstimate(
                         rs.getObject("target_date", LocalDate.class), rs.getString("product_name"), rs.getLong("low"),
                         rs.getLong("high"), InventoryDemand.Basis.valueOf(rs.getString("basis")),
-                        rs.getObject("saved_at", OffsetDateTime.class)), rs.getBoolean("current_plan"))).list();
+                        rs.getObject("saved_at", OffsetDateTime.class)), rs.getBoolean("current_plan"), rs.getString("note"))).list();
         var today = LocalDate.now(InventoryDemand.SEOUL);
         var archive = saved.stream().anyMatch(row -> row.estimate().date().isBefore(today))
                 ? pos.load(store.id()) : List.<ProductPosArchive.Days>of();
         var comparisons = saved.stream().map(row -> {
             var estimate = row.estimate();
             Long actual = estimate.date().isBefore(today) ? ProductPosArchive.soldOn(archive, estimate.product(), estimate.date()) : null;
-            return new EstimateComparison(estimate, actual, ComparisonStatus.of(estimate, actual, today), row.currentPlan());
+            return new EstimateComparison(estimate, actual, ComparisonStatus.of(estimate, actual, today), row.currentPlan(), row.note());
         }).toList();
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(comparisons);
+    }
+
+    @PutMapping("/api/plans/{planId}/inventory-review/estimate-note")
+    ResponseEntity<?> saveEstimateNote(@PathVariable UUID planId, @RequestBody EstimateNote input, Principal owner) {
+        if (input == null || input.date() == null || input.date().getYear() < 1900
+                || !input.date().isBefore(LocalDate.now(InventoryDemand.SEOUL)) || !validText(input.product(), 255)
+                || !validText(input.note(), MAX_ESTIMATE_NOTE_LENGTH)
+                || input.note().codePoints().anyMatch(ch -> Character.isISOControl(ch) || ch == 0x2028 || ch == 0x2029)) {
+            return invalid("날짜와 메뉴를 확인하고 메모를 200자 이내 한 줄로 입력해 주세요.");
+        }
+        var store = findStore(planId, owner);
+        if (store == null) return notFound();
+        var saved = new EstimateNote(input.date(), input.product().strip(), input.note().strip());
+        int updated = jdbc.sql("""
+                INSERT INTO inventory_demand_notes (store_id, target_date, product_name, note)
+                SELECT :store, :date, :product, :note
+                WHERE EXISTS (
+                    SELECT 1 FROM inventory_demand_snapshots d
+                    JOIN execution_plans p ON p.id = d.plan_id
+                    JOIN sales_analyses a ON a.id = p.analysis_id
+                    WHERE a.store_id = :store AND p.strategy_code = 'INVENTORY'
+                      AND d.target_date = :date AND d.product_name = :product
+                )
+                ON CONFLICT (store_id, target_date, product_name) DO UPDATE SET note = EXCLUDED.note
+                """).param("store", store.id()).param("date", saved.date()).param("product", saved.product())
+                .param("note", saved.note()).update();
+        if (updated == 0) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ApiError(
+                "INVENTORY_ESTIMATE_NOT_FOUND", "이 날짜와 메뉴에 저장한 예상 범위를 찾을 수 없어요.", null));
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(saved);
     }
 
     @PutMapping("/api/plans/{planId}/inventory-review/estimates")
@@ -250,8 +283,9 @@ class InventoryReviewController {
     record WeatherReference(LocalDate date, String area, KmaForecast.Daily forecast, String sourceUrl, InventoryDemand.Estimate estimate) {}
     record EstimateInput(LocalDate date, String product, Long low, Long high, InventoryDemand.Basis basis) {}
     record SavedEstimate(LocalDate date, String product, long low, long high, InventoryDemand.Basis basis, OffsetDateTime savedAt) {}
-    private record PlanEstimate(SavedEstimate estimate, boolean currentPlan) {}
-    record EstimateComparison(SavedEstimate estimate, Long actualSales, ComparisonStatus status, boolean currentPlan) {}
+    private record PlanEstimate(SavedEstimate estimate, boolean currentPlan, String note) {}
+    record EstimateComparison(SavedEstimate estimate, Long actualSales, ComparisonStatus status, boolean currentPlan, String note) {}
+    record EstimateNote(LocalDate date, String product, String note) {}
     enum ComparisonStatus {
         PENDING_DATE, POS_REQUIRED, WITHIN_RANGE, BELOW_RANGE, ABOVE_RANGE;
 

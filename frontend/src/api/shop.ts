@@ -46,7 +46,9 @@ export type InventoryEstimateComparison = {
   actualSales: number | null
   status: 'PENDING_DATE' | 'POS_REQUIRED' | 'WITHIN_RANGE' | 'BELOW_RANGE' | 'ABOVE_RANGE'
   currentPlan: boolean
+  note: string | null
 }
+export type InventoryEstimateNote = { date: string; product: string; note: string }
 
 const inventoryEstimatesPath = (planId: string) =>
   `/api/plans/${encodeURIComponent(planId)}/inventory-review/estimates`
@@ -56,6 +58,9 @@ export const fetchInventoryEstimates = (auth: string, planId: string, signal?: A
 
 export const saveInventoryEstimate = (auth: string, planId: string, estimate: InventoryEstimateInput) =>
   send(inventoryEstimatesPath(planId), auth, 'PUT', estimate)
+
+export const saveInventoryEstimateNote = (auth: string, planId: string, input: InventoryEstimateNote) =>
+  request<InventoryEstimateNote>(`/api/plans/${encodeURIComponent(planId)}/inventory-review/estimate-note`, auth, 'PUT', input)
 
 const inventoryRecipesPath = (planId: string, productName: string) =>
   `/api/plans/${encodeURIComponent(planId)}/inventory-review/recipes?${new URLSearchParams({ productName })}`
