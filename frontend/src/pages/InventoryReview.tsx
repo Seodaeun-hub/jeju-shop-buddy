@@ -356,7 +356,9 @@ function DemandEstimate({ estimate, uploadTo, notes, pendingExclusions, disabled
         <p><strong>{product} 예상 판매량 · {formatNumber(low)}~{formatNumber(high)}개</strong></p>
         <p className="muted">{basis === 'WEATHER'
           ? `같은 요일에 강수 여부가 같았던 ${samples.length}일의 판매 범위예요.`
-          : `날씨까지 같은 비교일이 부족해 같은 요일 ${samples.length}일의 판매 범위를 참고했어요.`}</p>
+          : historical && precipitation === null
+            ? `기상청 강수 관측을 확인할 수 없어 같은 요일 ${samples.length}일의 판매 범위를 참고했어요. 위의 예상 판매량 보기를 눌러 다시 조회할 수 있어요.`
+            : `날씨까지 같은 비교일이 부족해 같은 요일 ${samples.length}일의 판매 범위를 참고했어요.`}</p>
         <p className="muted">아래 발주 품목에서 메뉴 한 개당 재료 사용량을 적으면 준비할 양을 계산해요.</p>
       </>}
     {originalBounds && originalBounds.low !== null && originalBounds.high !== null && <p className="muted">
