@@ -4,7 +4,7 @@ import { fetchPromotionLocalEvents, fetchPromotionPhoto } from '../api/shop'
 import { PromotionReviewPoints, usePromotionReviews } from '../components/PromotionReviewPoints'
 import type { PromotionReviewSearch } from '../components/PromotionReviewPoints'
 import { prepareMenuPhoto } from '../data/menuPhoto'
-import { editablePromotionCaption, promotionCaptionFooter, promotionCaptionLimit, promotionCaptions, promotionChannels, promotionOffer } from '../data/promotionChannels'
+import { contextualPromotionEvent, editablePromotionCaption, promotionCaptionFooter, promotionCaptionLimit, promotionCaptions, promotionChannels, promotionOffer } from '../data/promotionChannels'
 import { formatNumber, promotionTones, won } from '../data/shop'
 import type { Plan, PromotionChannelCopy, PromotionDraftInput, PromotionLocalEvent, PromotionTone } from '../data/shop'
 
@@ -89,7 +89,10 @@ export function PromotionDraftForm({ plan, auth, productNames, reviewFirst, onSa
   const offer = currentDraft && promotionOffer(plan, currentDraft)
   const availableEvents = localEvents.filter(event => publishDate && publishDate <= event.endDate)
   const localEvent = availableEvents.find(event => event.id === eventId)
-  const captionLimit = promotionCaptionLimit(promotionCaptionFooter(offer, localEvent))
+  const contextualEvent = localEvent && productName
+    ? contextualPromotionEvent(localEvent, plan.store, productName, Boolean(review))
+    : undefined
+  const captionLimit = promotionCaptionLimit(promotionCaptionFooter(offer, contextualEvent))
   const hasEdits = Object.values(channelEdits).some(value => value !== undefined)
   const oldCopy = currentDraft && currentDraft.copySource !== 'EDITED'
     && (currentDraft.channels?.basis === 'BASIC' || (!currentDraft.channels?.basis && !currentDraft.channels?.researched)

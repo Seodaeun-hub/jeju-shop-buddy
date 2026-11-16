@@ -132,6 +132,7 @@ class PromotionDraftController {
         } else if (event != null && !event.applies(plan.start(), plan.end(), input.publishDate())) {
             event = null;
         }
+        if (event != null) event = event.forCaption(plan.storeName(), product, review != null);
         String photo = input.photoDataUrl() != null ? input.photoDataUrl()
                 : input.useSavedPhoto() ? photos.find(plan.storeId(), product) : null;
         if (photo == null && input.useSavedPhoto() && sameSubject) photo = plan.draft().photoDataUrl();

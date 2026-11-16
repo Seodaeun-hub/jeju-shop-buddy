@@ -21,6 +21,14 @@ record PromotionLocalEvent(String id, String name, LocalDate startDate, LocalDat
                 && !publishDate.isAfter(endDate) && !publishDate.isAfter(end);
     }
 
+    PromotionLocalEvent forCaption(String storeName, String subject, boolean hasOffer) {
+        String opening = name + "를 보러 제주 나들이를 계획 중이세요? ";
+        String invitation = hasOffer
+                ? "이번 제주 일정에 " + storeName + "에서 " + subject + " 한 번 맛보는 건 어떠세요?"
+                : storeName + "의 ‘" + subject + "’ 소식도 이번 제주 일정에 참고해 보세요.";
+        return new PromotionLocalEvent(id, name, startDate, endDate, venue, sourceUrl, opening + invitation);
+    }
+
     static String captionFooter(String offer, PromotionLocalEvent event) {
         if (event == null) return offer;
         return offer == null ? event.captionLine() : event.captionLine() + "\n\n" + offer;
