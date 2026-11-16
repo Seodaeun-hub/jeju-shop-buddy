@@ -1,5 +1,5 @@
 import type { Review, ReviewTopic } from '../data/reviews'
-import type { Analysis, CustomerNotice, InventoryItem, MonthlySales, Plan, ProductSale, PromotionDraft, PromotionDraftInput, PromotionReview, PromotionReviewInput, PromotionReviewResearch, PromotionTone, SalesResult, TimeSeries } from '../data/shop'
+import type { Analysis, CustomerNotice, InventoryItem, MonthlySales, Plan, ProductSale, PromotionDraft, PromotionDraftInput, PromotionLocalEvent, PromotionReview, PromotionReviewInput, PromotionReviewResearch, PromotionTone, SalesResult, TimeSeries } from '../data/shop'
 import { formatEvidence } from '../data/strategyEvidence'
 
 export type Area = { code: string; name: string }
@@ -532,6 +532,10 @@ type MenuPhotoStatus = { productName: string; hasPhoto: boolean }
 
 export function createPromotionDraft(auth: string, id: string, input: PromotionDraftInput) {
   return request<PromotionDraft>(`/api/plans/${encodeURIComponent(id)}/promotion-draft`, auth, 'POST', input)
+}
+
+export function fetchPromotionLocalEvents(auth: string, id: string, signal: AbortSignal) {
+  return request<PromotionLocalEvent[]>(`/api/plans/${encodeURIComponent(id)}/promotion-local-events`, auth, 'GET', undefined, signal)
 }
 
 export function regeneratePromotionCaption(auth: string, id: string, tone: PromotionTone) {

@@ -53,6 +53,10 @@ export function PromotionChannelPreviews({ plan, draft, generatedImage, imageFai
       <ul>{draft.reviewSelection.points.map(point => <li key={point.id}>{point.sentence}</li>)}</ul>
       <PromotionReviewSources sources={draft.reviewSelection.sources} />
     </div> : <p className="muted promotion-preview-note">{note}</p>}
+    {draft.localEvent && <p className="muted promotion-preview-note">
+      함께 소개할 제주 행사 · {draft.localEvent.name} · {draft.localEvent.startDate} ~ {draft.localEvent.endDate} · {draft.localEvent.venue}{' '}
+      <a href={draft.localEvent.sourceUrl} target="_blank" rel="noopener noreferrer">공식 행사 안내</a>
+    </p>}
     {weather && <p className="muted promotion-preview-note">
       게시일 {weather.date} · {weather.area} · {weather.season}
       {weather.forecast ? <> · {weather.forecast}

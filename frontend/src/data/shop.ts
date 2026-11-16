@@ -136,6 +136,16 @@ export type PromotionReviewPoint = { id: string; sentence: string; anchors: stri
 export type PromotionReviewSelection = { sources: PromotionReviewSource[]; points: PromotionReviewPoint[] }
 export type PromotionReviewResearch = PromotionReviewSelection & { id: string; subject: string; searchedAt: string }
 
+export type PromotionLocalEvent = {
+  id: string
+  name: string
+  startDate: string
+  endDate: string
+  venue: string
+  sourceUrl: string
+  captionLine: string
+}
+
 export type PromotionDraft = {
   tone?: PromotionTone
   storeName: string
@@ -152,6 +162,7 @@ export type PromotionDraft = {
   templateVersion: number
   channels?: PromotionChannels
   reviewSelection?: PromotionReviewSelection
+  localEvent?: PromotionLocalEvent
   weatherContext?: {
     date: string
     area: string
@@ -175,6 +186,7 @@ export type PromotionDraftInput = {
   generateNewCopy?: boolean
   reviewResearchId?: string
   reviewPointIds?: string[]
+  localEventId?: string
 }
 
 export type CustomerNotice = { concern: string; text: string; placement: string }

@@ -48,6 +48,14 @@ class PromotionDraftController {
                 .body(new PhotoOptions(product == null ? null : photos.find(plan.storeId(), product), plan.defaultTone()));
     }
 
+    @GetMapping("/api/plans/{planId}/promotion-local-events")
+    ResponseEntity<?> localEvents(@PathVariable UUID planId, Principal owner) {
+        var plan = find(planId, owner.getName());
+        if (plan == null) return notFound();
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(PromotionLocalEvent.forPlan(plan.start(), plan.end(), plan.start()));
+    }
+
     @PostMapping("/api/plans/{planId}/promotion-review-points")
     ResponseEntity<?> researchReviews(@PathVariable UUID planId, @RequestBody ResearchInput input, Principal owner) {
         var plan = find(planId, owner.getName());
@@ -113,6 +121,17 @@ class PromotionDraftController {
 
         String product = plan.marketing() ? cleanSubject(input.subject()) : review.productName();
         boolean sameSubject = plan.draft() != null && product.equals(plan.draft().headline());
+        var previousEvent = sameSubject ? plan.draft().localEvent() : null;
+        var event = previousEvent;
+        if (input.localEventId() != null) {
+            event = PromotionLocalEvent.forPlan(plan.start(), plan.end(), input.publishDate()).stream()
+                    .filter(option -> option.id().equals(input.localEventId())).findFirst().orElse(null);
+            if (event == null && !input.localEventId().isEmpty()) {
+                return bad("게시 날짜와 실행 기간에 맞는 제주 행사를 다시 선택해 주세요.");
+            }
+        } else if (event != null && !event.applies(plan.start(), plan.end(), input.publishDate())) {
+            event = null;
+        }
         String photo = input.photoDataUrl() != null ? input.photoDataUrl()
                 : input.useSavedPhoto() ? photos.find(plan.storeId(), product) : null;
         if (photo == null && input.useSavedPhoto() && sameSubject) photo = plan.draft().photoDataUrl();
@@ -146,6 +165,7 @@ class PromotionDraftController {
         boolean retryForecast = sameDate && PromotionWeather.shouldRefresh(previousContext, input.publishDate());
         if (sameDate && previousContext != null && !retryForecast
                 && input.publishTime().equals(plan.draft().publishTime()) && Objects.equals(photo, plan.draft().photoDataUrl())
+                && Objects.equals(event, previousEvent)
                 && !edited && !generate) {
             return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(plan.draft());
         }
@@ -182,24 +202,26 @@ class PromotionDraftController {
         }
         var oldLeads = previousContext == null ? new ChannelCopy("", "", "") : previousContext.leads();
         String offer = offer(plan, product);
-        var bodies = new ChannelCopy(captionWithoutContext(copies.instagram(), oldLeads.instagram(), offer),
-                captionWithoutContext(copies.naver(), oldLeads.naver(), offer),
-                captionWithoutContext(copies.daangn(), oldLeads.daangn(), offer));
+        String previousFooter = PromotionLocalEvent.captionFooter(offer, replace ? null : previousEvent);
+        String footer = PromotionLocalEvent.captionFooter(offer, event);
+        var bodies = new ChannelCopy(captionWithoutContext(copies.instagram(), oldLeads.instagram(), previousFooter),
+                captionWithoutContext(copies.naver(), oldLeads.naver(), previousFooter),
+                captionWithoutContext(copies.daangn(), oldLeads.daangn(), previousFooter));
         var desired = context.leads();
-        var leads = new ChannelCopy(fittingLead(bodies.instagram(), desired.instagram(), offer, instagramEdit != null),
-                fittingLead(bodies.naver(), desired.naver(), offer, naverEdit != null),
-                fittingLead(bodies.daangn(), desired.daangn(), offer, daangnEdit != null));
+        var leads = new ChannelCopy(fittingLead(bodies.instagram(), desired.instagram(), footer, instagramEdit != null),
+                fittingLead(bodies.naver(), desired.naver(), footer, naverEdit != null),
+                fittingLead(bodies.daangn(), desired.daangn(), footer, daangnEdit != null));
         copies = withOffer(new ChannelCopy(addWeather(bodies.instagram(), leads.instagram(), false),
-                addWeather(bodies.naver(), leads.naver(), true), addWeather(bodies.daangn(), leads.daangn(), true)), offer);
+                addWeather(bodies.naver(), leads.naver(), true), addWeather(bodies.daangn(), leads.daangn(), true)), footer);
         if (copies.instagram().length() > MAX_CAPTION_LENGTH || copies.naver().length() > MAX_CAPTION_LENGTH
                 || copies.daangn().length() > MAX_CAPTION_LENGTH) {
-            return bad("게시일 안내와 행사 조건을 포함한 홍보 문구는 채널마다 2,200자까지 저장할 수 있어요.");
+            return bad("자동 안내와 할인 조건을 포함한 홍보 문구는 채널마다 2,200자까지 저장할 수 있어요.");
         }
         channels = new SavedChannels(channels.findings(), copies, channels.researched(), offer,
                 channels.basis(), channels.sourceCheckVersion());
         var draft = new Draft(plan.storeName(), product, feature, price, detail, copies.instagram(),
                 input.publishDate(), input.publishTime(), "Asia/Seoul", source, photo, 3, tone, channels,
-                replace ? selected : sameSubject ? plan.draft().reviewSelection() : null, context.withLeads(leads));
+                replace ? selected : sameSubject ? plan.draft().reviewSelection() : null, context.withLeads(leads), event);
         int updated = jdbc.sql("""
                 UPDATE execution_plans SET promotion_draft=CAST(:draft AS jsonb)
                 WHERE id=:id AND instagram_publication IS NULL
@@ -250,10 +272,9 @@ class PromotionDraftController {
             } else if (channels.offer() != null) {
                 caption = withOffer(defaultCopy(plan, saved.headline(), input.tone()).instagram(), channels.offer());
             }
-            if (saved.weatherContext() != null) {
-                var lead = saved.weatherContext().leads().instagram();
-                caption = withWeather(caption, lead, lead, channels.offer(), false);
-            }
+            var lead = saved.weatherContext() == null ? "" : saved.weatherContext().leads().instagram();
+            String body = captionWithoutContext(caption, lead, channels.offer());
+            caption = withOffer(addWeather(body, lead, false), PromotionLocalEvent.captionFooter(channels.offer(), saved.localEvent()));
             channels = new SavedChannels(channels.findings(),
                     new ChannelCopy(caption, channels.drafts().naver(), channels.drafts().daangn()), channels.researched(),
                     channels.offer(), channels.basis(), channels.sourceCheckVersion());
@@ -261,7 +282,7 @@ class PromotionDraftController {
         var draft = new Draft(saved.storeName(), saved.headline(), saved.feature(), saved.discountedPrice(),
                 saved.detail(), caption, saved.publishDate(), saved.publishTime(), saved.timeZone(),
                 source, saved.photoDataUrl(), saved.templateVersion(), input.tone(), channels, saved.reviewSelection(),
-                saved.weatherContext());
+                saved.weatherContext(), saved.localEvent());
         int updated = jdbc.sql("""
                 UPDATE execution_plans SET promotion_draft=CAST(:draft AS jsonb)
                 WHERE id=:id AND instagram_publication IS NULL AND promotion_draft=CAST(:previous AS jsonb)
@@ -302,12 +323,12 @@ class PromotionDraftController {
         if (channels.researched() || (channels.basis() != null && channels.basis() != Basis.BASIC)) return false;
         var copies = channels.drafts();
         var context = draft.weatherContext();
-        if (context != null) {
-            var leads = context.leads();
-            var offer = channels.offer();
-            copies = withOffer(new ChannelCopy(captionWithoutContext(copies.instagram(), leads.instagram(), offer),
-                    captionWithoutContext(copies.naver(), leads.naver(), offer),
-                    captionWithoutContext(copies.daangn(), leads.daangn(), offer)), offer);
+        if (context != null || draft.localEvent() != null) {
+            var leads = context == null ? new ChannelCopy("", "", "") : context.leads();
+            String footer = PromotionLocalEvent.captionFooter(channels.offer(), draft.localEvent());
+            copies = withOffer(new ChannelCopy(captionWithoutContext(copies.instagram(), leads.instagram(), footer),
+                    captionWithoutContext(copies.naver(), leads.naver(), footer),
+                    captionWithoutContext(copies.daangn(), leads.daangn(), footer)), channels.offer());
         }
         return copies.equals(withOffer(defaultCopy(plan, product, draft.tone()), channels.offer()));
     }
@@ -450,7 +471,7 @@ class PromotionDraftController {
     record ReviewFocus(String sentence, List<String> anchors) {}
     record Input(Review review, String subject, LocalDate publishDate, LocalTime publishTime, String photoDataUrl,
                  boolean useSavedPhoto, String caption, ChannelCopy channelEdits, String sourcePageUrl,
-                 Boolean generateNewCopy, UUID reviewResearchId, List<String> reviewPointIds) {}
+                 Boolean generateNewCopy, UUID reviewResearchId, List<String> reviewPointIds, String localEventId) {}
     record ChannelInput(String storeName, String address, String subject, Tone tone, String avoidPhrases, boolean promotion,
                         @JsonInclude(JsonInclude.Include.NON_NULL) List<ChannelFinding> savedFindings,
                         @JsonInclude(JsonInclude.Include.NON_NULL) String photoDataUrl,
@@ -467,5 +488,6 @@ class PromotionDraftController {
                  @JsonInclude(JsonInclude.Include.NON_NULL) Tone tone,
                  @JsonInclude(JsonInclude.Include.NON_NULL) SavedChannels channels,
                  @JsonInclude(JsonInclude.Include.NON_NULL) ReviewSelection reviewSelection,
-                 @JsonInclude(JsonInclude.Include.NON_NULL) PromotionWeather.Context weatherContext) {}
+                 @JsonInclude(JsonInclude.Include.NON_NULL) PromotionWeather.Context weatherContext,
+                 @JsonInclude(JsonInclude.Include.NON_NULL) PromotionLocalEvent localEvent) {}
 }
