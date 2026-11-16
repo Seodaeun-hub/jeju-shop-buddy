@@ -24,6 +24,13 @@ export function promotionCaptionFooter(offer?: string | null, event?: PromotionL
   return event ? [event.captionLine, offer].filter(Boolean).join('\n\n') : offer
 }
 
+export function contextualPromotionEvent(event: PromotionLocalEvent, storeName: string, subject: string, hasOffer: boolean) {
+  const invitation = hasOffer
+    ? `이번 제주 일정에 ${storeName}에서 ${subject} 한 번 맛보는 건 어떠세요?`
+    : `${storeName}의 ‘${subject}’ 소식도 이번 제주 일정에 참고해 보세요.`
+  return { ...event, captionLine: `${event.name}를 보러 제주 나들이를 계획 중이세요? ${invitation}` }
+}
+
 export function promotionOffer(plan: Plan, draft: PromotionDraft) {
   const review = plan.promotionReview
   return draft.channels?.offer ?? (review
