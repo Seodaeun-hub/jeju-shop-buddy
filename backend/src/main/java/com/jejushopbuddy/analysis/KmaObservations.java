@@ -12,9 +12,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import tools.jackson.databind.JsonNode;
@@ -33,11 +36,20 @@ class KmaObservations {
     private final RestClient client;
     private final String key;
 
+    @Autowired
     KmaObservations(@Value("${KMA_ASOS_SERVICE_KEY:${KMA_FORECAST_SERVICE_KEY:}}") String key) {
+        this(providerClient(), key);
+    }
+
+    KmaObservations(RestClient.Builder client, String key) {
         this.key = key.strip();
+        this.client = client.baseUrl("https://apis.data.go.kr").build();
+    }
+
+    private static RestClient.Builder providerClient() {
         var requests = new JdkClientHttpRequestFactory(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build());
         requests.setReadTimeout(Duration.ofSeconds(5));
-        client = RestClient.builder().requestFactory(requests).baseUrl("https://apis.data.go.kr").build();
+        return RestClient.builder().requestFactory(requests);
     }
 
     static Station nearest(Coordinates location) {
@@ -50,18 +62,26 @@ class KmaObservations {
 
     Map<LocalDate, Observation> rainfall(Station station, LocalDate start, LocalDate end) {
         if (key.isEmpty() || start.isAfter(end)) return Map.of();
-        var date = DateTimeFormatter.BASIC_ISO_DATE;
-        try {
-            var payload = client.get().uri(uri -> uri.path("/1360000/AsosDalyInfoService/getWthrDataList")
-                    .queryParam("serviceKey", "{key}").queryParam("dataType", "JSON")
-                    .queryParam("dataCd", "ASOS").queryParam("dateCd", "DAY").queryParam("pageNo", 1)
-                    .queryParam("numOfRows", 100).queryParam("stnIds", station.id())
-                    .queryParam("startDt", date.format(start)).queryParam("endDt", date.format(end))
-                    .build(key)).retrieve().body(JsonNode.class);
-            return rainfallFrom(payload, station.id(), start, end);
-        } catch (RestClientException unavailable) {
-            return Map.of();
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                return rainfallFrom(fetchRainfall(station, start, end), station.id(), start, end);
+            } catch (ResourceAccessException | HttpServerErrorException unavailable) {
+                if (Thread.currentThread().isInterrupted()) break;
+            } catch (RestClientException unavailable) {
+                break;
+            }
         }
+        return Map.of();
+    }
+
+    private JsonNode fetchRainfall(Station station, LocalDate start, LocalDate end) {
+        var date = DateTimeFormatter.BASIC_ISO_DATE;
+        return client.get().uri(uri -> uri.path("/1360000/AsosDalyInfoService/getWthrDataList")
+                .queryParam("serviceKey", "{key}").queryParam("dataType", "JSON")
+                .queryParam("dataCd", "ASOS").queryParam("dateCd", "DAY").queryParam("pageNo", 1)
+                .queryParam("numOfRows", 100).queryParam("stnIds", station.id())
+                .queryParam("startDt", date.format(start)).queryParam("endDt", date.format(end))
+                .build(key)).retrieve().body(JsonNode.class);
     }
 
     static Map<LocalDate, Observation> rainfallFrom(JsonNode payload, int station, LocalDate start, LocalDate end) {
