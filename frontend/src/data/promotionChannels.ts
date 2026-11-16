@@ -1,5 +1,5 @@
 import { formatNumber, won } from './shop'
-import type { Plan, PromotionChannelCopy, PromotionDraft } from './shop'
+import type { Plan, PromotionChannelCopy, PromotionDraft, PromotionLocalEvent } from './shop'
 
 export const promotionPublicationLabels = {
   INSTAGRAM: '인스타그램',
@@ -18,6 +18,10 @@ const weatherCaptionAllowance = 48
 
 export function promotionCaptionLimit(offer?: string | null) {
   return 2200 - weatherCaptionAllowance - (offer ? offer.length + 2 : 0)
+}
+
+export function promotionCaptionFooter(offer?: string | null, event?: PromotionLocalEvent) {
+  return event ? [event.captionLine, offer].filter(Boolean).join('\n\n') : offer
 }
 
 export function promotionOffer(plan: Plan, draft: PromotionDraft) {

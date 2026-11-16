@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { fetchPromotionPhoto } from '../api/shop'
+import { fetchPromotionLocalEvents, fetchPromotionPhoto } from '../api/shop'
 import { PromotionReviewPoints, usePromotionReviews } from '../components/PromotionReviewPoints'
 import type { PromotionReviewSearch } from '../components/PromotionReviewPoints'
 import { prepareMenuPhoto } from '../data/menuPhoto'
-import { editablePromotionCaption, promotionCaptionLimit, promotionCaptions, promotionChannels, promotionOffer } from '../data/promotionChannels'
+import { editablePromotionCaption, promotionCaptionFooter, promotionCaptionLimit, promotionCaptions, promotionChannels, promotionOffer } from '../data/promotionChannels'
 import { formatNumber, promotionTones, won } from '../data/shop'
-import type { Plan, PromotionChannelCopy, PromotionDraftInput, PromotionTone } from '../data/shop'
+import type { Plan, PromotionChannelCopy, PromotionDraftInput, PromotionLocalEvent, PromotionTone } from '../data/shop'
 
 export function PromotionDraftForm({ plan, auth, productNames, reviewFirst, onSave, onRegenerate }: {
   plan: Plan
@@ -35,6 +35,9 @@ export function PromotionDraftForm({ plan, auth, productNames, reviewFirst, onSa
   const canPrepareDraft = !reviewFirst || Boolean(reviews.result || reviews.error)
   const [publishDate, setPublishDate] = useState(draft?.publishDate ?? plan.startDate)
   const [publishTime, setPublishTime] = useState(draft?.publishTime.slice(0, 5) ?? '11:00')
+  const [eventId, setEventId] = useState(draft?.localEvent?.id ?? '')
+  const [localEvents, setLocalEvents] = useState<PromotionLocalEvent[]>(draft?.localEvent ? [draft.localEvent] : [])
+  const [localEventsError, setLocalEventsError] = useState(false)
   const [photoOptions, setPhotoOptions] = useState<{ product: string; dataUrl: string | null }>()
   const savedPhoto = photoOptions?.product === productName ? photoOptions?.dataUrl : undefined
   const [photo, setPhoto] = useState<string>()
@@ -48,6 +51,17 @@ export function PromotionDraftForm({ plan, auth, productNames, reviewFirst, onSa
   const [busy, setBusy] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!plan.id || !canPrepareDraft) return
+    const controller = new AbortController()
+    fetchPromotionLocalEvents(auth, plan.id, controller.signal).then(events => {
+      if (!controller.signal.aborted) setLocalEvents(events)
+    }).catch(() => {
+      if (!controller.signal.aborted) setLocalEventsError(true)
+    })
+    return () => controller.abort()
+  }, [auth, canPrepareDraft, plan.id])
 
   useEffect(() => {
     if (!plan.id || !photoProduct) return
@@ -73,7 +87,9 @@ export function PromotionDraftForm({ plan, auth, productNames, reviewFirst, onSa
   const cannotSave = marketing ? !trimmedSubject : review?.maxDiscountQuantity === 0
   const captions = currentDraft && promotionCaptions(plan, currentDraft)
   const offer = currentDraft && promotionOffer(plan, currentDraft)
-  const captionLimit = promotionCaptionLimit(offer)
+  const availableEvents = localEvents.filter(event => publishDate && publishDate <= event.endDate)
+  const localEvent = availableEvents.find(event => event.id === eventId)
+  const captionLimit = promotionCaptionLimit(promotionCaptionFooter(offer, localEvent))
   const hasEdits = Object.values(channelEdits).some(value => value !== undefined)
   const oldCopy = currentDraft && currentDraft.copySource !== 'EDITED'
     && (currentDraft.channels?.basis === 'BASIC' || (!currentDraft.channels?.basis && !currentDraft.channels?.researched)
@@ -138,7 +154,7 @@ export function PromotionDraftForm({ plan, auth, productNames, reviewFirst, onSa
         photoDataUrl: photo, useSavedPhoto, channelEdits: currentDraft ? channelEdits : undefined,
         sourcePageUrl: canSuggestSource && !hasEdits ? sourcePageUrl.trim() || undefined : undefined,
         generateNewCopy: reviewFirst || undefined, reviewResearchId: selectedPoints.length ? reviews.result?.id : undefined,
-        reviewPointIds: selectedPoints.length ? selectedPoints : undefined })
+        reviewPointIds: selectedPoints.length ? selectedPoints : undefined, localEventId: localEvent?.id ?? '' })
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : '홍보 초안을 저장하지 못했어요.')
     } finally {
@@ -192,6 +208,19 @@ export function PromotionDraftForm({ plan, auth, productNames, reviewFirst, onSa
             <label>게시 시간<input type="time" required value={publishTime} onChange={event => setPublishTime(event.target.value)} /></label>
           </div>
           <small className="muted">게시일의 제주 계절과 확인된 기상청 예보를 세 채널 문구에 반영해요.</small>
+          {availableEvents.length > 0 && <div className="form-stack">
+            <label>홍보에 함께 소개할 제주 행사 (선택)
+              <select value={localEvent?.id ?? ''} onChange={event => setEventId(event.target.value)}>
+                <option value="">행사 없이 만들기</option>
+                {availableEvents.map(event => <option key={event.id} value={event.id}>{event.name}</option>)}
+              </select>
+            </label>
+            {localEvent && <small className="muted">
+              {localEvent.startDate} ~ {localEvent.endDate} · {localEvent.venue} ·{' '}
+              <a href={localEvent.sourceUrl} target="_blank" rel="noopener noreferrer">공식 행사 안내</a>
+            </small>}
+          </div>}
+          {localEventsError && <small className="muted" role="status">제주 행사 목록을 불러오지 못했어요. 행사 없이도 만들 수 있어요.</small>}
           {!reviewFirst && canSuggestSource && !hasEdits && <details>
             <summary>참고할 매장 페이지 추가</summary>
             <label>공개 매장 페이지 링크 (선택)
@@ -211,11 +240,11 @@ export function PromotionDraftForm({ plan, auth, productNames, reviewFirst, onSa
             {toneMessage && <p role="status">{toneMessage}</p>}
           </div>}
           {!reviewFirst && captions && <>
-            <small className="muted">날씨 안내{offer ? '와 행사 조건' : ''}가 들어갈 자리를 남겨서 채널마다 {formatNumber(captionLimit)}자까지 편집할 수 있어요.</small>
+            <small className="muted">자동 안내가 들어갈 자리를 남겨서 채널마다 {formatNumber(captionLimit)}자까지 편집할 수 있어요.</small>
             <div className="promotion-edit-captions">
               {promotionChannels.map(({ id, label }) => <label key={id}>{label} 문구
                 <textarea rows={7} required maxLength={captionLimit}
-                  value={channelEdits[id] ?? editablePromotionCaption(captions[id], offer, currentDraft?.weatherContext?.leads[id])}
+                  value={channelEdits[id] ?? editablePromotionCaption(captions[id], promotionCaptionFooter(offer, currentDraft?.localEvent), currentDraft?.weatherContext?.leads[id])}
                   onChange={event => setChannelEdits({ ...channelEdits, [id]: event.target.value })} />
               </label>)}
             </div>
