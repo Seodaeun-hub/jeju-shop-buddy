@@ -1,7 +1,8 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter } from 'react-router'
+import { BrowserRouter, Route, Routes } from 'react-router'
 import { App } from './App'
+import { GuestQrMenu } from './pages/GuestQrMenu'
 import './styles/styles.css'
 
 const root = document.getElementById('root')
@@ -10,7 +11,10 @@ if (!root) throw new Error('React root is missing')
 createRoot(root).render(
   <StrictMode>
     <BrowserRouter>
-      <App />
+      <Routes>
+        <Route path="/menu/:publicId" element={<GuestQrMenu />} />
+        <Route path="*" element={<App />} />
+      </Routes>
     </BrowserRouter>
   </StrictMode>,
 )

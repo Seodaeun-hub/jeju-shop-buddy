@@ -7,6 +7,7 @@ import { notifyResultsDataChanged } from '../data/promotionArchive'
 import { PageTitle } from '../components/ui'
 import { useStoreSelection } from '../components/useStoreSelection'
 import { MenuPhotos } from './MenuPhotos'
+import { StoreQrMenu } from './StoreQrMenu'
 import { MenuCosts } from './MenuCosts'
 import { BreakEven } from './BreakEven'
 import { StorePosFiles } from './StorePosFiles'
@@ -17,6 +18,7 @@ const storeSections = [
   { id: 'history', label: '분석 이력' },
   { id: 'photos', label: '메뉴 사진 관리' },
   { id: 'menu-costs', label: '메뉴 원가·마진' },
+  { id: 'qr-menu', label: '다국어 QR 메뉴판' },
   { id: 'break-even', label: '손익분기점' },
   { id: 'tone', label: '홍보 말투 설정' },
   { id: 'pos-files', label: 'POS 파일 관리' },
@@ -227,6 +229,7 @@ export function MyStores({ auth, ownerEmail, onAnalysisDeleted, onPlanDeleted }:
           auth={auth} storeId={selected.id} storeName={selected.name}
           initialDate={params.get('date')} initialKind={params.get('kind')} uploadRequest={upload} />}
         {section === 'photos' && <MenuPhotos key={selected.id} auth={auth} storeId={selected.id} />}
+        {section === 'qr-menu' && <StoreQrMenu key={selected.id} auth={auth} storeId={selected.id} />}
         {section === 'menu-costs' && <MenuCosts key={selected.id} auth={auth} storeId={selected.id} />}
         {section === 'break-even' && <BreakEven key={selected.id} auth={auth} storeId={selected.id} />}
         {section === 'tone' && <section className="store-tone-panel" aria-label="홍보 말투 설정">
