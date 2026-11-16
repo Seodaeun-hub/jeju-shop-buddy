@@ -6,6 +6,10 @@ import { translationLanguages, type MenuEditor, type MenuTranslation } from '../
 import { won } from '../data/shop'
 import '../styles/qr-menu.css'
 
+function hasAllTranslations(item: MenuTranslation | undefined) {
+  return translationLanguages.every(({ id }) => Boolean(item?.[id].trim()))
+}
+
 export function StoreQrMenu({ auth, storeId }: { auth: string; storeId: string }) {
   const [editor, setEditor] = useState<MenuEditor>()
   const [translations, setTranslations] = useState<MenuTranslation[]>([])
@@ -52,7 +56,7 @@ export function StoreQrMenu({ auth, storeId }: { auth: string; storeId: string }
 
   const publicUrl = editor?.published && new URL('/menu/' + editor.published.publicId,
     import.meta.env.VITE_PUBLIC_MENU_ORIGIN || window.location.origin).href
-  const ready = translations.length > 0 && translations.every(item => item.en.trim() && item.zh.trim() && item.ja.trim())
+  const ready = translations.length > 0 && translations.every(hasAllTranslations)
 
   return <section className="qr-editor form-stack" aria-labelledby="qr-editor-title">
     <div className="section-top ruled">
@@ -91,20 +95,28 @@ export function StoreQrMenu({ auth, storeId }: { auth: string; storeId: string }
       {editor.items.length > 60 && <p className="muted">메뉴가 60개를 넘으면 번역을 직접 입력할 수 있어요.</p>}
       <ul className="qr-editor-list">
         {editor.items.map((item, index) => <li key={item.name}>
-          <div className="qr-editor-original">
-            {item.photoDataUrl && <img src={item.photoDataUrl} alt={item.name} loading="lazy" />}
-            <div><h3>{item.name}</h3><p className="muted">{item.priceWon == null ? 'POS 판매가 없음' : won(item.priceWon)}</p></div>
-          </div>
-          <fieldset disabled={Boolean(busy)} className="qr-translation-fields" aria-label={item.name + ' 번역'}>
-            {translationLanguages.map(language => <label key={language.id}>{language.label}
-              <input lang={language.locale} value={translations[index]?.[language.id] ?? ''} maxLength={255}
-                onChange={event => {
-                  const value = event.target.value
-                  setTranslations(items => items.map(item => item.index === index ? { ...item, [language.id]: value } : item))
-                  setConfirmed(false)
-                }} />
-            </label>)}
-          </fieldset>
+          <details className="qr-translation-item">
+            <summary className="qr-editor-summary">
+              <span className="qr-editor-original">
+                {item.photoDataUrl && <img src={item.photoDataUrl} alt="" loading="lazy" />}
+                <span className="qr-editor-menu">
+                  <strong>{item.name}</strong>
+                  <span className="muted">{item.priceWon == null ? 'POS 판매가 없음' : won(item.priceWon)}</span>
+                </span>
+              </span>
+              <span className="qr-translation-status">{hasAllTranslations(translations[index]) ? '번역 완료' : '번역 필요'}</span>
+            </summary>
+            <fieldset disabled={Boolean(busy)} className="qr-translation-fields" aria-label={item.name + ' 번역'}>
+              {translationLanguages.map(language => <label key={language.id}>{language.label}
+                <input lang={language.locale} value={translations[index]?.[language.id] ?? ''} maxLength={255}
+                  onChange={event => {
+                    const value = event.target.value
+                    setTranslations(items => items.map(item => item.index === index ? { ...item, [language.id]: value } : item))
+                    setConfirmed(false)
+                  }} />
+              </label>)}
+            </fieldset>
+          </details>
         </li>)}
       </ul>
       <label className="qr-confirm"><input type="checkbox" checked={confirmed} disabled={!ready || Boolean(busy)}
