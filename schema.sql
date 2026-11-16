@@ -383,6 +383,12 @@ CREATE TABLE store_product_photos (
     PRIMARY KEY (store_id, product_name)
 );
 
+CREATE TABLE store_qr_menus (
+    store_id uuid PRIMARY KEY REFERENCES stores(id) ON DELETE CASCADE,
+    public_id uuid NOT NULL UNIQUE,
+    publication jsonb
+);
+
 CREATE TABLE weekly_pos_push_subscriptions (
     owner_id UUID PRIMARY KEY REFERENCES owners(id) ON DELETE CASCADE,
     endpoint VARCHAR(2048) NOT NULL UNIQUE,

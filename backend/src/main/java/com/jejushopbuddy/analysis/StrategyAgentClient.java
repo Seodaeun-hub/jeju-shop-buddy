@@ -109,6 +109,11 @@ final class StrategyAgentClient {
                 : post("/internal/receipt", input, MenuCostController.ReceiptDraft.class, Duration.ofSeconds(35));
     }
 
+    Optional<StoreQrMenuController.Translated> translateMenu(StoreQrMenuController.AgentInput input) {
+        return baseUrl.isEmpty() ? Optional.empty()
+                : post("/internal/menu-translations", input, StoreQrMenuController.Translated.class, Duration.ofSeconds(90));
+    }
+
     Optional<String> nextPromotionExplanation(PromotionImpactController.ExplanationInput input) {
         if (baseUrl.isEmpty()) return Optional.empty();
         return post("/internal/next-promotion-explanation", input, NextPromotionResponse.class)

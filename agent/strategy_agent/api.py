@@ -9,6 +9,7 @@ from .concern_check import ConcernRequest, check_concerns
 from .execution_guide import GuideRequest, GuideResponse, build_guide_graph, load_catalog
 from .graph import build_graph
 from .model import structured_model
+from .menu_translations import MenuRequest, MenuTranslations, translate_menu
 from .next_promotion import NextPromotionExplanation, NextPromotionRequest, build_next_promotion_graph
 from .promotion_channels import ChannelRequest, ChannelResponse, generate_channels
 from .promotion_reviews import ReviewRequest, ReviewResearch, research_reviews
@@ -95,6 +96,14 @@ def receipt(request: ReceiptRequest) -> ReceiptDraft:
         return read_receipt(request)
     except (OpenAIError, OutputParserException, ValueError, TimeoutError):
         raise HTTPException(status_code=503, detail={"code": "RECEIPT_UNAVAILABLE"}) from None
+
+
+@app.post("/internal/menu-translations", response_model=MenuTranslations)
+def menu_translations(request: MenuRequest) -> MenuTranslations:
+    try:
+        return translate_menu(request)
+    except (OpenAIError, OutputParserException, ValueError, TimeoutError):
+        raise HTTPException(status_code=503, detail={"code": "MENU_TRANSLATION_UNAVAILABLE"}) from None
 
 
 @app.post("/internal/promotion-copy", response_model=PromotionCopy)

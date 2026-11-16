@@ -1,4 +1,5 @@
 import type { Review, ReviewTopic } from '../data/reviews'
+import { guestMenuPath, type GuestMenu, type MenuEditor, type MenuTranslation, type PublishedMenu } from '../data/qrMenu'
 import type { Analysis, CustomerNotice, InventoryItem, MonthlySales, Plan, ProductSale, PromotionDraft, PromotionDraftInput, PromotionLocalEvent, PromotionReview, PromotionReviewInput, PromotionReviewResearch, PromotionTone, SalesResult, TimeSeries } from '../data/shop'
 import { formatEvidence } from '../data/strategyEvidence'
 
@@ -565,6 +566,30 @@ export function fetchMenuPhoto(auth: string, id: string, productName: string, si
 
 export function saveMenuPhoto(auth: string, id: string, productName: string, photoDataUrl: string | null) {
   return request<MenuPhoto>(menuPhotoPath(id), auth, 'PUT', { productName, photoDataUrl })
+}
+
+function qrMenuPath(storeId: string) {
+  return `/api/stores/${encodeURIComponent(storeId)}/qr-menu`
+}
+
+export function fetchQrMenu(auth: string, storeId: string, signal: AbortSignal) {
+  return request<MenuEditor>(qrMenuPath(storeId), auth, 'GET', undefined, signal)
+}
+
+export function translateQrMenu(auth: string, storeId: string, version: string) {
+  return request<{ items: MenuTranslation[] }>(qrMenuPath(storeId) + '/translations', auth, 'POST', { version })
+}
+
+export function publishQrMenu(auth: string, storeId: string, version: string, translations: MenuTranslation[]) {
+  return request<PublishedMenu>(qrMenuPath(storeId), auth, 'PUT', { version, translations, confirmed: true })
+}
+
+export function unpublishQrMenu(auth: string, storeId: string) {
+  return send(qrMenuPath(storeId), auth, 'DELETE')
+}
+
+export function fetchGuestMenu(id: string, signal: AbortSignal) {
+  return request<GuestMenu>(guestMenuPath(id), undefined, 'GET', undefined, signal)
 }
 
 export function updateChecklistItem(auth: string, planId: string, itemId: string, completed: boolean) {
