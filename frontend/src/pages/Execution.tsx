@@ -268,7 +268,8 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
 
   useEffect(() => {
     if (promotionOpen && promotionDialog.current?.open) {
-      promotionDialog.current.querySelector('.promotion-dialog-body')?.scrollTo({ top: 0 })
+      promotionDialog.current.querySelectorAll('.promotion-dialog-body, .promotion-preview-content')
+        .forEach(container => container.scrollTo({ top: 0 }))
       promotionDialogHeading.current?.focus()
     }
   }, [promotionOpen, showPromotionEditor])
@@ -418,7 +419,8 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
             </button>}
           </div>
           <dialog ref={promotionDialog} className={`promotion-dialog${draft ? ' promotion-dialog-wide' : ''}`}
-            onClose={() => setPromotionOpen(false)} aria-labelledby="promotion-dialog-title">
+            onClose={event => { if (event.target === event.currentTarget) setPromotionOpen(false) }}
+            aria-labelledby="promotion-dialog-title">
             <header className="promotion-dialog-header">
               <h2 id="promotion-dialog-title" ref={promotionDialogHeading} tabIndex={-1}>
                 {reviewFirst ? '홍보물 만들기' : showPromotionEditor ? '홍보 초안 수정' : '채널별 홍보 미리보기'}
@@ -429,13 +431,13 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
                 <button type="button" className="button secondary small" autoFocus onClick={() => promotionDialog.current?.close()}>닫기</button>
               </div>
             </header>
-            <div className="promotion-dialog-body">
+            <div className={`promotion-dialog-body${draft && !showPromotionEditor ? ' promotion-dialog-body-preview' : ''}`}>
               {showPromotionEditor && <PromotionDraftForm key={`${plan.id}:${plan.promotionReview?.productName ?? ''}`} plan={plan} auth={auth}
                   productNames={analysis.productSales?.map(product => product.productName)}
                   reviewFirst={reviewFirst}
                   onSave={async input => { await onSavePromotionDraft(input); setEditingPromotion(false); setReviewFirst(false) }}
                   onRegenerate={onRegeneratePromotionCaption} />}
-              {draft && <div hidden={Boolean(showPromotionEditor)}>
+              {draft && <div className="promotion-dialog-preview" hidden={Boolean(showPromotionEditor)}>
                 <PromoDraft plan={plan} auth={auth} instagramStatus={instagramStatus} onInstagramStatus={status => {
                     setInstagramStatus(status)
                     if (status.publication?.state === 'PUBLISHED') notifyResultsDataChanged()

@@ -347,8 +347,9 @@
 .promotion-dialog-wide { width: min(73rem, calc(100% - 1.5rem)); max-height: calc(100dvh - 1.5rem); }
 .promotion-dialog :is(.promotion-dialog-header button, .promotion-post-footer button, .promotion-post-footer .button) { min-height: 44px; }
 .promotion-previews { margin-bottom: 1.5rem; }
+.promotion-preview-tabs, .promotion-preview-toolbar { display: none; }
 .promotion-preview-note { margin: 0 0 .9rem; }
-.promotion-previews > .promotion-review-applied { margin-bottom: 1.25rem; }
+.promotion-preview-content > .promotion-review-applied { margin-bottom: 1.25rem; }
 .promotion-preview-grid, .promotion-edit-captions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -424,12 +425,14 @@
   padding: .7rem .8rem;
   border-top: 1px solid var(--line);
 }
+.promotion-post-copy-actions { display: contents; }
 .promotion-post-mode {
   margin: 0;
   color: var(--muted);
   font-size: .82rem;
 }
 .promotion-post-footer small { color: var(--green); }
+.promotion-post-copy-feedback:empty { position: absolute; }
 .promotion-post-footer .instagram-publish {
   padding-top: .55rem;
   border-top: 1px solid var(--line);
@@ -444,6 +447,66 @@
 .promotion-edit-captions textarea { width: 100%; min-width: 0; resize: vertical; }
 @media (max-width: 720px) {
   .promotion-preview-grid, .promotion-edit-captions { grid-template-columns: minmax(0, 1fr); }
+  .promotion-dialog-body-preview,
+  .promotion-dialog-preview:not([hidden]),
+  .promotion-dialog-preview > .execution-material,
+  .promotion-previews {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .promotion-dialog-body-preview { overflow: hidden; padding: 0; }
+  .promotion-previews { margin-bottom: 0; }
+  .promotion-preview-content {
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding: .8rem;
+  }
+  .promotion-preview-tabs {
+    flex: none;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    padding: 0 .5rem;
+    border-bottom: 1px solid var(--line);
+    background: var(--sheet);
+  }
+  .promotion-preview-tabs button {
+    min-width: 0;
+    min-height: 44px;
+    padding: .45rem .2rem;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: .88rem;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+  }
+  .promotion-preview-tabs button[aria-pressed="true"] {
+    border-bottom-color: var(--green);
+    color: var(--green);
+    font-weight: 750;
+  }
+  .promotion-preview-tabs button:focus-visible { outline-offset: -3px; }
+  .promotion-preview-toolbar {
+    flex: none;
+    display: grid;
+    gap: .35rem;
+    padding: .55rem .8rem max(.55rem, env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
+    background: var(--sheet);
+  }
+  .promotion-preview-toolbar .promo-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .promotion-preview-toolbar .button { min-height: 44px; }
+  .promotion-preview-toolbar small { color: var(--green); }
+  .promotion-preview-toolbar small:empty { position: absolute; }
+  .promotion-post[data-active="false"],
+  .promotion-post-footer .promotion-post-copy-actions,
+  .promotion-post-copy-feedback,
+  .promotion-post-footer > .promo-actions:empty { display: none; }
 }
 
 .promotion-datetime { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
