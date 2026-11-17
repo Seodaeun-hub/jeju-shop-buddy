@@ -95,6 +95,7 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
   const blocked = pending || loading || historyFailed
   const listening = voice.phase === 'listening' || voice.phase === 'finishing'
   const releasing = voice.phase === 'releasing'
+  const questionText = voice.preview ? appendVoiceText(draft, voice.preview) : draft
 
   useEffect(() => {
     if (fromChart) return
@@ -165,7 +166,11 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    ask(draft)
+    const question = questionInput.current?.value ?? questionText
+    if (blocked || !question.trim()) return
+    voice.cancel()
+    setDraft(question)
+    ask(question)
   }
 
   return <div hidden={!chart}>
@@ -203,9 +208,9 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
       {!turns.length && suggestion && <button type="button" className="chip" disabled={blocked || listening} onClick={() => ask(suggestion)}>{suggestion}</button>}
       <form className="chat-form chat-form-with-voice" onSubmit={onSubmit}>
         <input ref={questionInput} aria-label="질문 입력" placeholder="궁금한 점을 물어보세요" maxLength={maxQuestionLength}
-          value={voice.preview ? appendVoiceText(draft, voice.preview) : draft}
+          value={questionText}
           onChange={(event) => {
-            voice.cancelForEdit()
+            voice.cancel()
             setDraft(event.target.value)
           }} />
         <button type="button" className="button secondary small chat-voice-button" data-active={listening}
@@ -216,7 +221,7 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
           }}>
           {voice.phase === 'finishing' ? '취소' : listening ? '중지' : releasing ? '준비 중' : '마이크'}
         </button>
-        <button type="submit" className="button primary small" disabled={blocked || listening || !draft.trim()}>보내기</button>
+        <button type="submit" className="button primary small" disabled={blocked || !questionText.trim()}>보내기</button>
       </form>
       <div className="chat-voice-feedback" role="status">{voice.message}</div>
     </section>

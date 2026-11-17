@@ -85,7 +85,7 @@ export function useQuestionVoice(open: boolean, analysisId: string, appendDraft:
     setMessage('')
   }, [open, analysisId])
 
-  function cancelForEdit() {
+  function cancel() {
     const session = active.current
     if (session) release(session, '', false)
   }
@@ -158,5 +158,5 @@ export function useQuestionVoice(open: boolean, analysisId: string, appendDraft:
     }
   }
 
-  return { phase, message, preview, toggle, cancelForEdit, isActive: () => !!active.current && !active.current.releasing }
+  return { phase, message, preview, toggle, cancel, isActive: () => !!active.current && !active.current.releasing }
 }
