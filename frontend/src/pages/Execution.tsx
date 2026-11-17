@@ -459,7 +459,7 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
           items={plan.inventoryItems ?? []}
           analysis={analysis}
           onSave={onSaveInventory}
-          reviewDate={shortDate(plan.tasks[2]?.date ?? plan.endDate)}
+          reviewDate={plan.tasks[2]?.date ?? plan.endDate}
           onChange={(inventoryItems) => onChange({ ...plan, inventoryItems })}
         /> : plan.strategy === 'outreach' ? <StoreNotice
           key={`${plan.id ?? 'demo'}:${plan.customerNotice?.text ?? ''}`}

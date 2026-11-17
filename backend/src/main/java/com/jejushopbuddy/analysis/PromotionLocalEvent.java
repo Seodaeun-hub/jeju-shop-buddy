@@ -11,9 +11,15 @@ record PromotionLocalEvent(String id, String name, LocalDate startDate, LocalDat
             "https://agri.jeju.go.kr/seogwipo/notice/notice.htm?act=view&seq=62210",
             "제주 나들이를 계획 중이라면 2026 제주감귤박람회 소식도 참고해 보세요. "
                     + "11월 19~23일, 서귀포농업기술센터 일원에서 열려요.");
+    private static final PromotionLocalEvent JEJU_WEST_EXHIBITION = new PromotionLocalEvent(
+            "jeju-museum-fascination-of-emptiness-2021", "제주현대미술관 《공(空)의 매혹》 전시",
+            LocalDate.of(2021, 3, 23), LocalDate.of(2021, 6, 27), "제주시 한경면 제주현대미술관",
+            "https://ganaatelier.com/152",
+            "제주 서부 나들이에 제주현대미술관 《공(空)의 매혹》 전시도 둘러보세요.");
+    private static final List<PromotionLocalEvent> EVENTS = List.of(JEJU_WEST_EXHIBITION, CITRUS_EXPO);
 
     static List<PromotionLocalEvent> forPlan(LocalDate start, LocalDate end, LocalDate publishDate) {
-        return CITRUS_EXPO.applies(start, end, publishDate) ? List.of(CITRUS_EXPO) : List.of();
+        return EVENTS.stream().filter(event -> event.applies(start, end, publishDate)).toList();
     }
 
     boolean applies(LocalDate start, LocalDate end, LocalDate publishDate) {

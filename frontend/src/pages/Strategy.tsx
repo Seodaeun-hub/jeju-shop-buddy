@@ -6,6 +6,7 @@ import type { SavedStrategy, StrategyEvidence, StrategyResponse } from '../api/s
 import { CustomerNoticeDetails, suggestCustomerNotice } from '../components/CustomerNotice'
 import { addDays, changeRate, formatNumber, formatRate, monthLabel, strategies, won } from '../data/shop'
 import { bsiSource, marketSource } from '../data/marketSources'
+import { seoulDate } from '../data/promotionArchive'
 import { formatEvidence } from '../data/strategyEvidence'
 import { ExecutionGuidePanel } from '../components/ExecutionGuidePanel'
 import type { Analysis, Plan, TimeSeries } from '../data/shop'
@@ -150,6 +151,7 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
   const settingsDialog = useRef<HTMLDialogElement>(null)
   const settingsHeading = useRef<HTMLHeadingElement>(null)
   const [duration, setDuration] = useState('2주')
+  const [preparationDate, setPreparationDate] = useState(() => saved ? seoulDate() : '2021-06-01')
   const [viewedGuideId, setViewedGuideId] = useState<string>()
   const planBudget = choice === 'promotion' ? initialBudget : 0
   const [channel, setChannel] = useState('인스타그램')
@@ -206,7 +208,8 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
           ? { durationWeeks }
           : { durationWeeks, budgetWon: planBudget, channel: planChannel === '인스타그램' ? 'INSTAGRAM' : 'STORE_NOTICE' },
           saved.response.recommendationId, choice === 'outreach' ? viewedGuideId : undefined,
-          choice === 'custom' ? undefined : customerNotice, choice === 'custom' ? selectedIndex : undefined)
+          choice === 'custom' ? undefined : customerNotice, choice === 'custom' ? selectedIndex : undefined,
+          preparationDate)
         if (mounted.current) onPlan(toPlan(plan, data.store))
       } catch (error) {
         if (mounted.current) setError(error instanceof Error ? error.message : '실행 계획을 저장할 수 없어요.')
@@ -218,7 +221,6 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
     }
     if (choice === 'custom') return
     const days = durationWeeks * 7
-    const preparationDate = '2021-06-01'
     const startDate = choice === 'outreach' ? addDays(preparationDate, 2) : preparationDate
     const endDate = addDays(startDate, days - 1)
     const offsets = choice === 'outreach' ? [0, 1, 1, days + 1] : [0, 1, Math.floor(days / 2), days - 1]
@@ -312,6 +314,10 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
           <button className="button secondary small" type="button" disabled={saving} onClick={closeSettings}>닫기</button>
         </header>
         <div className="strategy-settings-body form-stack">
+          <label>계획 시작일
+            <input name="preparationDate" type="date" max="9999-11-30" required value={preparationDate}
+              onChange={event => setPreparationDate(event.target.value)} disabled={saving} />
+          </label>
           <label className={choice === 'outreach' ? 'notice-review-period' : undefined}>
             <span>{choice === 'outreach' ? '안내 수정 후 확인할 기간' : '실행 기간'}</span>
             <select name="duration" value={duration} onChange={(event) => setDuration(event.target.value)} disabled={saving}>

@@ -7,6 +7,18 @@ import org.junit.jupiter.api.Test;
 
 class PromotionLocalEventTest {
     @Test
+    void selectsTheHistoricalExhibitionWithinItsDates() {
+        var start = LocalDate.of(2021, 6, 5);
+        var end = start.plusDays(27);
+        var events = PromotionLocalEvent.forPlan(start, end, start);
+        assertThat(events).extracting(PromotionLocalEvent::id)
+                .containsExactly("jeju-museum-fascination-of-emptiness-2021");
+        var caption = events.getFirst().forCaption("애월 가상 한식당", "고기국수", true);
+        assertThat(caption.captionLine()).containsPattern("제주현대미술관.*애월 가상 한식당.*고기국수");
+        assertThat(PromotionLocalEvent.forPlan(start, end, LocalDate.of(2021, 6, 28))).isEmpty();
+    }
+
+    @Test
     void connectsTheSelectedEventToTheMenuAndKeepsTheOffer() {
         var start = LocalDate.of(2026, 11, 16);
         var end = start.plusDays(13);

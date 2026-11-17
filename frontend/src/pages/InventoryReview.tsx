@@ -81,19 +81,23 @@ function ForecastMenuPicker({ menus, value, disabled, onChange }: {
   </div>
 }
 
-function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, menus, productName, recipeSaving, onProduct, onEstimate }: {
+function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, reviewDate, menus, productName, recipeSaving, onProduct, onEstimate }: {
   auth: string
   planId: string
   analysisId?: string
   storeId?: string
   initialLookup?: ForecastSelection
+  reviewDate: string
   menus: string[]
   productName: string
   recipeSaving: boolean
   onProduct: (product: string) => void
   onEstimate: (estimate: InventoryDemandEstimate | null) => void
 }) {
-  const [date, setDate] = useState(() => initialLookup?.date ?? addDays(seoulDate(), 1))
+  const [date, setDate] = useState(() => {
+    const today = seoulDate()
+    return initialLookup?.date ?? (reviewDate < today ? reviewDate : addDays(today, 1))
+  })
   const [reference, setReference] = useState<InventoryWeather>()
   const [lookup, setLookup] = useState(initialLookup)
   const [loading, setLoading] = useState(Boolean(initialLookup))
@@ -103,6 +107,7 @@ function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, m
   const [comparisonRevision, setComparisonRevision] = useState(0)
   const [savingEstimate, setSavingEstimate] = useState(false)
   const [estimateSaved, setEstimateSaved] = useState(false)
+  const pastDate = Boolean(date && date < seoulDate())
 
   function clear() {
     setReference(undefined)
@@ -196,12 +201,13 @@ function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, m
     </label>
     <ForecastMenuPicker menus={menuNames} value={productName} disabled={loading || recipeSaving || savingEstimate}
       onChange={value => { onProduct(value); clear() }} />
-    <button type="button" className="button secondary small" disabled={loading || savingEstimate || !date} onClick={() => {
+    {pastDate && !productName.trim() && <small className="muted">과거 관측과 판매량을 비교할 메뉴를 선택해 주세요.</small>}
+    <button type="button" className="button secondary small" disabled={loading || savingEstimate || !date || (pastDate && !productName.trim())} onClick={() => {
       clear()
       setLoading(true)
       setLookup({ date, product: productName.trim() })
     }}>
-      {loading ? '기상청과 POS 자료 확인 중…' : productName.trim() ? '예상 판매량 보기' : '기상청 예보 보기'}
+      {loading ? '기상청과 POS 자료 확인 중…' : productName.trim() || pastDate ? '예상 판매량 보기' : '기상청 예보 보기'}
     </button>
     {reference && <div role="status">
       <strong>{reference.area} · {reference.date}</strong>
@@ -399,7 +405,7 @@ function DemandEstimate({ estimate, uploadTo, notes, pendingExclusions, disabled
   const selectedExclusions = pendingExclusions ?? excludedDates
   const notesByDate = new Map(notes.filter(row => row.estimate.product === product).map(row => [row.estimate.date, row.note]))
   return <div className="form-stack">
-    {historical && <p className="muted">과거 날짜 검증 · 선택한 날짜의 판매량은 비교 범위 계산에서 제외했어요.</p>}
+    {historical && <p className="muted">과거 발주 시나리오 · 이전 판매 기록과 당시 날씨로 비교해요.</p>}
     {historical && precipitation !== null && <p>선택한 날짜 · {precipitation ? '강수 관측됨' : '강수 기록 없음'}
       {observedRainfallMm !== null && ` · 관측 강수량 ${observedRainfallMm}mm`}
     </p>}
@@ -573,9 +579,9 @@ export function InventoryReview({ auth, planId, analysisId, items, analysis, rev
     </div>
     <div className="receipt">
       <p>다음 발주분이 들어오기 전까지 쓸 양과 그전에 들어올 물량을 입력해 주세요. 예정된 입고가 없다면 0을 입력해요.</p>
-      <p className="muted">발주 검토 예정일 · {reviewDate}</p>
+      <p className="muted">발주 검토 예정일 · {reviewDate.replaceAll('-', '.')}</p>
       {auth && planId && <InventoryForecast auth={auth} planId={planId} analysisId={analysisId}
-        storeId={analysis.storeId} initialLookup={initialLookup}
+        storeId={analysis.storeId} initialLookup={initialLookup} reviewDate={reviewDate}
         menus={analysis.productSales?.map(product => product.productName) ?? []}
         productName={productName} recipeSaving={recipeSaving} onProduct={changeProduct}
         onEstimate={setEstimate} />}
