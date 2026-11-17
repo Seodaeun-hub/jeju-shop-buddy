@@ -3,6 +3,7 @@ package com.jejushopbuddy.analysis;
 import com.jejushopbuddy.analysis.ExecutionResultWriter.Metric;
 import com.jejushopbuddy.analysis.ExecutionResultWriter.Period;
 import com.jejushopbuddy.analysis.SalesAnalysisController.AnalysisResponse;
+import com.jejushopbuddy.analysis.SalesAnalysisController.ProductSale;
 import com.jejushopbuddy.analysis.SalesAnalysisController.TimeSlot;
 import com.jejushopbuddy.analysis.SalesStrategies.Response;
 import com.jejushopbuddy.analysis.StrategyAgentClient.GuideResponse;
@@ -15,6 +16,7 @@ import java.util.Set;
 import java.util.UUID;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
@@ -22,8 +24,14 @@ import tools.jackson.databind.node.ObjectNode;
 class ChartQuestionEvidence {
     private static final int MAX_AGENT_FACTS = 200;
     private static final int MAX_TIME_FACTS = 120;
+    private static final int MAX_ITEM_FACTS = 40;
+    private static final List<PosTimeBand> POS_TIME_BANDS = List.of(
+            new PosTimeBand("오후 2시 전", 0, 14),
+            new PosTimeBand("오후 2~5시", 14, 17),
+            new PosTimeBand("오후 5시 이후", 17, 24));
 
     private final JdbcClient jdbc;
+    private final SalesAnalysisReader analyses;
     private final ObjectMapper json;
     private final JejuMarketContext market;
     private final SalesStrategies strategies;
@@ -32,10 +40,12 @@ class ChartQuestionEvidence {
     private final ExecutionPlanReader plans;
     private final ExecutionResultReader results;
 
-    ChartQuestionEvidence(JdbcClient jdbc, ObjectMapper json, JejuMarketContext market, SalesStrategies strategies,
+    ChartQuestionEvidence(JdbcClient jdbc, SalesAnalysisReader analyses, ObjectMapper json,
+                          JejuMarketContext market, SalesStrategies strategies,
                           StrategyAgentClient agent, StoreReviewService reviews, ExecutionPlanReader plans,
                           ExecutionResultReader results) {
         this.jdbc = jdbc;
+        this.analyses = analyses;
         this.json = json;
         this.market = market;
         this.strategies = strategies;
@@ -125,7 +135,8 @@ class ChartQuestionEvidence {
                 });
             });
         }
-        addTimeFacts(snapshot, analysis, question, focus, timeReferences);
+        addItemFacts(snapshot, analysis, question, focus);
+        addTimeFacts(snapshot, analysis, owner, question, focus, timeReferences);
         snapshot.allow("ADD_TIME_SERIES", "AMOUNT");
         snapshot.allow("ADD_TIME_SERIES", "COUNT");
         snapshot.allow("OPEN_REVIEWS", "ALL");
@@ -141,24 +152,79 @@ class ChartQuestionEvidence {
         return snapshot;
     }
 
-    private void addTimeFacts(Snapshot snapshot, AnalysisResponse analysis, String question,
+    private void addItemFacts(Snapshot snapshot, AnalysisResponse analysis, String question, Set<String> focus) {
+        String normalizedQuestion = compact(question);
+        var priority = Comparator.comparingInt((ProductSale item) -> {
+            if (normalizedQuestion.contains(compact(item.productName()))) return 0;
+            var id = itemId(item.productName());
+            return focus.contains(id + "-quantity") || focus.contains(id + "-revenue") ? 1 : 2;
+        }).thenComparing(Comparator.comparingLong((ProductSale item) ->
+                item.beforeRevenue() != null && item.afterRevenue() != null
+                        ? item.afterRevenue() - item.beforeRevenue() : Long.MIN_VALUE).reversed())
+                .thenComparing(Comparator.comparingLong((ProductSale item) -> item.after() - item.before()).reversed());
+        int limit = Math.min(MAX_ITEM_FACTS, snapshot.remaining());
+        analysis.productSales().stream().sorted(priority).limit(limit / 2).forEach(item -> {
+            var id = itemId(item.productName());
+            snapshot.add(metric(analysis, id + "-quantity", "ITEM_SALES", item.productName(), "해당 매장", "QUANTITY",
+                    item.before(), item.after(), "저장된 품목별 판매 자료", null));
+            if (item.beforeRevenue() != null && item.afterRevenue() != null) {
+                snapshot.add(metric(analysis, id + "-revenue", "ITEM_SALES", item.productName(), "해당 매장", "KRW",
+                        item.beforeRevenue(), item.afterRevenue(), "저장된 품목별 판매 자료", null));
+            }
+        });
+    }
+
+    private void addTimeFacts(Snapshot snapshot, AnalysisResponse analysis, String owner, String question,
                               Set<String> focus, Set<String> references) {
         var series = analysis.timeSeries();
+        var hourly = analyses.findHourlySales(analysis.id(), owner).map(json::readTree).orElse(null);
+        if (hourly != null) {
+            var before = hourly.path(analysis.beforeMonth());
+            var after = hourly.path(analysis.afterMonth());
+            if (before.isArray() && before.size() == 24 && after.isArray() && after.size() == 24) {
+                addPosTimeFacts(snapshot, analysis, before, after);
+            }
+        }
         if (series == null || series.rows().isEmpty()) return;
         var byDrop = Comparator.comparingLong((TimeSlot slot) -> slot.after() - slot.before());
         var largestDrop = series.rows().stream().min(byDrop).orElseThrow();
-        // Preserve the global maximum and cited or named slots before filling the time-series budget.
+        var largestIncrease = series.rows().stream().max(byDrop).orElseThrow();
+        // Keep cited and named slots as well as the largest changes in both directions.
         var ordered = Comparator.comparingInt((TimeSlot slot) -> {
-            if (slot.equals(largestDrop)) return 0;
+            if (slot.equals(largestDrop) || slot.equals(largestIncrease)) return 0;
             if (references.contains(timeId(slot.label()))) return 1;
             if (question.contains(slot.label()) || focus.contains(timeId(slot.label()))) return 2;
             return 3;
         }).thenComparing(byDrop);
-        int limit = Math.min(MAX_TIME_FACTS, MAX_AGENT_FACTS - snapshot.facts().size());
+        int limit = Math.min(MAX_TIME_FACTS, snapshot.remaining());
         var unit = "COUNT".equals(series.metric()) ? "COUNT" : "KRW";
         series.rows().stream().sorted(ordered).limit(limit).forEach(slot -> snapshot.add(
                 metric(analysis, timeId(slot.label()), "TIME_SERIES", slot.label(), "해당 매장",
                         unit, slot.before(), slot.after(), "저장된 시간대별 자료", null)));
+    }
+
+    private void addPosTimeFacts(Snapshot snapshot, AnalysisResponse analysis, JsonNode before, JsonNode after) {
+        var series = analysis.timeSeries();
+        for (var band : POS_TIME_BANDS) {
+            for (String field : List.of("count", "amount")) {
+                if (snapshot.facts().size() >= MAX_AGENT_FACTS) return;
+                String unit = "count".equals(field) ? "COUNT" : "KRW";
+                boolean hasSavedSlot = series != null && ("COUNT".equals(series.metric()) == "count".equals(field))
+                        && series.rows().stream().anyMatch(slot -> slot.label().equals(band.label()));
+                if (hasSavedSlot) continue;
+                var id = timeId(band.label()) + "-" + field;
+                snapshot.add(metric(analysis, id, "TIME_SERIES", band.label(), "해당 매장", unit,
+                        band.total(before, field), band.total(after, field), "저장된 결제 POS 시간대별 집계", null));
+            }
+        }
+    }
+
+    private static String compact(String value) {
+        return value.replaceAll("\\s+", "");
+    }
+
+    private static String itemId(String name) {
+        return "item-" + UUID.nameUUIDFromBytes(name.getBytes(StandardCharsets.UTF_8));
     }
 
     private static String timeId(String label) {
@@ -185,8 +251,9 @@ class ChartQuestionEvidence {
 
     private ObjectNode metric(AnalysisResponse analysis, String id, String metric, String title, String scope,
                               String unit, Number before, Number after, String source, String url) {
-        var value = fact(id, "METRIC", title, source, url).put("metric", metric).put("chart", metric)
+        var value = fact(id, "METRIC", title, source, url).put("metric", metric)
                 .put("scope", scope).put("unit", unit);
+        if (!"ITEM_SALES".equals(metric)) value.put("chart", metric);
         value.set("before", json.valueToTree(before));
         value.set("after", json.valueToTree(after));
         value.putObject("period").put("before", analysis.beforeMonth()).put("after", analysis.afterMonth());
@@ -210,8 +277,16 @@ class ChartQuestionEvidence {
     }
 
     record Action(String type, String targetId) {}
+    private record PosTimeBand(String label, int startHour, int endHour) {
+        long total(JsonNode hours, String field) {
+            long total = 0;
+            for (int hour = startHour; hour < endHour; hour++) total += hours.path(hour).path(field).asLong();
+            return total;
+        }
+    }
     private record SavedGuide(String code, GuideResponse guide) {}
     record Snapshot(LinkedHashMap<String, ObjectNode> facts, List<Action> actions) {
+        int remaining() { return Math.max(0, MAX_AGENT_FACTS - facts.size()); }
         void add(ObjectNode fact) { facts.put(fact.path("id").asString(), fact); }
         void allow(String type, String target) { actions.add(new Action(type, target)); }
     }

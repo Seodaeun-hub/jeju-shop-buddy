@@ -13,10 +13,12 @@ function quantity(value: number, unit: string) {
 
 function Evidence({ item }: { item: QuestionEvidence }) {
   const source = item.source
+  const product = item.kind === 'METRIC' && item.metric === 'ITEM_SALES'
+  const suffix = product && item.unit === 'QUANTITY' ? '개' : ''
   return <li>
-    <strong>{item.label}</strong>
+    <strong>{item.label}{product && (item.unit === 'QUANTITY' ? ' 판매량' : ' 실판매금액')}</strong>
     {item.kind === 'METRIC' && <>
-      <div>{quantity(item.before, item.unit)} → {quantity(item.after, item.unit)}</div>
+      <div>{quantity(item.before, item.unit)}{suffix} → {quantity(item.after, item.unit)}{suffix}</div>
       <small>{[item.period && `${item.period.before} → ${item.period.after}`, item.scope].filter(Boolean).join(' · ')}</small>
     </>}
     {item.kind === 'REVIEW' && <div><time>{item.date}</time> · “{item.excerpt}”</div>}

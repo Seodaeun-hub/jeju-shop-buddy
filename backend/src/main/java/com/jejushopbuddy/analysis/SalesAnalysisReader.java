@@ -25,6 +25,14 @@ class SalesAnalysisReader {
         this.jdbc = jdbc;
     }
 
+    Optional<String> findHourlySales(UUID id, String ownerEmail) {
+        return jdbc.sql("""
+                SELECT COALESCE(a.hourly_sales, '{}'::jsonb)::text FROM sales_analyses a
+                JOIN stores s ON s.id = a.store_id JOIN owners o ON o.id = s.owner_id
+                WHERE a.id = :id AND o.email = :email
+                """).param("id", id).param("email", ownerEmail).query(String.class).optional();
+    }
+
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public Optional<AnalysisResponse> find(UUID id, String ownerEmail) {
         var analysis = jdbc.sql("""

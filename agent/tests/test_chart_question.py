@@ -204,6 +204,32 @@ class ChartQuestionTest(unittest.TestCase):
         self.assert_text(answer, "결제 건수가 줄어든 구간이 없어요")
         self.assertTrue(answer["evidence"])
 
+    def test_growing_menu_and_time_band_cite_both_saved_metrics(self):
+        payload = fixture()
+        period = {"before": "2026-08", "after": "2026-09"}
+        payload["context"] = {"comparisonPeriod": list(period.values()), "focusedEvidenceIds": ["afternoon-count"]}
+        payload["availableEvidence"] = [
+            {"id": key, "kind": "METRIC", "metric": metric, "label": label, "unit": unit,
+             "before": before, "after": after, "period": period, "source": {"label": source}}
+            for key, metric, label, unit, before, after, source in [
+                ("pork-quantity", "ITEM_SALES", "고기국수", "QUANTITY", 100, 120, "저장된 품목별 판매 자료"),
+                ("pork-revenue", "ITEM_SALES", "고기국수", "KRW", 850000, 1020000, "저장된 품목별 판매 자료"),
+                ("dumpling-revenue", "ITEM_SALES", "만두", "KRW", 90000, 80000, "저장된 품목별 판매 자료"),
+                ("afternoon-count", "TIME_SERIES", "오후 2~5시", "COUNT", 4, 1, "저장된 시간대별 자료"),
+                ("afternoon-revenue", "TIME_SERIES", "오후 2~5시", "KRW", 34000, 8500, "저장된 결제 POS 시간대별 집계"),
+                ("lunch-count", "TIME_SERIES", "오후 2시 전", "COUNT", 100, 120, "저장된 시간대별 자료"),
+                ("lunch-revenue", "TIME_SERIES", "오후 2시 전", "KRW", 850000, 1020000, "저장된 결제 POS 시간대별 집계"),
+            ]
+        ]
+        answer = self.ask(payload, "8월에서 9월로 매출이 늘어난 메뉴와 시간대가 어디인지 알려줘. "
+                          "두 달의 메뉴 판매량과 매출, 그 시간대의 결제 건수와 매출을 각각 비교하고 근거와 출처를 보여줘.",
+                          classified(["ITEM_SALES", "TIME_SLOT"], timeMetric="KRW"))
+        self.assertEqual(answer["status"], "ANSWERED")
+        self.assert_text(answer, "고기국수 판매량", "100개", "120개", "고기국수 실판매금액",
+                         "850,000원", "1,020,000원", "오후 2시 전 결제 건수", "100건", "120건", "오후 2시 전 매출액")
+        self.assertEqual([fact["id"] for fact in answer["evidence"]],
+                         ["pork-quantity", "pork-revenue", "lunch-count", "lunch-revenue"])
+
     def test_monthly_only_and_count_instead_of_amount(self):
         question = "몇 시에 매출이 가장 많이 줄었어요?"
         intent = classified(["TIME_SLOT"], timeMetric="KRW", largestTimeDrop=True)
