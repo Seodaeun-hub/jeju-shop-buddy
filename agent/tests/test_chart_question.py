@@ -230,6 +230,62 @@ class ChartQuestionTest(unittest.TestCase):
         self.assertEqual([fact["id"] for fact in answer["evidence"]],
                          ["pork-quantity", "pork-revenue", "lunch-count", "lunch-revenue"])
 
+    def test_falling_menu_and_time_band_choose_largest_revenue_drop(self):
+        payload = fixture()
+        period = {"before": "2026-08", "after": "2026-09"}
+        payload["context"] = {"comparisonPeriod": list(period.values()), "focusedEvidenceIds": ["dumpling-revenue"]}
+        payload["availableEvidence"] = [
+            {"id": key, "kind": "METRIC", "metric": metric, "label": label, "unit": unit,
+             "before": before, "after": after, "period": period, "source": {"label": source}}
+            for key, metric, label, unit, before, after, source in [
+                ("dumpling-quantity", "ITEM_SALES", "만두", "QUANTITY", 80, 80, "저장된 품목별 판매 자료"),
+                ("dumpling-revenue", "ITEM_SALES", "만두", "KRW", 480000, 480000, "저장된 품목별 판매 자료"),
+                ("rice-quantity", "ITEM_SALES", "공깃밥", "QUANTITY", 40, 5, "저장된 품목별 판매 자료"),
+                ("rice-revenue", "ITEM_SALES", "공깃밥", "KRW", 40000, 5000, "저장된 품목별 판매 자료"),
+                ("pork-quantity", "ITEM_SALES", "고기국수", "QUANTITY", 120, 100, "저장된 품목별 판매 자료"),
+                ("pork-revenue", "ITEM_SALES", "고기국수", "KRW", 1020000, 850000, "저장된 품목별 판매 자료"),
+                ("lunch-count", "TIME_SERIES", "오후 2시 전", "COUNT", 90, 90, "저장된 시간대별 자료"),
+                ("lunch-revenue", "TIME_SERIES", "오후 2시 전", "KRW", 605000, 605000, "저장된 결제 POS 시간대별 집계"),
+                ("afternoon-count", "TIME_SERIES", "오후 2~5시", "COUNT", 70, 50, "저장된 시간대별 자료"),
+                ("afternoon-revenue", "TIME_SERIES", "오후 2~5시", "KRW", 545000, 375000, "저장된 결제 POS 시간대별 집계"),
+            ]
+        ]
+        intent = classified(["ITEM_SALES", "TIME_SLOT"], timeMetric="KRW", largestTimeDrop=True,
+                            focusEvidenceId="dumpling-revenue")
+        for question in ("8월에서 9월로 매출이 가장 많이 줄어든 메뉴와 시간대를 알려줘.",
+                         "매출이 가장 많이 감소한 메뉴와 시간대의 판매량, 결제 건수와 매출의 출처를 보여줘."):
+            with self.subTest(question=question):
+                answer = self.ask(payload, question, intent)
+                self.assertEqual(answer["status"], "ANSWERED")
+                self.assert_text(answer, "고기국수 판매량", "120개", "100개", "고기국수 실판매금액",
+                                 "1,020,000원", "850,000원", "오후 2~5시 결제 건수", "70건", "50건", "오후 2~5시 매출액")
+                self.assertEqual([fact["id"] for fact in answer["evidence"]],
+                                 ["pork-quantity", "pork-revenue", "afternoon-count", "afternoon-revenue"])
+
+        answer = self.ask(payload, "판매량이 가장 많이 줄어든 메뉴를 알려줘.", classified(["ITEM_SALES"]))
+        self.assertEqual([fact["id"] for fact in answer["evidence"]], ["rice-quantity", "rice-revenue"])
+
+    def test_declining_menu_revenue_needs_amounts_and_reports_when_none_fell(self):
+        payload = fixture()
+        payload["availableEvidence"] = [
+            {"id": "menu-quantity", "kind": "METRIC", "metric": "ITEM_SALES", "label": "고기국수",
+             "unit": "QUANTITY", "before": 120, "after": 100},
+        ]
+        question = "매출이 가장 많이 줄어든 메뉴는 뭐야?"
+        intent = classified(["ITEM_SALES"])
+        answer = self.ask(payload, question, intent)
+        self.assertEqual(answer["status"], "MISSING_DATA")
+        self.assertEqual(answer["missingInputs"][0]["code"], "ITEM_SALES_KRW")
+
+        payload["availableEvidence"].append(
+            {"id": "menu-revenue", "kind": "METRIC", "metric": "ITEM_SALES", "label": "고기국수",
+             "unit": "KRW", "before": 850000, "after": 850000},
+        )
+        answer = self.ask(payload, question, intent)
+        self.assertEqual(answer["status"], "ANSWERED")
+        self.assert_text(answer, "실판매금액이 줄어든 메뉴가 없어요")
+        self.assertEqual([fact["id"] for fact in answer["evidence"]], ["menu-revenue"])
+
     def test_monthly_only_and_count_instead_of_amount(self):
         question = "몇 시에 매출이 가장 많이 줄었어요?"
         intent = classified(["TIME_SLOT"], timeMetric="KRW", largestTimeDrop=True)
