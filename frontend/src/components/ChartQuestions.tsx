@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { FormEvent, KeyboardEvent } from 'react'
 import { Link } from 'react-router'
 import { fetchQuestions, sendQuestion } from '../api/shop'
 import type { QuestionAction, QuestionChart, QuestionEvidence, QuestionInput, QuestionTurn } from '../api/shop'
@@ -89,10 +89,12 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
   const [reload, setReload] = useState(0)
   const [historyFailed, setHistoryFailed] = useState(false)
   const thread = useRef<HTMLDivElement>(null)
-  const questionInput = useRef<HTMLInputElement>(null)
+  const questionInput = useRef<HTMLTextAreaElement>(null)
+  const appendedVoiceText = useRef(false)
   const useRecording = /iPhone|iPad|iPod/.test(navigator.userAgent)
     && !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined'
   const appendDraft = (transcript: string) => {
+    appendedVoiceText.current = true
     setDraft((previous) => appendVoiceText(previous, transcript))
   }
   const browserVoice = useQuestionVoice(open && !!chart && !useRecording, analysisId, appendDraft)
@@ -102,6 +104,12 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
   const listening = voice.phase === 'listening' || voice.phase === 'finishing'
   const releasing = voice.phase === 'releasing'
   const questionText = voice.preview ? appendVoiceText(draft, voice.preview) : draft
+
+  useLayoutEffect(() => {
+    const input = questionInput.current
+    if (input && (voice.preview || appendedVoiceText.current)) input.scrollTop = input.scrollHeight
+    appendedVoiceText.current = false
+  }, [questionText, voice.preview, voice.phase])
 
   useEffect(() => {
     if (fromChart) return
@@ -179,6 +187,12 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
     ask(question)
   }
 
+  function onQuestionKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing || event.keyCode === 229) return
+    event.preventDefault()
+    event.currentTarget.form?.requestSubmit()
+  }
+
   return <div hidden={!chart}>
     <section className="question-panel dashboard-chat" aria-label="짝꿍에게 질문하기">
       <div className="section-top dashboard-chat-heading">
@@ -213,12 +227,15 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
       </div>}
       {!turns.length && suggestion && <button type="button" className="chip" disabled={blocked || listening} onClick={() => ask(suggestion)}>{suggestion}</button>}
       <form className="chat-form chat-form-with-voice" onSubmit={onSubmit}>
-        <input ref={questionInput} aria-label="질문 입력" placeholder="궁금한 점을 물어보세요" maxLength={maxQuestionLength}
-          value={questionText}
-          onChange={(event) => {
-            voice.cancel()
-            setDraft(event.target.value)
-          }} />
+        <div className="chat-question-field" data-value={questionText}>
+          <textarea ref={questionInput} aria-label="질문 입력" placeholder="궁금한 점을 물어보세요"
+            rows={1} maxLength={maxQuestionLength} enterKeyHint="send" value={questionText} onKeyDown={onQuestionKeyDown}
+            onChange={(event) => {
+              appendedVoiceText.current = false
+              voice.cancel()
+              setDraft(event.target.value)
+            }} />
+        </div>
         <button type="button" className="button secondary small chat-voice-button" data-active={listening}
           aria-label={voice.phase === 'finishing' ? '음성 입력 취소' : listening ? '음성 입력 중지' : '음성 입력'}
           disabled={blocked || releasing || (!listening && draft.length >= maxQuestionLength)} onClick={() => {
