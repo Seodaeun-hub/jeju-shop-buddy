@@ -303,6 +303,17 @@ export function fetchQuestions(auth: string, id: string, signal: AbortSignal) {
 export function sendQuestion(auth: string, id: string, input: QuestionInput) {
   return request<QuestionTurn>(`/api/analyses/${encodeURIComponent(id)}/questions`, auth, 'POST', input)
 }
+export async function transcribeQuestion(auth: string, id: string, audio: Blob, signal: AbortSignal) {
+  if (audio.size > 2 * 1024 * 1024) throw new Error('짧은 질문을 다시 녹음해 주세요.')
+  const data = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result).split(',', 2)[1] ?? '')
+    reader.onerror = () => reject(new Error('녹음 파일을 읽지 못했어요. 다시 녹음해 주세요.'))
+    reader.readAsDataURL(audio)
+  })
+  const body = { mediaType: audio.type, audio: data }
+  return request<{ text: string }>(`/api/analyses/${encodeURIComponent(id)}/questions/transcription`, auth, 'POST', body, signal)
+}
 export const listAreas = (signal: AbortSignal) => request<Area[]>('/api/areas', undefined, 'GET', undefined, signal)
 export const registerStore = (auth: string, input: StoreInput) => request<Store>('/api/stores', auth, 'POST', input)
 

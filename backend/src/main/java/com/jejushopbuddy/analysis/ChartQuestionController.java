@@ -5,6 +5,7 @@ import com.jejushopbuddy.analysis.SalesAnalysisController.ApiError;
 import java.security.Principal;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -21,6 +22,8 @@ import tools.jackson.databind.ObjectMapper;
 @RequestMapping("/api/analyses/{analysisId}/questions")
 class ChartQuestionController {
     private static final Set<String> CHARTS = Set.of("MONTHLY_SALES", "MARKET_CARD_SALES", "JEJU_BSI", "TIME_SERIES");
+    private static final Set<String> VOICE_TYPES = Set.of("audio/mp4", "audio/webm", "audio/wav");
+    private static final long MAX_VOICE_BYTES = 2 * 1024 * 1024;
     private final JdbcClient jdbc;
     private final ObjectMapper json;
     private final SalesAnalysisReader analyses;
@@ -106,6 +109,20 @@ class ChartQuestionController {
         return response(turn);
     }
 
+    @PostMapping("/transcription")
+    ResponseEntity<Transcript> transcribe(@PathVariable UUID analysisId, @RequestBody VoiceInput input,
+                                          Principal owner) {
+        ownedAnalysis(analysisId, owner);
+        var type = Objects.toString(input.mediaType(), "").split(";", 2)[0].strip().toLowerCase(Locale.ROOT);
+        if (input.audio() == null || input.audio().length == 0 || input.audio().length > MAX_VOICE_BYTES
+                || !VOICE_TYPES.contains(type)) {
+            throw new Failure(HttpStatus.BAD_REQUEST, "INVALID_VOICE_INPUT", "짧은 질문을 다시 녹음해 주세요.");
+        }
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(agent.transcribeQuestion(new VoiceInput(type, input.audio()))
+                        .orElseThrow(ChartQuestionController::transcriptionUnavailable));
+    }
+
     private JsonNode verify(JsonNode answer, ChartQuestionEvidence.Snapshot snapshot) {
         if (!(answer instanceof tools.jackson.databind.node.ObjectNode result)
                 || !answer.path("sections").isArray() || !answer.path("actions").isArray()
@@ -178,6 +195,11 @@ class ChartQuestionController {
         return new Failure(HttpStatus.SERVICE_UNAVAILABLE, "QA_UNAVAILABLE", "답변을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.");
     }
 
+    private static Failure transcriptionUnavailable() {
+        return new Failure(HttpStatus.SERVICE_UNAVAILABLE, "TRANSCRIPTION_UNAVAILABLE",
+                "음성을 글로 바꾸지 못했어요. 다시 녹음하거나 질문을 직접 입력해 주세요.");
+    }
+
     @ExceptionHandler(Failure.class)
     ResponseEntity<ApiError> onFailure(Failure error) {
         return ResponseEntity.status(error.status).body(new ApiError(error.code, error.getMessage(), null));
@@ -197,4 +219,6 @@ class ChartQuestionController {
     record Question(UUID clientMessageId, UUID conversationId, String question, String chart, UUID planId, Boolean startFromChart) {}
     record Turn(UUID conversationId, UUID turnId, UUID clientMessageId, String question, String chart, UUID requestedPlanId, JsonNode answer) {}
     record History(UUID conversationId, List<Turn> turns) {}
+    record VoiceInput(String mediaType, byte[] audio) {}
+    record Transcript(String text) {}
 }
