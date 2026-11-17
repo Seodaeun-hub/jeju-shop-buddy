@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import date
 from typing import Literal
 
@@ -71,6 +72,7 @@ AMOUNT는 매장 전체 매출액, COUNT는 결제 건수, VISITORS는 손님 �
 어느 메뉴나 시간대의 증가·감소 폭이 가장 큰지 묻는 경우 RANKING이다. 이름을 알려 달라는 뜻이므로 품목명을 요구하지 않는다.
 메뉴와 시간대를 함께 물으면 한 고민으로 묶고 ranking의 두 필드를 모두 채운다. 매출액은 KRW, 메뉴 판매량은 QUANTITY,
 시간대별 결제 건수는 COUNT다. 단위를 생략하면 메뉴는 QUANTITY, 시간대는 COUNT다. 묻지 않은 축과 다른 유형의 ranking은 null이다.
+'어떤 메뉴와 시간대에서 매출이 가장 많이 줄었는지'는 menuUnit과 timeUnit 모두 KRW다.
 RANKING에서 예상 방향은 질문이 찾는 증가 또는 감소 방향이다. 이전 문장에 표시된 비교 월과 지표를 이어서 적용한다.
 매출 감소 이유나 원인 질문은 CAUSE, 홍보 방법은 PROMOTION, 이익·마진은 PROFIT이다.
 다음에 얼마나 주문하거나 준비할지 정하는 질문은 ORDER_PLANNING, 재고가 남거나 부족한지 사실을 확인하려는 질문은 INVENTORY다.
@@ -272,8 +274,18 @@ def compare_ranking(request: ConcernRequest, intent: ConcernIntent, months, prod
 
     direction = 1 if intent.expectedDirection == "INCREASE" else -1
     movement = "늘어난" if direction == 1 else "줄어든"
+    question = intent.question.strip()
+    menu_unit, time_unit = ranking.menuUnit, ranking.timeUnit
+    if question and question in request.concern:
+        revenue = bool(re.search(r"매출|실판매\s*금액|결제\s*금액", question))
+        quantity = bool(re.search(r"판매\s*(?:량|수량|개수)|몇\s*(?:개|그릇)", question))
+        count = bool(re.search(r"(?:결제|주문)\s*(?:건수|횟수)|몇\s*건", question))
+        if menu_unit and revenue != quantity:
+            menu_unit = "KRW" if revenue else "QUANTITY"
+        if time_unit and revenue != count:
+            time_unit = "KRW" if revenue else "COUNT"
     product_rows = {}
-    if ranking.menuUnit and months == product_months:
+    if menu_unit and months == product_months:
         for index, row in enumerate(request.productSales):
             facts = [MetricFact(id=f"item-{index}-count", kind="METRIC", metric="ITEM_SALES",
                                 label=row.productName, unit="QUANTITY", before=row.before, after=row.after)]
@@ -289,8 +301,8 @@ def compare_ranking(request: ConcernRequest, intent: ConcernIntent, months, prod
     answers, notes, focus = [], [], {}
     metric_names = {"KRW": "매출액", "COUNT": "결제 건수", "QUANTITY": "판매량"}
     for target, unit, facts, key, needed in (
-        ("메뉴", ranking.menuUnit, products, "productName", "같은 두 달의 품목별 상품 주문 자료"),
-        ("시간대", ranking.timeUnit, times, "timeBand", "같은 두 달의 시간대별 결제 자료"),
+        ("메뉴", menu_unit, products, "productName", "같은 두 달의 품목별 상품 주문 자료"),
+        ("시간대", time_unit, times, "timeBand", "같은 두 달의 시간대별 결제 자료"),
     ):
         if unit is None:
             continue
@@ -313,16 +325,17 @@ def compare_ranking(request: ConcernRequest, intent: ConcernIntent, months, prod
             answers.append(f"{subject} 가장 많이 {movement} {target}는 {labels}입니다. 변화 폭이 같아요.")
             continue
         focus[key] = largest.label
-        comparisons = " ".join(rank_comparison(fact) for fact in facts if fact.label == largest.label)
+        companions = [fact for fact in facts if fact.label == largest.label and fact.unit != unit]
+        comparisons = " ".join(rank_comparison(fact) for fact in (largest, *companions))
         scope = "비교 가능한 메뉴 중 " if target == "메뉴" and len(matching) < len(request.productSales) else ""
         answers.append(f"{scope}{subject} 가장 많이 {movement} {target}는 {largest.label}입니다. {comparisons}")
 
     if not answers:
         return missing(" ".join(notes))
     sources = []
-    if ranking.menuUnit and products:
+    if menu_unit and products:
         sources.append("저장된 품목별 상품 주문")
-    if ranking.timeUnit and times:
+    if time_unit and times:
         sources.append("저장된 시간대별 결제 자료")
     if sources:
         notes.append(f"{'·'.join(sources)}를 비교했어요.")

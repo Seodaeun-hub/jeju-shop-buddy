@@ -65,6 +65,7 @@ class ConcernCheckTest(unittest.TestCase):
                  "before": before, "after": after, "period": {"before": "2026-08", "after": "2026-09"}}
                 for key, label, unit, before, after in [
                     ("lunch", "오후 2시 전", "KRW", 700000, 690000),
+                    ("lunch-count", "오후 2시 전", "COUNT", 100, 50),
                     ("afternoon-amount", "오후 2~5시", "KRW", 545000, 375000),
                     ("afternoon-count", "오후 2~5시", "COUNT", 70, 50),
                 ]
@@ -83,6 +84,12 @@ class ConcernCheckTest(unittest.TestCase):
         self.assertEqual(results[2]["action"], "INVENTORY")
         self.assertIn("오후 2~5시 고기국수 홍보", results[3]["answer"])
         self.assertEqual(results[3]["action"], "PROMOTION")
+
+        misclassified = ranking.model_copy(update={
+            "ranking": ranking.ranking.model_copy(update={"menuUnit": "QUANTITY", "timeUnit": "COUNT"})})
+        corrected = compare_concern(request, misclassified)
+        self.assertEqual((corrected["productName"], corrected["timeBand"]), ("고기국수", "오후 2~5시"))
+        self.assertIn("매출액이 가장 많이 줄어든 시간대", corrected["answer"])
 
         single = compare_concern(request, intent("가장 판매량이 많이 줄어든 메뉴", "RANKING", expectedDirection="DECREASE",
                                                 ranking={"menuUnit": "QUANTITY", "timeUnit": None}))
