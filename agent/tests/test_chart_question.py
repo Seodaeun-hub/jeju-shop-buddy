@@ -123,13 +123,16 @@ class ChartQuestionTest(unittest.TestCase):
             payload["context"].update(focusedEvidenceIds=answer["focusedEvidenceIds"], recentQuestions=questions.copy())
             answers.append(answer)
         sales, bsi, guide, reviews, result = answers
+        self.assertTrue(sales["sections"][0]["text"].startswith("우리 가게 매출 변화율이"))
         self.assert_text(sales, "32,379,500원", "29,581,000원", "-8.64%", "2,049,456,994원", "2,199,885,864원", "+7.34%")
+        self.assertTrue(bsi["sections"][0]["text"].startswith("제주 전체 소상공인 경기 체감지수는"))
         self.assert_text(bsi, "63.1", "64.4", "+1.3p", "오후 2~5시 결제 건수", "337건", "189건")
         self.assert_text(guide, "주문 안내 점검하기", "라스트오더", "네이버 예약·주문을 이용하는 경우")
         self.assertEqual({fact["id"] for fact in guide["evidence"] if fact["kind"] == "GUIDE"}, {"g1", "g2"})
         self.assertEqual([fact["id"] for fact in reviews["evidence"]], ["r1", "r2"])
         self.assert_text(reviews, "2021-04 ~ 2021-05", "2건")
         self.assertEqual(result["planId"], "plan-1")
+        self.assertTrue(result["sections"][0]["text"].startswith("하루 평균 매출은 100,000원에서 150,000원으로 늘었어요"))
         self.assert_text(result, "4개 중 1개", "100,000원", "150,000원", "+50.00%", "6건", "8건", "+33.33%")
 
     def test_aewol_conversation(self):
@@ -185,7 +188,7 @@ class ChartQuestionTest(unittest.TestCase):
         question = "우리 가게랑 비교했을 때 상권 카드 이용액은 어떻게 달라졌나요?"
         answer = self.ask(payload, question, classified(["MARKET"]))
         self.assert_text(answer, "-8.64%", "+7.34%", "15.98%p 낮았어요")
-        self.assertEqual(answer["sections"][-1]["evidenceIds"], ["e1", "e3"])
+        self.assertEqual(answer["sections"][0]["evidenceIds"], ["e1", "e3"])
         self.assertEqual([fact["id"] for fact in answer["evidence"]], ["e1", "e3"])
 
         payload["availableEvidence"] = [fact for fact in payload["availableEvidence"] if fact["id"] != "e3"]
@@ -257,10 +260,24 @@ class ChartQuestionTest(unittest.TestCase):
             with self.subTest(question=question):
                 answer = self.ask(payload, question, intent)
                 self.assertEqual(answer["status"], "ANSWERED")
-                self.assert_text(answer, "고기국수 판매량", "120개", "100개", "고기국수 실판매금액",
-                                 "1,020,000원", "850,000원", "오후 2~5시 결제 건수", "70건", "50건", "오후 2~5시 매출액")
+                self.assertEqual(answer["sections"][0]["text"],
+                                 "매출이 가장 많이 줄어든 메뉴는 고기국수이고, 판매량은 120개에서 100개로 줄었어요. "
+                                 "매출이 가장 많이 줄어든 시간대는 오후 2~5시이고, 결제 건수는 70건에서 50건으로 줄었어요.")
+                self.assertEqual(len(answer["sections"]), 3)
+                self.assert_text(answer, "고기국수 실판매금액", "1,020,000원", "850,000원", "오후 2~5시 매출액")
                 self.assertEqual([fact["id"] for fact in answer["evidence"]],
                                  ["pork-quantity", "pork-revenue", "afternoon-count", "afternoon-revenue"])
+
+        answer = self.ask(payload, "가장 많이 줄어든 메뉴와 시간대를 알려줘.",
+                          classified(["ITEM_SALES", "TIME_SLOT"], timeMetric="COUNT"))
+        self.assertEqual(answer["sections"][0]["text"],
+                         "판매량이 가장 많이 줄어든 메뉴는 공깃밥이고, 판매량은 40개에서 5개로 줄었어요. "
+                         "결제 건수가 가장 많이 줄어든 시간대는 오후 2~5시이고, 결제 건수는 70건에서 50건으로 줄었어요.")
+
+        item = next(fact for fact in payload["availableEvidence"] if fact["id"] == "pork-quantity")
+        item["after"] = 125
+        answer = self.ask(payload, "매출이 가장 많이 줄어든 메뉴와 시간대를 알려줘.", intent)
+        self.assertIn("고기국수이고, 판매량은 120개에서 125개로 늘었어요.", answer["sections"][0]["text"])
 
         answer = self.ask(payload, "판매량이 가장 많이 줄어든 메뉴를 알려줘.", classified(["ITEM_SALES"]))
         self.assertEqual([fact["id"] for fact in answer["evidence"]], ["rice-quantity", "rice-revenue"])
