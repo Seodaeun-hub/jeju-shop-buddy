@@ -11,6 +11,7 @@ import com.jejushopbuddy.analysis.SalesAnalysisController.MonthlySale;
 import com.jejushopbuddy.analysis.SalesAnalysisController.ProductSale;
 import com.jejushopbuddy.analysis.SalesAnalysisController.TimeSeries;
 import com.jejushopbuddy.analysis.SalesAnalysisController.TimeSlot;
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -81,8 +82,39 @@ class ChartQuestionEvidenceTest {
         assertThat(facts).noneMatch(fact -> matches(fact, "금액 없는 메뉴"));
     }
 
-    @SuppressWarnings("unchecked")
     private static ChartQuestionEvidence evidenceFor(AnalysisResponse analysis, SalesAnalysisReader reader, JsonMapper json) {
+        return evidenceFor(analysis, reader, json, new JejuMarketContext.Context(null, null, null, List.of()));
+    }
+
+    @Test
+    void citesAreaRestaurantCardReferenceOnlyWhenExactComparisonIsMissing() {
+        var analysis = new AnalysisResponse(UUID.randomUUID(), UUID.randomUUID(), "8·9월 시연", null,
+                "2026-08", "2026-09", List.of(new MonthlySale("2026-08", 1500000L), new MonthlySale("2026-09", 1330000L)),
+                null, List.of(), OffsetDateTime.now());
+        var source = new JejuMarketContext.Source("제주관광공사 · BC카드 기반 추정", "https://example.test/card");
+        var reference = new JejuMarketContext.Reference(BigDecimal.valueOf(1269268638), BigDecimal.valueOf(845862979),
+                "제주시 이호동 음식점업 전체", source);
+        var reader = mock(SalesAnalysisReader.class);
+        var json = new JsonMapper();
+        var fallback = evidenceFor(analysis, reader, json, new JejuMarketContext.Context(null, null, reference, List.of()))
+                .forAnalysis(analysis, "owner@example.test", null, "음식점 상권과 비교해 줘", Set.of()).facts();
+        var fact = fallback.get("market-reference");
+        assertThat(fallback).doesNotContainKey("market");
+        assertThat(fact.path("metric").asString()).isEqualTo("MARKET_CARD_SALES");
+        assertThat(fact.path("scope").asString()).isEqualTo(reference.scope());
+        assertThat(fact.path("source").path("label").asString()).isEqualTo(source.label());
+        assertThat(fact.path("source").path("url").asString()).isEqualTo(source.url());
+        assertThat(hasValues(fact, "KRW", 1269268638, 845862979)).isTrue();
+
+        var exact = evidenceFor(analysis, reader, json, new JejuMarketContext.Context(
+                new JejuMarketContext.Pair(BigDecimal.TEN, BigDecimal.ONE), null, reference, List.of()))
+                .forAnalysis(analysis, "owner@example.test", null, "상권과 비교해 줘", Set.of()).facts();
+        assertThat(exact).containsKey("market").doesNotContainKey("market-reference");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static ChartQuestionEvidence evidenceFor(AnalysisResponse analysis, SalesAnalysisReader reader, JsonMapper json,
+                                                     JejuMarketContext.Context marketContext) {
         var jdbc = mock(JdbcClient.class);
         var statement = mock(JdbcClient.StatementSpec.class);
         JdbcClient.MappedQuerySpec<Object> mapped = mock(JdbcClient.MappedQuerySpec.class);
@@ -92,7 +124,7 @@ class ChartQuestionEvidenceTest {
         when(statement.query(UUID.class)).thenReturn(mock(JdbcClient.MappedQuerySpec.class));
         var market = mock(JejuMarketContext.class);
         when(market.forStore(analysis.storeId(), "2026-08", "2026-09")).thenReturn(new JejuMarketContext.StoreContext(
-                "제주시 이호동", "KOREAN_RESTAURANT", new JejuMarketContext.Context(null, null, null, List.of())));
+                "제주시 이호동", "KOREAN_RESTAURANT", marketContext));
         var strategies = mock(SalesStrategies.class);
         when(strategies.from(analysis)).thenReturn(new SalesStrategies.Response(analysis.id(), "2026-08", "2026-09",
                 List.of(), "RULE", List.of()));
