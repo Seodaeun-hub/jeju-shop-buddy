@@ -5,6 +5,9 @@ import { fetchQuestions, sendQuestion } from '../api/shop'
 import type { QuestionAction, QuestionChart, QuestionEvidence, QuestionInput, QuestionTurn } from '../api/shop'
 import { formatNumber } from '../data/shop'
 import { Citrus } from './ui'
+import { useQuestionVoice } from './useQuestionVoice'
+
+const maxQuestionLength = 1000
 
 function quantity(value: number, unit: string) {
   const formatted = unit === 'INDEX' ? value.toFixed(1) : formatNumber(value)
@@ -59,7 +62,7 @@ function AnswerSummary({ answer }: { answer: QuestionTurn['answer'] }) {
   </>
 }
 
-export function ChartQuestions({ auth, analysisId, chart, title, period, suggestion, strategyTo, fromChart, onClose, onTime }: {
+export function ChartQuestions({ auth, analysisId, chart, title, period, suggestion, strategyTo, fromChart, open, onClose, onTime }: {
   auth: string
   analysisId: string
   chart?: QuestionChart
@@ -68,6 +71,7 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
   suggestion?: string
   strategyTo: string
   fromChart: boolean
+  open: boolean
   onClose: () => void
   onTime: () => void
 }) {
@@ -80,6 +84,11 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
   const [reload, setReload] = useState(0)
   const [historyFailed, setHistoryFailed] = useState(false)
   const thread = useRef<HTMLDivElement>(null)
+  const voice = useQuestionVoice(open && !!chart, analysisId, (transcript) => {
+    setDraft((previous) => [previous.trimEnd(), transcript].filter(Boolean).join(' ').slice(0, maxQuestionLength))
+  })
+  const blocked = pending || loading || historyFailed
+  const listening = voice.phase !== 'idle'
 
   useEffect(() => {
     if (fromChart) return
@@ -109,7 +118,7 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
   }, [turns.length, chart])
 
   async function submit(input: QuestionInput) {
-    if (pending || loading || historyFailed) return
+    if (blocked || voice.isActive()) return
     setPending(true)
     setError('')
     setFailed(undefined)
@@ -185,11 +194,17 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
         {historyFailed && <button type="button" className="text-button" onClick={() => setReload(reload + 1)}>대화 다시 불러오기</button>}
         {failed && <button type="button" className="text-button" onClick={() => void submit(failed)}>같은 질문 다시 보내기</button>}
       </div>}
-      {!turns.length && suggestion && <button type="button" className="chip" disabled={pending || loading || historyFailed} onClick={() => ask(suggestion)}>{suggestion}</button>}
-      <form className="chat-form" onSubmit={onSubmit}>
-        <input aria-label="질문 입력" placeholder="궁금한 점을 물어보세요" value={draft} maxLength={1000} onChange={(event) => setDraft(event.target.value)} />
-        <button className="button primary small" disabled={pending || loading || historyFailed || !draft.trim()}>보내기</button>
+      {!turns.length && suggestion && <button type="button" className="chip" disabled={blocked || listening} onClick={() => ask(suggestion)}>{suggestion}</button>}
+      <form className="chat-form chat-form-with-voice" onSubmit={onSubmit}>
+        <input aria-label="질문 입력" placeholder="궁금한 점을 물어보세요" value={draft} maxLength={maxQuestionLength} onChange={(event) => setDraft(event.target.value)} />
+        <button type="button" className="button secondary small chat-voice-button" data-active={listening}
+          aria-label={voice.phase === 'finishing' ? '음성 입력 취소' : listening ? '음성 입력 중지' : '음성 입력'}
+          disabled={blocked || (!listening && draft.length >= maxQuestionLength)} onClick={voice.toggle}>
+          {voice.phase === 'finishing' ? '취소' : listening ? '중지' : '마이크'}
+        </button>
+        <button type="submit" className="button primary small" disabled={blocked || listening || !draft.trim()}>보내기</button>
       </form>
+      <div className="chat-voice-feedback" role="status">{voice.message}</div>
     </section>
   </div>
 }

@@ -557,7 +557,7 @@ export function Dashboard({ data, auth, analysisId, onSaveTimeSeries, strategyTo
     <div className="dashboard-chat-widget">
       <div id="dashboard-chat-panel" className="dashboard-chat-window" ref={chatPanel}
         hidden={!chatOpen} tabIndex={-1}>
-        {question && (auth && analysisId ? <ChartQuestions key={chartEntry ?? "general"} fromChart={chartEntry !== undefined} auth={auth} analysisId={analysisId}
+        {question && (auth && analysisId ? <ChartQuestions key={chartEntry ?? "general"} fromChart={chartEntry !== undefined} auth={auth} analysisId={analysisId} open={chatOpen}
           chart={question.chart} title={question.title} suggestion={question.suggestion}
           period={period} strategyTo={strategyTo} onClose={closeTopic} onTime={() => setTimeOpen(true)} /> : <Questions key={chartEntry ?? question.chart} topic={question} period={period} onClose={closeTopic} />)}
       </div>
