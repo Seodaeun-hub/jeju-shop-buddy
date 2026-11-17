@@ -788,7 +788,8 @@ paths:
       description: >
         로그인한 사업주가 소유한 매장의 분석에 실행 계획을 만든다.
         AI 추천을 선택하면 추천 ID와 전략 코드를 전달한다. 서버는 해당 추천의 이유와 근거를 실행 계획에 기록한다.
-        실행 시작일은 서버가 한국 시간 기준 요청 당일로 정한다.
+        계획 준비일을 지정할 수 있다. 생략하면 서버가 한국 시간 기준 요청 당일로 정한다.
+        주문 안내 전략은 준비일에서 이틀 뒤에 결과 관찰을 시작한다.
         종료일은 시작일을 포함해 지정한 주 수만큼 계산한다.
         추가 자료가 필요한 전략은 자료 준비와 검토를 위한 항목을 생성한다.
         실행 계획과 체크리스트는 한 번에 저장한다.
@@ -2203,6 +2204,10 @@ components:
       additionalProperties: false
       required: [strategyCode, conditions]
       properties:
+        preparationDate:
+          type: string
+          format: date
+          description: 실행을 준비하거나 시작할 날짜. 생략 시 한국 시간 기준 요청일.
         customerNotice:
           $ref: '#/components/schemas/CustomerNotice'
         executionGuideId:

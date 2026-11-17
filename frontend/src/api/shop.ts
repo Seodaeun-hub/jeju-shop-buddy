@@ -473,9 +473,10 @@ export function fetchExecutionGuide(auth: string, id: string, channel: Execution
 }
 
 export function createPlan(auth: string, id: string, strategyCode: StrategyCode, conditions: PlanConditions,
-  recommendationId?: string, executionGuideId?: string, customerNotice?: CustomerNotice, optionIndex?: number) {
+  recommendationId?: string, executionGuideId?: string, customerNotice?: CustomerNotice, optionIndex?: number,
+  preparationDate?: string) {
   return request<SavedPlan>(`/api/analyses/${encodeURIComponent(id)}/plans`, auth, 'POST',
-    { strategyCode, conditions, recommendationId, executionGuideId, customerNotice, optionIndex })
+    { strategyCode, conditions, recommendationId, executionGuideId, customerNotice, optionIndex, preparationDate })
 }
 
 export type StoreNoticeDraft = { title: string; message: string }

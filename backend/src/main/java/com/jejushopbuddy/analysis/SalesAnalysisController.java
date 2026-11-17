@@ -378,7 +378,8 @@ class SalesAnalysisController {
             produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<?> createPlan(@PathVariable String analysisId, @RequestBody JsonNode body, Principal owner) {
         UUID id = parseId(analysisId, "INVALID_ANALYSIS_ID", "분석 ID 형식을 확인해 주세요.", "analysisId");
-        fields(body, Set.of("strategyCode", "conditions", "recommendationId", "optionIndex", "executionGuideId", "customerNotice"), null);
+        fields(body, Set.of("strategyCode", "conditions", "recommendationId", "optionIndex", "executionGuideId",
+                "customerNotice", "preparationDate"), null);
         var code = body.get("strategyCode");
         if (code == null || !code.isString() || !Set.of("OUTREACH", "PROMOTION", "INVENTORY", "CUSTOM").contains(code.stringValue())) {
             throw invalid("INVALID_STRATEGY_CODE", "대응 전략을 선택해 주세요.", "strategyCode");
@@ -401,12 +402,26 @@ class SalesAnalysisController {
         UUID guideId = guide == null ? null : parseId(guide.isString() ? guide.stringValue() : "",
                 "INVALID_EXECUTION_GUIDE_ID", "실행 가이드 ID 형식을 확인해 주세요.", "executionGuideId");
         var result = planWriter.create(id, owner.getName(), strategyCode, conditions, recommendationId,
-                optionIndex, guideId, readCustomerNotice(body.get("customerNotice")));
+                optionIndex, guideId, readCustomerNotice(body.get("customerNotice")),
+                preparationDate(body.get("preparationDate")));
         if (result.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(new ApiError("ANALYSIS_NOT_FOUND", "매출 분석을 찾을 수 없어요.", null));
         }
         return ResponseEntity.status(HttpStatus.CREATED).body(result.get());
+    }
+
+    private static LocalDate preparationDate(JsonNode node) {
+        if (node == null) return null;
+        if (node.isString() && node.stringValue().matches("[0-9]{4}-[0-9]{2}-[0-9]{2}")) {
+            try {
+                LocalDate date = LocalDate.parse(node.stringValue());
+                if (date.getYear() > 0 && !date.isAfter(LocalDate.of(9999, 11, 30))) return date;
+            } catch (DateTimeParseException ignored) {
+                // Report an invalid calendar date on the request field.
+            }
+        }
+        throw invalid("INVALID_PREPARATION_DATE", "계획을 시작할 날짜를 확인해 주세요.", "preparationDate");
     }
 
     private static SalesStrategies.CustomerNotice readCustomerNotice(JsonNode notice) {
