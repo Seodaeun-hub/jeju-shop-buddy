@@ -1,0 +1,6 @@
+**
+!requirements.txt
+!strategy_agent/
+!strategy_agent/**
+**/__pycache__
+**/*.pyc
