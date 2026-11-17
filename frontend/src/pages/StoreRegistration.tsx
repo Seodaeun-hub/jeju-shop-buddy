@@ -11,6 +11,8 @@ const industryGroups = [...new Set(industryOptions.map(({ group }) => group))]
 const administrativeAreaAliases = new Map([
   ['제주시 도두일동', '제주시 도두동'],
   ['제주시 도두이동', '제주시 도두동'],
+  ['제주시 이호일동', '제주시 이호동'],
+  ['제주시 이호이동', '제주시 이호동'],
 ])
 
 export function StoreRegistration({ auth }: { auth: string }) {

@@ -97,7 +97,8 @@ export function App() {
   const planPath = (route: '/execution' | '/results', value: Plan) => value.id && value.analysisId
     ? route + '?' + new URLSearchParams({ id: value.id, analysisId: value.analysisId }) : route
   const accountPage = pathname === '/login' || pathname === '/signup'
-  const publicPage = accountPage || (pathname === '/' && !account)
+  const publicPage = pathname === '/signup' || (pathname === '/' && !account)
+  const afterLogin = typeof state?.returnTo === 'string' ? state.returnTo : '/stores'
 
   useEffect(() => {
     window.scrollTo(0, 0)
@@ -130,7 +131,7 @@ export function App() {
 
   function login(session: OwnerSession) {
     setAccount({ ...session, auth: ownerSession })
-    navigate(typeof state?.returnTo === 'string' ? state.returnTo : '/stores', { replace: true })
+    navigate(afterLogin, { replace: true })
   }
 
   function forgetDeletedAnalysis(id: string) {
@@ -326,7 +327,8 @@ export function App() {
     {logoutError && <p role="alert" className="error">{logoutError}</p>}
     {sessionPending && !publicPage ? <p role="status">로그인 상태를 확인하고 있어요.</p> : <Routes>
       <Route path="/" element={<Home />} />
-      <Route path="/login" element={<Account key="login" signup={false} onLogin={login} />} />
+      <Route path="/login" element={account ? <Navigate to={afterLogin} replace />
+        : <Account key="login" signup={false} onLogin={login} />} />
       <Route path="/signup" element={<Account key="signup" signup onLogin={login} />} />
       <Route path="/my-page" element={account
         ? <MyPage key={account.email} account={account} onUpdate={session => setAccount({ ...session, auth: ownerSession })} />
