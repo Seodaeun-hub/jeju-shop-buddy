@@ -16,6 +16,7 @@
 !backend/src/main/**
 !schema.sql
 !migration-store-reviews.sql
+!migration-chart-questions.sql
 !seed-jeju-areas.sql
 !deploy/
 !deploy/init-db.sql
