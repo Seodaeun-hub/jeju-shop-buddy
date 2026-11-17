@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
@@ -25,6 +26,9 @@ class ChartQuestionEvidence {
     private static final int MAX_AGENT_FACTS = 200;
     private static final int MAX_TIME_FACTS = 120;
     private static final int MAX_ITEM_FACTS = 40;
+    private static final Pattern ITEM_DECLINE = Pattern.compile("줄(?:었|어[든들])|감소|떨어(?:졌|진)|하락");
+    private static final Pattern ITEM_INCREASE = Pattern.compile("늘(?:었|어[나난났날남])|증가|오른|올랐|상승");
+    private static final Pattern ITEM_REVENUE = Pattern.compile("매출|실판매금액");
     private static final List<PosTimeBand> POS_TIME_BANDS = List.of(
             new PosTimeBand("오후 2시 전", 0, 14),
             new PosTimeBand("오후 2~5시", 14, 17),
@@ -154,16 +158,22 @@ class ChartQuestionEvidence {
 
     private void addItemFacts(Snapshot snapshot, AnalysisResponse analysis, String question, Set<String> focus) {
         String normalizedQuestion = compact(question);
+        boolean declining = ITEM_DECLINE.matcher(normalizedQuestion).find() && !ITEM_INCREASE.matcher(normalizedQuestion).find();
         var priority = Comparator.comparingInt((ProductSale item) -> {
             if (normalizedQuestion.contains(compact(item.productName()))) return 0;
             var id = itemId(item.productName());
-            return focus.contains(id + "-quantity") || focus.contains(id + "-revenue") ? 1 : 2;
-        }).thenComparing(Comparator.comparingLong((ProductSale item) ->
+            return !declining && (focus.contains(id + "-quantity") || focus.contains(id + "-revenue")) ? 1 : 2;
+        });
+        var revenueChange = Comparator.comparingLong((ProductSale item) ->
                 item.beforeRevenue() != null && item.afterRevenue() != null
-                        ? item.afterRevenue() - item.beforeRevenue() : Long.MIN_VALUE).reversed())
-                .thenComparing(Comparator.comparingLong((ProductSale item) -> item.after() - item.before()).reversed());
+                        ? item.afterRevenue() - item.beforeRevenue() : (declining ? Long.MAX_VALUE : Long.MIN_VALUE));
+        var quantityChange = Comparator.comparingLong((ProductSale item) -> item.after() - item.before());
+        var changeOrder = declining
+                ? (ITEM_REVENUE.matcher(normalizedQuestion).find()
+                    ? revenueChange.thenComparing(quantityChange) : quantityChange.thenComparing(revenueChange))
+                : revenueChange.reversed().thenComparing(quantityChange.reversed());
         int limit = Math.min(MAX_ITEM_FACTS, snapshot.remaining());
-        analysis.productSales().stream().sorted(priority).limit(limit / 2).forEach(item -> {
+        analysis.productSales().stream().sorted(priority.thenComparing(changeOrder)).limit(limit / 2).forEach(item -> {
             var id = itemId(item.productName());
             snapshot.add(metric(analysis, id + "-quantity", "ITEM_SALES", item.productName(), "해당 매장", "QUANTITY",
                     item.before(), item.after(), "저장된 품목별 판매 자료", null));
