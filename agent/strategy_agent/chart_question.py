@@ -142,6 +142,10 @@ def comparison_text(before, after, unit, before_token, after_token):
     return f"{before_token}에서 {after_token}{particle} {direction}"
 
 
+def largest_change(facts, direction):
+    return max(facts, key=lambda fact: direction * (fact.after - fact.before), default=None)
+
+
 def percent_change(before, after):
     first, second = Decimal(str(before)), Decimal(str(after))
     return (second - first) / first * 100 if first else None
@@ -289,7 +293,7 @@ class Answer:
             if not ranked:
                 ranked = facts
             direction = -1 if wants_drop else 1
-            fact = max(ranked, key=lambda entry: direction * (entry.after - entry.before))
+            fact = largest_change(ranked, direction)
             if direction * (fact.after - fact.before) <= 0:
                 label = "실판매금액" if fact.unit == "KRW" else "판매량"
                 movement = "줄어든" if wants_drop else "늘어난"
@@ -435,7 +439,7 @@ class Answer:
                 return
             fact = None if largest_drop or wants_increase else self.preferred(candidates)
             direction = 1 if wants_increase else -1
-            fact = fact or max(candidates, key=lambda entry: direction * (entry.after - entry.before))
+            fact = fact or largest_change(candidates, direction)
             units = ("COUNT", "KRW") if show_both else (fact.unit,)
             for entry_unit in units:
                 entry = next((item for item in facts if item.label == fact.label and item.unit == entry_unit), None)

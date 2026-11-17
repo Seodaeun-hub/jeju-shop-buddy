@@ -5,6 +5,8 @@ from typing import Literal
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
+from .chart_question import comparison_text, largest_change, number
+from .chart_question_schemas import MetricFact
 from .model import structured_model
 
 
@@ -31,12 +33,18 @@ class ConcernRequest(BaseModel):
     monthlySales: list[MonthlySale]
     hourlySales: dict[str, list[HourlyTotal]]
     productSales: list[ProductSale] = Field(default_factory=list)
+    timeEvidence: list[MetricFact] = Field(default_factory=list)
+
+
+class SalesRanking(BaseModel):
+    menuUnit: Literal["KRW", "QUANTITY"] | None
+    timeUnit: Literal["KRW", "COUNT"] | None
 
 
 class ConcernIntent(BaseModel):
     question: str
     metric: Literal["AMOUNT", "COUNT", "VISITORS", "PRODUCT", "PRODUCT_REVENUE", "INVENTORY",
-                    "PROMOTION", "PROFIT", "CAUSE", "BUSINESS_ADVICE", "OTHER"]
+                    "ORDER_PLANNING", "RANKING", "PROMOTION", "PROFIT", "CAUSE", "BUSINESS_ADVICE", "OTHER"]
     period: Literal["PREVIOUS_MONTH", "LATEST_TWO", "YEAR_OVER_YEAR", "EXPLICIT", "UNSUPPORTED"]
     dayFilter: Literal["WEEKDAY", "WEEKEND", "SPECIFIC_DAY"] | None
     beforeMonth: str | None
@@ -47,6 +55,7 @@ class ConcernIntent(BaseModel):
     expectedDirection: Literal["INCREASE", "DECREASE", "UNCHANGED"] | None
     productName: str | None
     nextStep: str | None
+    ranking: SalesRanking | None
 
 
 class ConcernIntents(BaseModel):
@@ -59,7 +68,15 @@ PROMPT = """사장님의 글에서 독립적으로 답할 고민을 입력 순�
 공통 기간이나 품목 조건이 있으면 해당 고민들에 이어서 적용한다. question은 각 고민에 해당하는 원문의 짧은 연속 구절을 그대로 복사한다.
 AMOUNT는 매장 전체 매출액, COUNT는 결제 건수, VISITORS는 손님 또는 방문객 수다.
 특정 품목의 판매량은 PRODUCT, 품목의 매출액은 PRODUCT_REVENUE다. 해당 품목명을 productName에 그대로 넣는다.
-매출 감소 이유나 원인 질문은 CAUSE, 홍보 방법은 PROMOTION, 이익·마진은 PROFIT, 재고·발주는 INVENTORY다.
+어느 메뉴나 시간대의 증가·감소 폭이 가장 큰지 묻는 경우 RANKING이다. 이름을 알려 달라는 뜻이므로 품목명을 요구하지 않는다.
+메뉴와 시간대를 함께 물으면 한 고민으로 묶고 ranking의 두 필드를 모두 채운다. 매출액은 KRW, 메뉴 판매량은 QUANTITY,
+시간대별 결제 건수는 COUNT다. 단위를 생략하면 메뉴는 QUANTITY, 시간대는 COUNT다. 묻지 않은 축과 다른 유형의 ranking은 null이다.
+RANKING에서 예상 방향은 질문이 찾는 증가 또는 감소 방향이다. 이전 문장에 표시된 비교 월과 지표를 이어서 적용한다.
+매출 감소 이유나 원인 질문은 CAUSE, 홍보 방법은 PROMOTION, 이익·마진은 PROFIT이다.
+다음에 얼마나 주문하거나 준비할지 정하는 질문은 ORDER_PLANNING, 재고가 남거나 부족한지 사실을 확인하려는 질문은 INVENTORY다.
+ORDER_PLANNING과 PROMOTION에서 품목명이 직접 언급되면 productName에 원문 이름을 넣는다.
+예를 들어 '그 결과를 바탕으로 다음 발주량과 홍보 방법을 정하고 싶어요'는 ORDER_PLANNING과 PROMOTION으로 분리하고
+question은 '다음 발주량'과 '홍보 방법을 정하고 싶어요'처럼 서로 다른 원문 구절을 사용한다.
 일반적인 가게 운영 조언은 BUSINESS_ADVICE, 가게 운영과 무관하거나 해석할 수 없는 질문은 OTHER다.
 BUSINESS_ADVICE의 nextStep에 매장에서 할 수 있는 구체적인 확인 한 가지를 한국어 한 문장으로 제안한다.
 가게에서 이미 일어난 일, 인과관계, 효과, 수치, 비용이나 정책은 추측하지 않는다. 다른 유형의 nextStep은 null이다.
@@ -93,20 +110,48 @@ def missing(detail: str) -> dict:
 
 
 def check_concerns(request: ConcernRequest) -> dict:
-    results = [
-        {"question": intent.question.strip() if intent.question.strip() in request.concern else None,
-         **compare_concern(request, intent)}
-        for intent in extract_intents(request)
-    ]
+    results = []
+    product_names = {row.productName for row in request.productSales}
+    product = time_band = None
+    focus_months = None
+    for intent in extract_intents(request):
+        fragment = intent.question.strip()
+        question = fragment if fragment and fragment in request.concern else None
+        named_product = intent.productName
+        if not (named_product and named_product in product_names and question and named_product in question):
+            named_product = None
+        related_time = time_band if not named_product or named_product == product else None
+        result = compare_concern(request, intent, named_product or product, related_time)
+        if intent.metric == "RANKING" and result["status"] == "COMPARED":
+            months = (result["beforeMonth"], result["afterMonth"])
+            if months != focus_months:
+                product = time_band = None
+            focus_months = months
+            if intent.ranking.menuUnit:
+                product = result.get("productName")
+            if intent.ranking.timeUnit:
+                time_band = result.get("timeBand")
+        results.append({"question": question, **result})
     return {"results": results or [{"status": "CLARIFICATION_REQUIRED",
                                     "detail": "어떤 변화나 가게 운영에 대해 궁금한지 알려 주세요."}]}
 
 
-def compare_concern(request: ConcernRequest, intent: ConcernIntent) -> dict:
+def compare_concern(request: ConcernRequest, intent: ConcernIntent, product=None, time_band=None) -> dict:
     if intent.metric == "PROMOTION":
+        if product or time_band:
+            focus = " ".join(filter(None, (time_band, product)))
+            return {"status": "GUIDANCE", "answer": f"{focus} 홍보를 검토해 보세요.",
+                    "detail": "홍보 전후의 같은 요일과 시간대를 비교해 결제 건수나 매출이 달라졌는지 확인해 보세요.",
+                    "action": "PROMOTION"}
         return {"status": "GUIDANCE",
                 "answer": "먼저 알리고 싶은 메뉴나 소식 한 가지를 골라보세요.",
-                "detail": "시간대별 결제 자료가 있다면 결제가 적은 시간대에 맞춰 안내해 보고, 전후의 비슷한 영업일을 비교해 보세요."}
+                "detail": "시간대별 결제 자료가 있다면 결제가 적은 시간대에 맞춰 안내해 보고, 전후의 비슷한 영업일을 비교해 보세요.",
+                "action": "PROMOTION"}
+    if intent.metric == "ORDER_PLANNING":
+        subject = f"{product}의" if product else "발주할 메뉴의"
+        return {"status": "GUIDANCE", "answer": f"{subject} 예상 판매량부터 확인해 보세요.",
+                "detail": "발주 검토에서 메뉴당 재료 사용량, 현재 재고와 입고 예정량을 확인하면 추가 준비량을 계산할 수 있어요.",
+                "action": "INVENTORY"}
     if intent.metric == "BUSINESS_ADVICE" and intent.nextStep:
         return {"status": "GUIDANCE", "answer": intent.nextStep}
     if intent.metric == "CAUSE":
@@ -152,6 +197,10 @@ def compare_concern(request: ConcernRequest, intent: ConcernIntent) -> dict:
     all_day = start is None and end is None
     if not all_day and (start is None or end is None or not 0 <= start < end <= 24):
         return {"status": "CLARIFICATION_REQUIRED", "detail": "비교할 시간을 정각 범위로 알려 주세요."}
+    if intent.metric == "RANKING":
+        if not all_day:
+            return missing("지정한 시간 범위 안에서 순위를 비교하려면 그 범위의 상품 주문·결제 집계가 필요해요.")
+        return compare_ranking(request, intent, (before_month, after_month), product_months)
 
     product_name = None
     if intent.metric in ("PRODUCT", "PRODUCT_REVENUE"):
@@ -206,3 +255,76 @@ def compare_concern(request: ConcernRequest, intent: ConcernIntent) -> dict:
             "metric": intent.metric, "productName": product_name, "beforeMonth": before_month, "afterMonth": after_month,
             "startHour": start, "endHour": end, "before": before, "after": after,
             "changeRate": None if before == 0 else (after - before) * 100 / before}
+
+
+def rank_comparison(fact):
+    subjects = {"KRW": "매출액은", "COUNT": "결제 건수는", "QUANTITY": "판매량은"}
+    suffix = "개" if fact.unit == "QUANTITY" else ""
+    comparison = comparison_text(fact.before, fact.after, fact.unit,
+                                 number(fact.before, fact.unit) + suffix, number(fact.after, fact.unit) + suffix)
+    return f"{subjects[fact.unit]} {comparison}."
+
+
+def compare_ranking(request: ConcernRequest, intent: ConcernIntent, months, product_months):
+    ranking = intent.ranking
+    if not ranking or not (ranking.menuUnit or ranking.timeUnit) or intent.expectedDirection not in {"INCREASE", "DECREASE"}:
+        return {"status": "CLARIFICATION_REQUIRED", "detail": "어떤 지표가 가장 많이 늘었는지 또는 줄었는지 알려 주세요."}
+
+    direction = 1 if intent.expectedDirection == "INCREASE" else -1
+    movement = "늘어난" if direction == 1 else "줄어든"
+    product_rows = {}
+    if ranking.menuUnit and months == product_months:
+        for index, row in enumerate(request.productSales):
+            facts = [MetricFact(id=f"item-{index}-count", kind="METRIC", metric="ITEM_SALES",
+                                label=row.productName, unit="QUANTITY", before=row.before, after=row.after)]
+            if row.beforeRevenue is not None and row.afterRevenue is not None:
+                facts.append(MetricFact(id=f"item-{index}-amount", kind="METRIC", metric="ITEM_SALES",
+                                        label=row.productName, unit="KRW", before=row.beforeRevenue, after=row.afterRevenue))
+            product_rows[row.productName] = facts
+
+    products = [fact for facts in product_rows.values() for fact in facts]
+    times = [fact for fact in request.timeEvidence if fact.metric == "TIME_SERIES" and fact.unit in {"COUNT", "KRW"} and fact.period
+             and (fact.period.before, fact.period.after) == months and fact.label
+             and fact.before is not None and fact.after is not None]
+    answers, notes, focus = [], [], {}
+    metric_names = {"KRW": "매출액", "COUNT": "결제 건수", "QUANTITY": "판매량"}
+    for target, unit, facts, key, needed in (
+        ("메뉴", ranking.menuUnit, products, "productName", "같은 두 달의 품목별 상품 주문 자료"),
+        ("시간대", ranking.timeUnit, times, "timeBand", "같은 두 달의 시간대별 결제 자료"),
+    ):
+        if unit is None:
+            continue
+        metric = metric_names[unit]
+        subject = metric + ("가" if unit == "COUNT" else "이")
+        matching = [fact for fact in facts if fact.unit == unit]
+        largest = largest_change(matching, direction)
+        if largest is None:
+            notes.append(f"{target}별 {metric} 비교에는 {needed}가 필요해요.")
+            continue
+        delta = largest.after - largest.before
+        if direction * delta <= 0:
+            answers.append(f"비교할 수 있는 {target} 중 {subject} {movement} {target}가 없어요.")
+            continue
+        ties = list(dict.fromkeys(fact.label for fact in matching if fact.after - fact.before == delta))
+        if len(ties) > 1:
+            labels = ", ".join(ties[:3])
+            if len(ties) > 3:
+                labels += f" 외 {len(ties) - 3}개"
+            answers.append(f"{subject} 가장 많이 {movement} {target}는 {labels}입니다. 변화 폭이 같아요.")
+            continue
+        focus[key] = largest.label
+        comparisons = " ".join(rank_comparison(fact) for fact in facts if fact.label == largest.label)
+        scope = "비교 가능한 메뉴 중 " if target == "메뉴" and len(matching) < len(request.productSales) else ""
+        answers.append(f"{scope}{subject} 가장 많이 {movement} {target}는 {largest.label}입니다. {comparisons}")
+
+    if not answers:
+        return missing(" ".join(notes))
+    sources = []
+    if ranking.menuUnit and products:
+        sources.append("저장된 품목별 상품 주문")
+    if ranking.timeUnit and times:
+        sources.append("저장된 시간대별 결제 자료")
+    if sources:
+        notes.append(f"{'·'.join(sources)}를 비교했어요.")
+    return {"status": "COMPARED", "answer": " ".join(answers), "detail": " ".join(notes),
+            "beforeMonth": months[0], "afterMonth": months[1], **focus}

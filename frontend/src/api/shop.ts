@@ -335,6 +335,7 @@ export type ConcernCheck = {
   after?: number
   changeRate?: number | null
   posMonths?: [string, string]
+  action?: 'INVENTORY' | 'PROMOTION'
 }
 
 export async function checkConcern(auth: string, id: string, signal: AbortSignal) {
