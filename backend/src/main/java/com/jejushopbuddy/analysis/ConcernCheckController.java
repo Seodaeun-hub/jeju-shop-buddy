@@ -3,7 +3,6 @@ package com.jejushopbuddy.analysis;
 import java.security.Principal;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -14,13 +13,11 @@ import tools.jackson.databind.ObjectMapper;
 @RestController
 class ConcernCheckController {
     private final SalesAnalysisReader analyses;
-    private final JdbcClient jdbc;
     private final ObjectMapper json;
     private final StrategyAgentClient agent;
 
-    ConcernCheckController(SalesAnalysisReader analyses, JdbcClient jdbc, ObjectMapper json, StrategyAgentClient agent) {
+    ConcernCheckController(SalesAnalysisReader analyses, ObjectMapper json, StrategyAgentClient agent) {
         this.analyses = analyses;
-        this.jdbc = jdbc;
         this.json = json;
         this.agent = agent;
     }
@@ -35,11 +32,8 @@ class ConcernCheckController {
                     .put("detail", "확인할 고민을 1,000자 이내로 입력해 주세요.");
         }
 
-        var hourlySales = jdbc.sql("""
-                SELECT COALESCE(a.hourly_sales, '{}'::jsonb)::text FROM sales_analyses a
-                JOIN stores s ON s.id = a.store_id JOIN owners o ON o.id = s.owner_id
-                WHERE a.id = :id AND o.email = :email
-                """).param("id", id).param("email", owner.getName()).query(String.class).single();
+        var hourlySales = analyses.findHourlySales(id, owner.getName())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         var payload = json.createObjectNode().put("concern", concern);
         payload.set("monthlySales", json.valueToTree(analysis.monthlySales()));
         payload.set("hourlySales", json.readTree(hourlySales));

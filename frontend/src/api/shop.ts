@@ -275,7 +275,7 @@ type QuestionPeriod = { start: string; end: string; businessDays: number }
 type DailyQuestionMetric = { before: number; after: number; unit: 'KRW' | 'COUNT'; changePercent?: number }
 type QuestionEvidenceBase = { id: string; label?: string; source?: QuestionSource }
 export type QuestionEvidence = QuestionEvidenceBase & (
-  | { kind: 'METRIC'; before: number; after: number; unit: 'KRW' | 'COUNT' | 'INDEX' | 'QUANTITY'; scope?: string; period?: { before: string; after: string } }
+  | { kind: 'METRIC'; metric?: string; before: number; after: number; unit: 'KRW' | 'COUNT' | 'INDEX' | 'QUANTITY'; scope?: string; period?: { before: string; after: string } }
   | { kind: 'STRATEGY'; reason?: string }
   | { kind: 'GUIDE'; when?: string }
   | { kind: 'REVIEW'; date: string; excerpt: string }
