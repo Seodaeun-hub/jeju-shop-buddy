@@ -4,6 +4,7 @@ type Recognition = {
   lang: string
   continuous: boolean
   interimResults: boolean
+  onstart: (() => void) | null
   onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null
   onerror: ((event: { error: string }) => void) | null
   onend: (() => void) | null
@@ -18,6 +19,8 @@ type SpeechWindow = Window & {
   webkitSpeechRecognition?: RecognitionConstructor
 }
 
+type VoiceSession = { recognition: Recognition; transcript: string }
+
 function stopWithoutResult(recognition: Recognition | null) {
   if (!recognition) return
   // The browser may already have ended the session before dispatching its end event.
@@ -25,37 +28,57 @@ function stopWithoutResult(recognition: Recognition | null) {
 }
 
 export function useQuestionVoice(open: boolean, analysisId: string, appendDraft: (text: string) => void) {
-  const active = useRef<Recognition>(null)
+  const active = useRef<VoiceSession>(null)
   const [phase, setPhase] = useState<'idle' | 'listening' | 'finishing'>('idle')
   const [message, setMessage] = useState('')
+  const [preview, setPreview] = useState('')
 
   useEffect(() => {
     setPhase('idle')
     setMessage('')
+    setPreview('')
     return () => {
-      const recognition = active.current
+      const session = active.current
       active.current = null
-      stopWithoutResult(recognition)
+      stopWithoutResult(session?.recognition ?? null)
     }
   }, [open, analysisId])
+
+  function finish(session: VoiceSession, fallback: string, abort = false) {
+    if (active.current !== session) return
+    active.current = null
+    if (abort) stopWithoutResult(session.recognition)
+    setPhase('idle')
+    setPreview('')
+    if (session.transcript) {
+      appendDraft(session.transcript)
+      setMessage('질문 칸에 입력했어요. 확인하고 보내기를 눌러 주세요.')
+    } else {
+      setMessage(fallback)
+    }
+  }
+
+  function cancelForEdit() {
+    const session = active.current
+    if (!session) return
+    active.current = null
+    stopWithoutResult(session.recognition)
+    setPhase('idle')
+    setPreview('')
+    setMessage('')
+  }
 
   function toggle() {
     if (!open) return
     const current = active.current
     if (current) {
       if (phase === 'finishing') {
-        active.current = null
-        stopWithoutResult(current)
-        setPhase('idle')
-        setMessage('')
+        finish(current, '', true)
       } else {
         setPhase('finishing')
         setMessage('음성 인식 결과를 기다리고 있어요.')
-        try { current.stop() } catch {
-          active.current = null
-          stopWithoutResult(current)
-          setPhase('idle')
-          setMessage('음성 입력을 끝내지 못했어요. 다시 시도하거나 직접 입력해 주세요.')
+        try { current.recognition.stop() } catch {
+          finish(current, '음성 입력을 끝내지 못했어요. 다시 시도하거나 직접 입력해 주세요.', true)
         }
       }
       return
@@ -69,47 +92,41 @@ export function useQuestionVoice(open: boolean, analysisId: string, appendDraft:
 
     try {
       const recognition = new BrowserRecognition()
-      active.current = recognition
+      const session = { recognition, transcript: '' }
+      active.current = session
       recognition.lang = 'ko-KR'
-      recognition.continuous = false
-      recognition.interimResults = false
-      let received = false
+      recognition.continuous = true
+      recognition.interimResults = true
+      recognition.onstart = () => {
+        if (active.current === session) setMessage('듣고 있어요. 다 말하면 중지를 누르거나 질문 칸을 수정해 주세요.')
+      }
       recognition.onresult = ({ results }) => {
-        if (active.current !== recognition || received) return
-        const transcript = results[0]?.[0]?.transcript.trim()
+        if (active.current !== session) return
+        const transcript = Array.from(results, (result) => result[0]?.transcript.trim()).filter(Boolean).join(' ')
         if (!transcript) return
-        received = true
-        appendDraft(transcript)
-        setMessage('질문 칸에 입력했어요. 확인하고 보내기를 눌러 주세요.')
+        session.transcript = transcript
+        setPreview(transcript)
       }
       recognition.onerror = ({ error }) => {
-        if (active.current !== recognition) return
-        active.current = null
-        setPhase('idle')
-        if (received) return
-        setMessage(error === 'not-allowed' || error === 'service-not-allowed'
+        finish(session, error === 'not-allowed' || error === 'service-not-allowed'
           ? '마이크 권한과 기기의 음성 인식 설정을 확인해 주세요. 직접 입력할 수도 있어요.'
           : error === 'no-speech'
             ? '들린 말이 없어요. 다시 말하거나 직접 입력해 주세요.'
             : '음성을 인식하지 못했어요. 다시 시도하거나 직접 입력해 주세요.')
       }
-      recognition.onend = () => {
-        if (active.current !== recognition) return
-        active.current = null
-        setPhase('idle')
-        if (!received) setMessage('들린 말이 없어요. 다시 말하거나 직접 입력해 주세요.')
-      }
+      recognition.onend = () => finish(session, '들린 말이 없어요. 다시 말하거나 직접 입력해 주세요.')
       setPhase('listening')
       setMessage('마이크가 켜지면 질문을 말해 주세요.')
       recognition.start()
     } catch {
-      const recognition = active.current
+      const session = active.current
       active.current = null
-      stopWithoutResult(recognition)
+      stopWithoutResult(session?.recognition ?? null)
       setPhase('idle')
+      setPreview('')
       setMessage('마이크를 시작하지 못했어요. 권한을 확인하거나 직접 입력해 주세요.')
     }
   }
 
-  return { phase, message, toggle, isActive: () => active.current !== null }
+  return { phase, message, preview, toggle, cancelForEdit, isActive: () => active.current !== null }
 }

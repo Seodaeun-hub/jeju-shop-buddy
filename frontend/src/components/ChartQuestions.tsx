@@ -9,6 +9,10 @@ import { useQuestionVoice } from './useQuestionVoice'
 
 const maxQuestionLength = 1000
 
+function appendVoiceText(draft: string, transcript: string) {
+  return [draft.trimEnd(), transcript].filter(Boolean).join(' ').slice(0, maxQuestionLength)
+}
+
 function quantity(value: number, unit: string) {
   const formatted = unit === 'INDEX' ? value.toFixed(1) : formatNumber(value)
   return formatted + (unit === 'KRW' ? '원' : unit === 'COUNT' ? '건' : '')
@@ -85,7 +89,7 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
   const [historyFailed, setHistoryFailed] = useState(false)
   const thread = useRef<HTMLDivElement>(null)
   const voice = useQuestionVoice(open && !!chart, analysisId, (transcript) => {
-    setDraft((previous) => [previous.trimEnd(), transcript].filter(Boolean).join(' ').slice(0, maxQuestionLength))
+    setDraft((previous) => appendVoiceText(previous, transcript))
   })
   const blocked = pending || loading || historyFailed
   const listening = voice.phase !== 'idle'
@@ -196,7 +200,12 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
       </div>}
       {!turns.length && suggestion && <button type="button" className="chip" disabled={blocked || listening} onClick={() => ask(suggestion)}>{suggestion}</button>}
       <form className="chat-form chat-form-with-voice" onSubmit={onSubmit}>
-        <input aria-label="질문 입력" placeholder="궁금한 점을 물어보세요" value={draft} maxLength={maxQuestionLength} onChange={(event) => setDraft(event.target.value)} />
+        <input aria-label="질문 입력" placeholder="궁금한 점을 물어보세요" maxLength={maxQuestionLength}
+          value={voice.preview ? appendVoiceText(draft, voice.preview) : draft}
+          onChange={(event) => {
+            voice.cancelForEdit()
+            setDraft(event.target.value)
+          }} />
         <button type="button" className="button secondary small chat-voice-button" data-active={listening}
           aria-label={voice.phase === 'finishing' ? '음성 입력 취소' : listening ? '음성 입력 중지' : '음성 입력'}
           disabled={blocked || (!listening && draft.length >= maxQuestionLength)} onClick={voice.toggle}>
