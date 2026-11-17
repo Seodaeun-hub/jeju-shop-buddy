@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { fetchInventoryEstimates, fetchInventoryRecipes, fetchInventoryWeather, saveInventoryEstimate, saveInventoryEstimateNote,
   saveInventoryRecipe, type InventoryDemandEstimate, type InventoryEstimateComparison,
@@ -14,6 +14,73 @@ const koreaTime = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dat
 const coverageRate = new Intl.NumberFormat('ko-KR', { style: 'percent', maximumFractionDigits: 1 })
 type ForecastSelection = { date: string; product: string; excludedDates?: string[] }
 
+function ForecastMenuPicker({ menus, value, disabled, onChange }: {
+  menus: string[]
+  value: string
+  disabled: boolean
+  onChange: (value: string) => void
+}) {
+  const id = useId()
+  const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const root = useRef<HTMLDivElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const input = useRef<HTMLInputElement>(null)
+  const hasMenus = menus.length > 0
+  const manual = editing || !hasMenus || Boolean(value && !menus.includes(value))
+
+  useEffect(() => {
+    if (!open) return
+    function closeOutside(event: PointerEvent) {
+      if (event.target instanceof Node && !root.current?.contains(event.target)) setOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    return () => document.removeEventListener('pointerdown', closeOutside)
+  }, [open])
+
+  function select(name: string) {
+    setOpen(false)
+    setEditing(false)
+    if (name !== value) onChange(name)
+    trigger.current?.focus()
+  }
+
+  return <div ref={root} className="inventory-menu-picker"
+    onBlur={event => {
+      if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) setOpen(false)
+    }}
+    onKeyDown={event => {
+      if (event.key !== 'Escape' || !open) return
+      event.preventDefault()
+      setOpen(false)
+      trigger.current?.focus()
+    }}>
+    <label id={`${id}-label`} htmlFor={`${id}-${hasMenus ? 'picker' : 'input'}`}>판매량을 예상할 메뉴</label>
+    {hasMenus && <div>
+      <button type="button" id={`${id}-picker`} ref={trigger} className="inventory-menu-trigger"
+        aria-labelledby={`${id}-label ${id}-value`} aria-expanded={open && !disabled} aria-controls={`${id}-options`}
+        disabled={disabled} onClick={() => setOpen(current => !current)}>
+        <span id={`${id}-value`}>{manual ? '목록에서 메뉴 선택' : value || '메뉴 선택'}</span>
+        <span aria-hidden="true">▾</span>
+      </button>
+      <ul id={`${id}-options`} className="inventory-menu-options" hidden={!open || disabled}>
+        {menus.map(name => <li key={name}>
+          <button type="button" aria-pressed={!manual && name === value} onClick={() => select(name)}>{name}</button>
+        </li>)}
+        <li><button type="button" onClick={() => {
+          setEditing(true)
+          setOpen(false)
+          requestAnimationFrame(() => input.current?.focus())
+        }}>직접 입력</button></li>
+        {value && <li><button type="button" onClick={() => select('')}>메뉴 선택 안 함</button></li>}
+      </ul>
+    </div>}
+    {manual && <input ref={input} id={`${id}-input`} value={value} maxLength={255} placeholder="POS에 적힌 메뉴 이름"
+      aria-label={hasMenus ? 'POS 메뉴 이름 직접 입력' : undefined} disabled={disabled}
+      onChange={event => { setEditing(true); onChange(event.target.value) }} />}
+  </div>
+}
+
 function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, menus, productName, recipeSaving, onProduct, onEstimate }: {
   auth: string
   planId: string
@@ -27,7 +94,6 @@ function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, m
   onEstimate: (estimate: InventoryDemandEstimate | null) => void
 }) {
   const [date, setDate] = useState(() => initialLookup?.date ?? addDays(seoulDate(), 1))
-  const menuOptions = useId()
   const [reference, setReference] = useState<InventoryWeather>()
   const [lookup, setLookup] = useState(initialLookup)
   const [loading, setLoading] = useState(Boolean(initialLookup))
@@ -128,11 +194,8 @@ function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, m
         clear()
       }} />
     </label>
-    <label>판매량을 예상할 메뉴
-      <input list={menuOptions} value={productName} maxLength={255} placeholder="POS에 적힌 메뉴 이름" disabled={loading || recipeSaving || savingEstimate}
-        onChange={event => { onProduct(event.target.value); clear() }} />
-    </label>
-    <datalist id={menuOptions}>{menuNames.map(name => <option value={name} key={name} />)}</datalist>
+    <ForecastMenuPicker menus={menuNames} value={productName} disabled={loading || recipeSaving || savingEstimate}
+      onChange={value => { onProduct(value); clear() }} />
     <button type="button" className="button secondary small" disabled={loading || savingEstimate || !date} onClick={() => {
       clear()
       setLoading(true)
