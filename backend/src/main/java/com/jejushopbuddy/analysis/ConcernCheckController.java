@@ -15,11 +15,13 @@ class ConcernCheckController {
     private final SalesAnalysisReader analyses;
     private final ObjectMapper json;
     private final StrategyAgentClient agent;
+    private final ChartQuestionEvidence chartEvidence;
 
-    ConcernCheckController(SalesAnalysisReader analyses, ObjectMapper json, StrategyAgentClient agent) {
+    ConcernCheckController(SalesAnalysisReader analyses, ObjectMapper json, StrategyAgentClient agent, ChartQuestionEvidence chartEvidence) {
         this.analyses = analyses;
         this.json = json;
         this.agent = agent;
+        this.chartEvidence = chartEvidence;
     }
 
     @PostMapping("/api/analyses/{id}/concern-check")
@@ -32,12 +34,13 @@ class ConcernCheckController {
                     .put("detail", "확인할 고민을 1,000자 이내로 입력해 주세요.");
         }
 
-        var hourlySales = analyses.findHourlySales(id, owner.getName())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        var hourlySales = analyses.findHourlySales(id, owner.getName()).map(json::readTree)
+                .orElseGet(json::createObjectNode);
         var payload = json.createObjectNode().put("concern", concern);
         payload.set("monthlySales", json.valueToTree(analysis.monthlySales()));
-        payload.set("hourlySales", json.readTree(hourlySales));
+        payload.set("hourlySales", hourlySales);
         payload.set("productSales", json.valueToTree(analysis.productSales()));
+        payload.set("timeEvidence", json.valueToTree(chartEvidence.concernTimeFacts(analysis, hourlySales)));
         return agent.concernCheck(payload).orElseGet(() -> json.createObjectNode().put("status", "UNAVAILABLE")
                 .put("detail", "AI가 고민을 확인할 수 없어요. 잠시 후 다시 시도해 주세요."));
     }

@@ -146,7 +146,8 @@ class ChartQuestionEvidence {
             });
         }
         addItemFacts(snapshot, analysis, question, focus);
-        addTimeFacts(snapshot, analysis, owner, question, focus, timeReferences);
+        addTimeFacts(snapshot, analysis, analyses.findHourlySales(analysis.id(), owner).map(json::readTree).orElse(null),
+                question, focus, timeReferences);
         snapshot.allow("ADD_TIME_SERIES", "AMOUNT");
         snapshot.allow("ADD_TIME_SERIES", "COUNT");
         snapshot.allow("OPEN_REVIEWS", "ALL");
@@ -190,10 +191,15 @@ class ChartQuestionEvidence {
         });
     }
 
-    private void addTimeFacts(Snapshot snapshot, AnalysisResponse analysis, String owner, String question,
+    List<ObjectNode> concernTimeFacts(AnalysisResponse analysis, JsonNode hourly) {
+        var snapshot = new Snapshot(new LinkedHashMap<>(), List.of());
+        addTimeFacts(snapshot, analysis, hourly, analysis.concern(), Set.of(), Set.of());
+        return List.copyOf(snapshot.facts().values());
+    }
+
+    private void addTimeFacts(Snapshot snapshot, AnalysisResponse analysis, JsonNode hourly, String question,
                               Set<String> focus, Set<String> references) {
         var series = analysis.timeSeries();
-        var hourly = analyses.findHourlySales(analysis.id(), owner).map(json::readTree).orElse(null);
         if (hourly != null) {
             var before = hourly.path(analysis.beforeMonth());
             var after = hourly.path(analysis.afterMonth());

@@ -180,10 +180,11 @@ function reviewExampleConcern(concern: string, before: Analysis['monthly'][numbe
   return { status: '추가 확인 필요', detail: '현재 매출 자료만으로 이 고민을 판단하기 어려워요.' }
 }
 
-function ConcernResult({ result, onUpload, checking }: {
+function ConcernResult({ result, onUpload, checking, strategyTo }: {
   result: ConcernCheck
   onUpload: (file: File, months: [string, string]) => void
   checking: boolean
+  strategyTo: string
 }) {
   const input = useRef<HTMLInputElement>(null)
   const { status, before, after, beforeMonth, afterMonth, startHour, endHour, changeRate, posMonths } = result
@@ -206,6 +207,9 @@ function ConcernResult({ result, onUpload, checking }: {
         {changeRate != null ? ` · ${formatRate(changeRate)}` : ' · 기준값이 0이라 증감률은 계산할 수 없어요.'}</p>
     </div>}
     {result.detail && <p className="muted">{result.detail}</p>}
+    {result.action && <Link className="button secondary small" to={strategyTo}>
+      {result.action === 'INVENTORY' ? '대응 전략에서 발주 검토' : '대응 전략에서 홍보 검토'}
+    </Link>}
     {status === 'MISSING_DATA' && posMonths && <>
       <button className="button secondary small" type="button" disabled={checking} onClick={() => input.current?.click()}>
         POS 다시 올리기
@@ -528,7 +532,7 @@ export function Dashboard({ data, auth, analysisId, onSaveTimeSeries, strategyTo
           {exampleConcern && <p><strong>{exampleConcern.status}</strong> · {exampleConcern.detail}</p>}
           <div className="dashboard-concern-results" aria-live="polite" aria-busy={checkingConcern}>
             {concernResults.length > 0 && <ol aria-label="고민별 답변">
-              {concernResults.map((result, index) => <ConcernResult key={index} result={result} checking={checkingConcern}
+              {concernResults.map((result, index) => <ConcernResult key={index} result={result} checking={checkingConcern} strategyTo={strategyTo}
                 onUpload={(file, months) => void verifyConcern({ file, months })} />)}
             </ol>}
           </div>
