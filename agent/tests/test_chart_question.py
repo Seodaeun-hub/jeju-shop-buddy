@@ -135,6 +135,25 @@ class ChartQuestionTest(unittest.TestCase):
         self.assertTrue(result["sections"][0]["text"].startswith("하루 평균 매출은 100,000원에서 150,000원으로 늘었어요"))
         self.assert_text(result, "4개 중 1개", "100,000원", "150,000원", "+50.00%", "6건", "8건", "+33.33%")
 
+    def test_description_uses_the_selected_chart(self):
+        for chart, question, wording in (
+            ("MONTHLY_SALES", "이 차트 어떤 차트야?", "가로축은 월, 세로축은 매출액(원)"),
+            ("MARKET_CARD_SALES", "여기 막대는 무슨 뜻이야?", "0% 왼쪽은 감소, 오른쪽은 증가"),
+            ("JEJU_BSI", "이 그래프는 어떻게 읽어?", "100은 체감경기 보합 기준"),
+            ("TIME_SERIES", "여기 숫자 단위가 뭐예요?", "단위는 결제 건수(건)"),
+        ):
+            with self.subTest(chart=chart):
+                answer = self.ask({**fixture(), "chart": chart}, question, classified(["CHART_DESCRIPTION"]))
+                self.assertEqual(answer["status"], "ANSWERED")
+                self.assertEqual(len(answer["sections"]), 1)
+                self.assert_text(answer, wording, "2021년 4월과 2021년 5월")
+
+    def test_chart_description_and_change_can_be_requested_together(self):
+        answer = self.ask(fixture(), "이 차트가 뭔지랑 매출이 얼마나 바뀌었는지도 알려줘.",
+                          classified(["SALES", "CHART_DESCRIPTION"]))
+        self.assertIn("월별 매출을 보여주는 막대 차트", answer["sections"][0]["text"])
+        self.assertIn("29,581,000원으로 줄었어요", answer["sections"][1]["text"])
+
     def test_aewol_conversation(self):
         self.aewol_conversation(live=False)
 
