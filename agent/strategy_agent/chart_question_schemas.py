@@ -9,7 +9,7 @@ from .schemas import Contract, StrategyCode
 Chart = Literal["MONTHLY_SALES", "MARKET_CARD_SALES", "JEJU_BSI", "TIME_SERIES"]
 Intent = Literal[
     "SALES", "MARKET", "BSI", "TIME_SLOT", "CAUSE", "STRATEGY", "GUIDE",
-    "REVIEWS", "PLAN", "RESULT", "ITEM_SALES", "COST", "STOCK", "OUT_OF_SCOPE",
+    "REVIEWS", "PLAN", "RESULT", "ITEM_SALES", "COST", "STOCK", "CHART_DESCRIPTION", "OUT_OF_SCOPE",
 ]
 ActionType = Literal[
     "OPEN_STRATEGY", "OPEN_REVIEWS", "OPEN_PLAN_RESULTS", "OPEN_EXECUTION_GUIDE",
