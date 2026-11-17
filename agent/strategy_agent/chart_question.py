@@ -93,6 +93,8 @@ ECONOMY_AND_TIME_DROP = re.compile(
 EXECUTION_REFERENCE = re.compile(r"계획|실행|점검|체크\s*리스트|진행\s*상태|성과")
 STORE_REFERENCE = re.compile(r"우리\s*(?:가게|매장)|(?:가게|매장)\s*(?:매출|판매)")
 MARKET_REFERENCE = re.compile(r"상권|주변\s*(?:소비|카드|상권)")
+MARKET_REFERENCE_ID = "market-reference"
+MARKET_REFERENCE_NOTE = "같은 지역의 세부 업종 자료가 없어 음식점업 전체 카드 소비를 참고했어요."
 COMPARISON_REFERENCE = re.compile(r"비교|비슷|격차|차이|대비")
 DECLINING = re.compile(r"줄(?:었|어[든들])|감소|떨어(?:졌|진)|하락")
 LARGEST_DECLINE = re.compile(r"(?:가장|제일)\s*(?:많이|크게)?\s*(?:줄|감소|떨어|하락)")
@@ -143,6 +145,12 @@ def comparison_text(before, after, unit, before_token, after_token):
 def percent_change(before, after):
     first, second = Decimal(str(before)), Decimal(str(after))
     return (second - first) / first * 100 if first else None
+
+
+def rate_phrase(rate):
+    if abs(rate) < Decimal("0.005"):
+        return "거의 변동이 없었어요"
+    return f"{abs(rate):.2f}% {'늘었어요' if rate > 0 else '줄었어요'}"
 
 
 def change(before, after, unit):
@@ -249,7 +257,11 @@ class Answer:
             self.need(code, needed)
             return
         fact = self.preferred(facts) or facts[0]
-        self.show_metric(fact, title)
+        if fact.id == MARKET_REFERENCE_ID:
+            self.show_metric(fact, "카드 소비액", include_fact_label=True)
+            self.section("OBSERVATION", MARKET_REFERENCE_NOTE, fact)
+        else:
+            self.show_metric(fact, title)
         return fact
 
     def named_fact(self, facts):
@@ -361,6 +373,19 @@ class Answer:
             self.section("OBSERVATION", "비교 시작값이 0인 항목이 있어 두 변화율의 차이를 계산할 수 없어요.", sales, market)
             return
         gap = sales_rate - market_rate
+        if market.id == MARKET_REFERENCE_ID:
+            template = (f"우리 가게 매출은 {rate_phrase(sales_rate)}. 같은 기간 "
+                        f"{{{{{market.id}.label}}}} 카드 소비는 {rate_phrase(market_rate)}.")
+            if abs(gap) < Decimal("0.005"):
+                template += " 두 변화율은 거의 같아요."
+            elif sales_rate < 0 and market_rate < 0:
+                template += f" 우리 가게의 매출 감소 폭이 약 {abs(gap):.1f}%p {'작았어요' if gap > 0 else '컸어요'}."
+            else:
+                template += f" 우리 가게 매출 변화율이 약 {abs(gap):.1f}%p {'높았어요' if gap > 0 else '낮았어요'}."
+            del self.sections[first_section:]
+            self.section("OBSERVATION", f"{template} {MARKET_REFERENCE_NOTE}", sales, market,
+                         values={(market.id, "label"): market.label})
+            return
         if abs(gap) < Decimal("0.005"):
             text = "두 변화율은 소수 둘째 자리 기준으로 거의 같아요."
         else:

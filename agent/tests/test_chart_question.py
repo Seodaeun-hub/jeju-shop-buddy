@@ -217,6 +217,25 @@ class ChartQuestionTest(unittest.TestCase):
         self.assertEqual(missing["missingInputs"][0]["code"], "MARKET_CARD_SALES")
         self.assertNotIn("%p", " ".join(section["text"] for section in missing["sections"]))
 
+    def test_market_comparison_labels_the_broader_reference(self):
+        payload = fixture()
+        payload["chart"] = "MARKET_CARD_SALES"
+        monthly, market = (next(fact for fact in payload["availableEvidence"] if fact["id"] == key)
+                           for key in ("e1", "e3"))
+        monthly.update(before=1500000, after=1330000)
+        market.update(id="market-reference", label="제주시 이호동 음식점업 전체", scope="제주시 이호동 음식점업 전체",
+                      before=1269268638, after=845862979, source={"label": "제주관광공사 · BC카드 기반 추정"})
+        single = self.ask(payload, "같은 기간 상권 소비가 어떻게 됐어?", classified(["MARKET"]))
+        self.assert_text(single, "제주시 이호동 음식점업 전체 카드 소비액은", "세부 업종 자료가 없어")
+
+        answer = self.ask(payload, "우리 가게 매출이랑 음식점 상권 매출 차이가 얼마나 돼?", classified(["SALES"]))
+        self.assertEqual(answer["status"], "ANSWERED")
+        self.assertEqual(answer["intents"], ["SALES", "MARKET"])
+        self.assertEqual(len(answer["sections"]), 1)
+        self.assert_text(answer, "우리 가게 매출은 11.33% 줄었어요", "이호동 음식점업 전체 카드 소비는 33.36% 줄었어요",
+                         "감소 폭이 약 22.0%p 작았어요", "세부 업종 자료가 없어")
+        self.assertEqual([fact["id"] for fact in answer["evidence"]], ["e1", "market-reference"])
+
     def test_declining_time_question_reports_no_drop_when_all_slots_improved(self):
         payload = fixture()
         for fact in payload["availableEvidence"]:

@@ -103,6 +103,12 @@ class ChartQuestionEvidence {
             snapshot.add(evidence);
             snapshot.allow("OPEN_STRATEGY", strategy.code());
         }
+        // Broader card consumption is available for questions without replacing exact strategy evidence.
+        var reference = context.cardReference();
+        if (context.card() == null && reference != null) {
+            snapshot.add(metric(analysis, "market-reference", "MARKET_CARD_SALES", reference.scope(), reference.scope(),
+                    "KRW", reference.before(), reference.after(), reference.source().label(), reference.source().url()));
+        }
         jdbc.sql("""
                 SELECT DISTINCT ON (strategy_code) strategy_code, snapshot
                 FROM execution_guide_snapshots
