@@ -2,7 +2,6 @@ package com.jejushopbuddy.analysis;
 
 import com.jejushopbuddy.analysis.SalesAnalysisController.AnalysisResponse;
 import com.jejushopbuddy.analysis.SalesAnalysisController.ApiError;
-import java.io.IOException;
 import java.security.Principal;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -12,12 +11,10 @@ import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -112,21 +109,18 @@ class ChartQuestionController {
         return response(turn);
     }
 
-    @PostMapping(path = "/transcription", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    ResponseEntity<Transcript> transcribe(@PathVariable UUID analysisId, @RequestParam("audio") MultipartFile audio,
+    @PostMapping("/transcription")
+    ResponseEntity<Transcript> transcribe(@PathVariable UUID analysisId, @RequestBody VoiceInput input,
                                           Principal owner) {
         ownedAnalysis(analysisId, owner);
-        var type = Objects.toString(audio.getContentType(), "").split(";", 2)[0].strip().toLowerCase(Locale.ROOT);
-        if (audio.isEmpty() || audio.getSize() > MAX_VOICE_BYTES || !VOICE_TYPES.contains(type)) {
+        var type = Objects.toString(input.mediaType(), "").split(";", 2)[0].strip().toLowerCase(Locale.ROOT);
+        if (input.audio() == null || input.audio().length == 0 || input.audio().length > MAX_VOICE_BYTES
+                || !VOICE_TYPES.contains(type)) {
             throw new Failure(HttpStatus.BAD_REQUEST, "INVALID_VOICE_INPUT", "짧은 질문을 다시 녹음해 주세요.");
         }
-        try {
-            var input = new VoiceInput(type, audio.getBytes());
-            return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(agent.transcribeQuestion(input)
-                    .orElseThrow(ChartQuestionController::transcriptionUnavailable));
-        } catch (IOException error) {
-            throw transcriptionUnavailable();
-        }
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(agent.transcribeQuestion(new VoiceInput(type, input.audio()))
+                        .orElseThrow(ChartQuestionController::transcriptionUnavailable));
     }
 
     private JsonNode verify(JsonNode answer, ChartQuestionEvidence.Snapshot snapshot) {
