@@ -47,6 +47,19 @@ class ChartQuestionController {
                 .body(new History(id, id == null ? List.of() : turns(id)));
     }
 
+    @PostMapping("/new")
+    @Transactional
+    public ResponseEntity<Void> startNew(@PathVariable UUID analysisId, @RequestBody NewQuestion request, Principal owner) {
+        ownedAnalysis(analysisId, owner);
+        if (request.conversationId() == null) throw notFound();
+        lockAnalysis(analysisId);
+        jdbc.sql("""
+                UPDATE chart_question_conversations SET archived_at = now()
+                WHERE analysis_id = :analysis AND id = :id AND archived_at IS NULL
+                """).param("analysis", analysisId).param("id", request.conversationId()).update();
+        return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
+    }
+
     @PostMapping
     @Transactional
     public ResponseEntity<Turn> ask(@PathVariable UUID analysisId, @RequestBody Question request, Principal owner) {
@@ -58,9 +71,7 @@ class ChartQuestionController {
         }
         if (request.planId() != null && !ownsPlan(analysisId, request.planId())) throw notFound();
 
-        // Serialize turns per analysis so concurrent submissions build on the latest committed context.
-        jdbc.sql("SELECT id FROM sales_analyses WHERE id = :id FOR NO KEY UPDATE")
-                .param("id", analysisId).query(UUID.class).optional().orElseThrow(ChartQuestionController::notFound);
+        lockAnalysis(analysisId);
         UUID conversation = conversation(analysisId);
         if (request.conversationId() != null && !request.conversationId().equals(conversation)) throw notFound();
         List<Turn> history = conversation == null ? List.of() : turns(conversation);
@@ -154,6 +165,12 @@ class ChartQuestionController {
         return analyses.find(analysisId, owner.getName()).orElseThrow(ChartQuestionController::notFound);
     }
 
+    private void lockAnalysis(UUID analysisId) {
+        // Serialize starts and turns for the same analysis.
+        jdbc.sql("SELECT id FROM sales_analyses WHERE id = :id FOR NO KEY UPDATE")
+                .param("id", analysisId).query(UUID.class).optional().orElseThrow(ChartQuestionController::notFound);
+    }
+
     private UUID rememberedPlan(UUID analysisId, List<Turn> turns) {
         for (var turn : turns.reversed()) {
             var value = turn.answer().path("planId");
@@ -170,7 +187,7 @@ class ChartQuestionController {
     }
 
     private UUID conversation(UUID analysisId) {
-        return jdbc.sql("SELECT id FROM chart_question_conversations WHERE analysis_id = :id")
+        return jdbc.sql("SELECT id FROM chart_question_conversations WHERE analysis_id = :id AND archived_at IS NULL")
                 .param("id", analysisId).query(UUID.class).optional().orElse(null);
     }
 
@@ -217,6 +234,7 @@ class ChartQuestionController {
     }
 
     record Question(UUID clientMessageId, UUID conversationId, String question, String chart, UUID planId, Boolean startFromChart) {}
+    record NewQuestion(UUID conversationId) {}
     record Turn(UUID conversationId, UUID turnId, UUID clientMessageId, String question, String chart, UUID requestedPlanId, JsonNode answer) {}
     record History(UUID conversationId, List<Turn> turns) {}
     record VoiceInput(String mediaType, byte[] audio) {}

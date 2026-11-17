@@ -86,6 +86,7 @@ export function useQuestionVoice(open: boolean, analysisId: string, appendDraft:
   }, [open, analysisId])
 
   function cancel() {
+    setMessage('')
     const session = active.current
     if (session) release(session, '', false)
   }

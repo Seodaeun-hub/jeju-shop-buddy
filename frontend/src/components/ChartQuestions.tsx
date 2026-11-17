@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import { Link } from 'react-router'
-import { fetchQuestions, sendQuestion } from '../api/shop'
+import { fetchQuestions, sendQuestion, startNewQuestionConversation } from '../api/shop'
 import type { QuestionAction, QuestionChart, QuestionEvidence, QuestionInput, QuestionTurn } from '../api/shop'
 import { formatNumber } from '../data/shop'
 import { Citrus } from './ui'
@@ -84,6 +84,7 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(!fromChart)
   const [pending, setPending] = useState(false)
+  const [startingNew, setStartingNew] = useState(false)
   const [error, setError] = useState('')
   const [failed, setFailed] = useState<QuestionInput>()
   const [reload, setReload] = useState(0)
@@ -100,7 +101,7 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
   const browserVoice = useQuestionVoice(open && !!chart && !useRecording, analysisId, appendDraft)
   const recordedVoice = useRecordedQuestionVoice(open && !!chart && useRecording, auth, analysisId, appendDraft)
   const voice = useRecording ? recordedVoice : browserVoice
-  const blocked = pending || loading || historyFailed
+  const blocked = pending || loading || startingNew || historyFailed
   const listening = voice.phase === 'listening' || voice.phase === 'finishing'
   const releasing = voice.phase === 'releasing'
   const questionText = voice.preview ? appendVoiceText(draft, voice.preview) : draft
@@ -163,6 +164,26 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
     })
   }
 
+  async function startNew() {
+    if (blocked) return
+    const conversationId = turns.at(-1)?.conversationId
+    voice.cancel()
+    setStartingNew(true)
+    setError('')
+    try {
+      if (conversationId) await startNewQuestionConversation(auth, analysisId, conversationId)
+      setTurns([])
+      setDraft('')
+      setFailed(undefined)
+      appendedVoiceText.current = false
+      questionInput.current?.focus()
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : '새 질문을 시작하지 못했어요.')
+    } finally {
+      setStartingNew(false)
+    }
+  }
+
   function actionButton(action: QuestionAction, turn: QuestionTurn) {
     const { type, targetId } = action
     const key = type + targetId
@@ -197,7 +218,10 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
     <section className="question-panel dashboard-chat" aria-label="짝꿍에게 질문하기">
       <div className="section-top dashboard-chat-heading">
         <h2><Citrus /> {fromChart ? "이 차트에 대해 질문하기" : "짝꿍에게 질문하기"}</h2>
-        <button type="button" aria-label="질문 패널 닫기" className="text-button close" onClick={onClose}>×</button>
+        <div className="dashboard-chat-heading-actions">
+          <button type="button" className="button secondary small" disabled={blocked} onClick={() => void startNew()}>새 질문</button>
+          <button type="button" aria-label="질문 패널 닫기" className="text-button close" onClick={onClose}>×</button>
+        </div>
       </div>
       <p className="badge">{fromChart ? title : "매출 분석"} · {period}</p>
       {loading && <p role="status">대화를 불러오는 중이에요.</p>}

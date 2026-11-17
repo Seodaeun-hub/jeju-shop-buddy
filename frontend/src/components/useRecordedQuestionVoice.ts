@@ -41,6 +41,7 @@ export function useRecordedQuestionVoice(open: boolean, auth: string, analysisId
 
   function cancel() {
     if (active.current) finish(active.current, '')
+    else setMessage('')
   }
 
   function stop(recording: Recording) {
