@@ -13,6 +13,7 @@ from .menu_translations import MenuRequest, MenuTranslations, translate_menu
 from .next_promotion import NextPromotionExplanation, NextPromotionRequest, build_next_promotion_graph
 from .promotion_channels import ChannelRequest, ChannelResponse, generate_channels
 from .promotion_reviews import ReviewRequest, ReviewResearch, research_reviews
+from .question_transcription import Transcript, VoiceInput, transcribe_question
 from .receipt import ReceiptDraft, ReceiptRequest, read_receipt
 from .schemas import Contract, StrategyRequest, StrategyResponse
 from .store_notice import StoreNoticeDraft, StoreNoticeRequest, generate_store_notice
@@ -40,6 +41,14 @@ def chart_question(request: ChartQuestionRequest) -> ChartQuestionResponse:
         return question_graph.invoke({"request": request})["result"]
     except (OpenAIError, OutputParserException, ValueError, TimeoutError):
         raise HTTPException(status_code=503, detail={"code": "QA_UNAVAILABLE"}) from None
+
+
+@app.post("/internal/question-transcription", response_model=Transcript)
+def question_transcription(request: VoiceInput) -> Transcript:
+    try:
+        return transcribe_question(request)
+    except (OpenAIError, ValueError, TimeoutError):
+        raise HTTPException(status_code=503, detail={"code": "TRANSCRIPTION_UNAVAILABLE"}) from None
 
 
 @app.post("/internal/concern-check")

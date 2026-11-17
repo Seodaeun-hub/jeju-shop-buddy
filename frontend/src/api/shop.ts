@@ -303,6 +303,11 @@ export function fetchQuestions(auth: string, id: string, signal: AbortSignal) {
 export function sendQuestion(auth: string, id: string, input: QuestionInput) {
   return request<QuestionTurn>(`/api/analyses/${encodeURIComponent(id)}/questions`, auth, 'POST', input)
 }
+export function transcribeQuestion(auth: string, id: string, audio: Blob, signal: AbortSignal) {
+  const body = new FormData()
+  body.append('audio', audio, 'question-audio')
+  return request<{ text: string }>(`/api/analyses/${encodeURIComponent(id)}/questions/transcription`, auth, 'POST', body, signal)
+}
 export const listAreas = (signal: AbortSignal) => request<Area[]>('/api/areas', undefined, 'GET', undefined, signal)
 export const registerStore = (auth: string, input: StoreInput) => request<Store>('/api/stores', auth, 'POST', input)
 

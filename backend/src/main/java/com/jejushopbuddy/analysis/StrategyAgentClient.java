@@ -93,6 +93,11 @@ final class StrategyAgentClient {
                 : post("/internal/chart-questions", payload, tools.jackson.databind.JsonNode.class);
     }
 
+    Optional<ChartQuestionController.Transcript> transcribeQuestion(ChartQuestionController.VoiceInput input) {
+        return baseUrl.isEmpty() ? Optional.empty()
+                : post("/internal/question-transcription", input, ChartQuestionController.Transcript.class, Duration.ofSeconds(22));
+    }
+
     Optional<tools.jackson.databind.JsonNode> concernCheck(Object payload) {
         return baseUrl.isEmpty() ? Optional.empty()
                 : post("/internal/concern-check", payload, tools.jackson.databind.JsonNode.class);

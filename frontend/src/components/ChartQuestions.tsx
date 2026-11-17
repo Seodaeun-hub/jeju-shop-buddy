@@ -6,6 +6,7 @@ import type { QuestionAction, QuestionChart, QuestionEvidence, QuestionInput, Qu
 import { formatNumber } from '../data/shop'
 import { Citrus } from './ui'
 import { useQuestionVoice } from './useQuestionVoice'
+import { useRecordedQuestionVoice } from './useRecordedQuestionVoice'
 
 const maxQuestionLength = 1000
 
@@ -89,9 +90,14 @@ export function ChartQuestions({ auth, analysisId, chart, title, period, suggest
   const [historyFailed, setHistoryFailed] = useState(false)
   const thread = useRef<HTMLDivElement>(null)
   const questionInput = useRef<HTMLInputElement>(null)
-  const voice = useQuestionVoice(open && !!chart, analysisId, (transcript) => {
+  const useRecording = /iPhone|iPad|iPod/.test(navigator.userAgent)
+    && !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined'
+  const appendDraft = (transcript: string) => {
     setDraft((previous) => appendVoiceText(previous, transcript))
-  })
+  }
+  const browserVoice = useQuestionVoice(open && !!chart && !useRecording, analysisId, appendDraft)
+  const recordedVoice = useRecordedQuestionVoice(open && !!chart && useRecording, auth, analysisId, appendDraft)
+  const voice = useRecording ? recordedVoice : browserVoice
   const blocked = pending || loading || historyFailed
   const listening = voice.phase === 'listening' || voice.phase === 'finishing'
   const releasing = voice.phase === 'releasing'
