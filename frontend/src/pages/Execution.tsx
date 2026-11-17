@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { notifyResultsDataChanged } from '../data/promotionArchive'
+import { notifyResultsDataChanged, seoulDate } from '../data/promotionArchive'
 import { Link } from 'react-router'
 import { fetchInstagramPublication, fetchManualPromotionPublication, type InstagramPublicationStatus, type ManualPromotionPublicationStatus } from '../api/shop'
 import { CustomerNoticeDetails } from '../components/CustomerNotice'
@@ -308,6 +308,10 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
   }
 
   const next = plan.tasks.findIndex((_, index) => !plan.done.includes(index))
+  const today = seoulDate()
+  const firstDay = plan.tasks[0]?.date ?? plan.startDate
+  const planStatus = next === -1 ? '완료' : plan.endDate < today ? '기간 종료'
+    : firstDay > today ? '예정' : '진행 중'
   const inventory = plan.strategy === 'inventory'
   const needsPromotionInputs = plan.strategy === 'promotion' && !!plan.missingInputs?.length
   const dateRange = `${plan.startDate.replaceAll('-', '.')} ~ ${plan.endDate.replaceAll('-', '.')}`
@@ -320,7 +324,7 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
       <div className="execution-current-plan">
         <div className="execution-summary-top">
           <span>현재 보는 실행 계획</span>
-          <span className="badge">{next === -1 ? '완료' : '진행 중'}</span>
+          <span className="badge">{planStatus}</span>
         </div>
         <h2 id="execution-current-title">{plan.title}</h2>
         <p className="execution-period">
