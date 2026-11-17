@@ -256,6 +256,8 @@ export function Dashboard({ data, auth, analysisId, onSaveTimeSeries, strategyTo
   }, [area, industry, before.month, after.month])
   const market = context?.card && { ...context.card, rate: changeRate(context.card.before, context.card.after) }
   const reference = context?.cardReference
+  const referenceRate = reference ? changeRate(reference.before, reference.after) : null
+  const marketSummaryRate = market ? market.rate : referenceRate
   const bsi = context?.bsi
   const missingContext = context === undefined ? '비교 자료를 불러오는 중이에요.'
     : context === null ? '비교 자료를 불러오지 못했어요.' : undefined
@@ -440,10 +442,10 @@ export function Dashboard({ data, auth, analysisId, onSaveTimeSeries, strategyTo
         </div>
         <div className="dashboard-kpi">
           <dt>같은 기간 상권 변화</dt>
-          <dd className={!market || market.rate === null ? 'muted' : market.rate < 0 ? 'down' : market.rate > 0 ? 'up' : ''}>
-            {market ? formatRate(market.rate) : context === undefined ? '불러오는 중' : '비교 자료 없음'}
+          <dd className={marketSummaryRate === null ? 'muted' : marketSummaryRate < 0 ? 'down' : marketSummaryRate > 0 ? 'up' : ''}>
+            {market || reference ? formatRate(marketSummaryRate) : context === undefined ? '불러오는 중' : '비교 자료 없음'}
           </dd>
-          <dd className="dashboard-kpi-note">{reference ? '같은 지역·세부 업종 자료 없음' : '같은 지역·업종 카드 이용액'}</dd>
+          <dd className="dashboard-kpi-note">{market || !reference ? '같은 지역·업종 카드 이용액' : `${reference.scope} 카드 소비 · 참고`}</dd>
         </div>
       </dl>
       <Link className="button primary small dashboard-next" to={strategyTo}>대응 전략 보기 <span aria-hidden="true">→</span></Link>
@@ -467,7 +469,7 @@ export function Dashboard({ data, auth, analysisId, onSaveTimeSeries, strategyTo
           </details>
         </> : reference ? <>
           <p className="muted">{reference.scope} 카드 소비 · 세부 업종 비교 자료 없음</p>
-          <MarketChart storeRate={delta} marketRate={changeRate(reference.before, reference.after)} label="음식점업 전체" />
+          <MarketChart storeRate={delta} marketRate={referenceRate} label="음식점업 전체" />
           <details className="source-details dashboard-market-details">
             <summary>참고 금액과 출처 보기</summary>
             <p>{won(reference.before)} → {won(reference.after)}</p>
