@@ -347,8 +347,15 @@ CREATE INDEX ix_execution_results_latest ON execution_results (plan_id, registra
 
 CREATE TABLE chart_question_conversations (
     id uuid PRIMARY KEY,
-    analysis_id uuid NOT NULL UNIQUE REFERENCES sales_analyses(id) ON DELETE CASCADE
+    analysis_id uuid NOT NULL REFERENCES sales_analyses(id) ON DELETE CASCADE,
+    archived_at timestamptz
 );
+
+CREATE UNIQUE INDEX chart_question_active_conversation_idx
+    ON chart_question_conversations (analysis_id) WHERE archived_at IS NULL;
+
+CREATE INDEX chart_question_conversations_analysis_idx
+    ON chart_question_conversations (analysis_id);
 
 CREATE TABLE chart_question_turns (
     id uuid PRIMARY KEY,

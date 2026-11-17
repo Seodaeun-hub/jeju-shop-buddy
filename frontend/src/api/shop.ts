@@ -300,6 +300,9 @@ export type QuestionInput = { clientMessageId: string; conversationId?: string; 
 export function fetchQuestions(auth: string, id: string, signal: AbortSignal) {
   return request<{ conversationId: string | null; turns: QuestionTurn[] }>(`/api/analyses/${encodeURIComponent(id)}/questions`, auth, 'GET', undefined, signal)
 }
+export const startNewQuestionConversation = (auth: string, id: string, conversationId: string) =>
+  send(`/api/analyses/${encodeURIComponent(id)}/questions/new`, auth, 'POST', { conversationId })
+
 export function sendQuestion(auth: string, id: string, input: QuestionInput) {
   return request<QuestionTurn>(`/api/analyses/${encodeURIComponent(id)}/questions`, auth, 'POST', input)
 }

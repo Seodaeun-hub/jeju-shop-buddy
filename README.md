@@ -9,7 +9,7 @@
 기존 개발용 DB에는 `migration-store-reviews.sql`을 다시 적용해 리뷰 분류 열을 추가합니다.
 기존 개발용 DB에서 AI 추천을 실행 계획에 저장하려면 `migration-strategy-recommendations.sql`도 적용합니다.
 실행 가이드 저장에는 위 파일 적용 후 `migration-execution-guide-snapshots.sql`을 적용합니다.
-기존 개발용 DB에서 차트 질문 대화를 저장하려면 `migration-chart-questions.sql`을 적용합니다.
+기존 개발용 DB에서 차트 질문 대화와 **새 질문**을 사용하려면 `migration-chart-questions.sql`을 적용합니다. **새 질문**을 누르면 현재 분석에서 빈 대화를 시작합니다.
 기존 개발용 DB에서 분석 이름을 저장하려면 `migration-analysis-name.sql`을 적용합니다.
 기존 개발용 DB에서 POS 품목별 판매량을 저장하려면 `migration-pos-product-sales.sql`을 적용합니다. 상품 주문의 판매가와 프로모션 입력값 불러오기를 사용하려면 품목별 판매량·프로모션 검토 마이그레이션 적용 후 `migration-promotion-input-defaults.sql`도 적용합니다.
 기존 개발용 DB에서 발주 검토표를 저장하려면 `migration-inventory-review.sql`을 적용합니다.
