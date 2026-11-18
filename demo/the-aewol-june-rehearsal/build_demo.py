@@ -16,7 +16,7 @@ MENUS = [
     ("꽁치 김치찌개", "꽁치 김치찌개+찰솥밥", 8000, "찰솥밥 포함으로 기재됨"),
     ("파돈 두루치기", "파돈 두루치기", 9500, "1인분 가격; 시연 주문은 2인분 이상"),
     ("양돈 두루치기", "양돈 두루치기", 9500, "1인분 가격; 시연 주문은 2인분 이상"),
-    ("문어사리", "문어사리 (1-2인)", 13000, "사리 한 단위 가격; 두루치기 주문에만 추가"),
+    ("문어사리", "문어사리 (1-2인)", 13000, "사리 한 단위 가격; 시연에서는 두루치기에만 추가"),
 ]
 PRICE = {name: price for name, _, price, _ in MENUS}
 # These quantities are invented for the scenario; they are not observations of the restaurant.
