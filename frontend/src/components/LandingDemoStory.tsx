@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { Citrus } from './ui'
@@ -125,9 +125,51 @@ function OutcomeScene() {
   </div>
 }
 
-function StoryStep({ index, motion, children }: { index: number; motion: boolean; children: (revealed: boolean) => ReactNode }) {
+function StoryStep({ index, motion, compact, children }: { index: number; motion: boolean; compact: boolean; children: (revealed: boolean) => ReactNode }) {
+  const article = useRef<HTMLElement>(null)
+  const copy = useRef<HTMLDivElement>(null)
+  const frame = useRef<HTMLDivElement>(null)
   const ref = useRef<HTMLDivElement>(null)
   const [revealed, setRevealed] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  useLayoutEffect(() => {
+    const section = article.current, text = copy.current, viewport = frame.current, scene = ref.current
+    if (!section || !text || !viewport || !scene) return
+    let disposed = false
+    function fit() {
+      if (disposed) return
+      const width = viewport!.clientWidth
+      if (!width) return
+      const nativeWidth = Math.min(600, width)
+      scene!.style.width = `${nativeWidth}px`
+      const naturalHeight = scene!.offsetHeight
+      if (!naturalHeight) return
+      const css = getComputedStyle(section!)
+      const screenHeight = parseFloat(css.minHeight) || window.innerHeight
+      const available = screenHeight - parseFloat(css.paddingTop) - parseFloat(css.paddingBottom)
+        - (compact ? text!.offsetHeight + parseFloat(css.rowGap) : 0) - 4
+      const widthScale = width / nativeWidth
+      // Keep the example readable on short screens; let the section grow rather than clip it.
+      const scale = Math.min(1.35, widthScale, Math.max(Math.min(compact ? .76 : .8, widthScale), available / naturalHeight))
+      const rounded = Math.floor(scale * 1000) / 1000
+      viewport!.style.height = `${Math.ceil(naturalHeight * rounded)}px`
+      scene!.style.transform = `scale(${rounded})`
+      scene!.style.left = `${Math.max(0, (width - nativeWidth * rounded) / 2)}px`
+      viewport!.dataset.fitted = 'true'
+    }
+    fit()
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(fit)
+    observer?.observe(viewport); observer?.observe(scene); observer?.observe(text)
+    window.addEventListener('resize', fit)
+    scene.addEventListener('load', fit, true)
+    void document.fonts.ready.then(fit)
+    return () => {
+      disposed = true
+      observer?.disconnect()
+      window.removeEventListener('resize', fit)
+      scene.removeEventListener('load', fit, true)
+    }
+  }, [compact, expanded])
   useEffect(() => {
     if (!ref.current) return
     if (typeof IntersectionObserver === 'undefined') { setRevealed(true); return }
@@ -136,21 +178,32 @@ function StoryStep({ index, motion, children }: { index: number; motion: boolean
     return () => observer.disconnect()
   }, [])
   const step = landingSteps[index]
-  return <article id={`landing-step-${step.id}`} className="journey-step" aria-labelledby={`journey-title-${step.id}`}>
-    <div className="journey-step-copy"><span className="journey-step-number">{step.eyebrow}</span><h3 id={`journey-title-${step.id}`}>{step.title.split('\n').map((line, i) => <span key={i}>{line}</span>)}</h3>
-      <p>{step.description}</p><small>{step.evidence}</small>
+  return <article ref={article} id={`landing-step-${step.id}`} className="journey-step" aria-labelledby={`journey-title-${step.id}`}>
+    <div className="journey-step-copy" ref={copy}><span className="journey-step-number">{step.eyebrow}</span><h3 id={`journey-title-${step.id}`}>{step.title.split('\n').map((line, i) => <span key={i}>{line}</span>)}</h3>
+      <details className="journey-step-description" open={!compact || expanded} onToggle={e => { if (compact) setExpanded(e.currentTarget.open) }}>
+      <summary>기능 설명·자료 안내</summary><p>{step.description}</p><small>{step.evidence}</small>
       {index === 0 && <a href={demo.sources.market} {...external}>제주데이터허브 원문 ↗</a>}
       {index === 3 && <div className="journey-public-sources"><a href={demo.sources.menuReview} {...external}>메뉴·후기 원문 ↗</a><a href={demo.sources.event} {...external}>당시 전시 소식 ↗</a></div>}
+      </details>
     </div>
+    <div className="journey-visual-frame" ref={frame}>
     <div className={`journey-stage journey-stage-${step.id}`} ref={ref} data-revealed={revealed} data-motion={motion ? 'on' : 'off'}>
       <div className="journey-stage-label"><span><Citrus /> {step.label}</span><small>{index === 0 ? '실제 상권 + 가상 POS' : index === 3 ? '공개자료 참고 · 초안 예시' : index === 4 ? '다국어 화면 예시' : '가상 시연 자료'}</small></div>
       {children(revealed)}
+    </div>
     </div>
   </article>
 }
 
 export function LandingDemoStory() {
   const [motion, setMotion] = useState(() => !window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+  const [compact, setCompact] = useState(() => window.matchMedia('(max-width: 700px)').matches)
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 700px)')
+    const update = () => setCompact(media.matches)
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
   useEffect(() => {
     const media = window.matchMedia('(prefers-reduced-motion: reduce)')
     const update = () => { if (media.matches) setMotion(false) }
@@ -171,12 +224,12 @@ export function LandingDemoStory() {
       <label className="journey-motion-control"><input type="checkbox" checked={motion} onChange={e => setMotion(e.target.checked)} />움직임 효과</label>
     </div></div>
     <div className="shell journey-steps">
-      <StoryStep index={0} motion={motion}>{() => <SalesScene />}</StoryStep>
-      <StoryStep index={1} motion={motion}>{() => <EvidenceScene />}</StoryStep>
-      <StoryStep index={2} motion={motion}>{() => <InventoryScene />}</StoryStep>
-      <StoryStep index={3} motion={motion}>{() => <PromotionScene />}</StoryStep>
-      <StoryStep index={4} motion={motion}>{revealed => <MenuScene revealed={revealed} motion={motion} />}</StoryStep>
-      <StoryStep index={5} motion={motion}>{() => <OutcomeScene />}</StoryStep>
+      <StoryStep index={0} motion={motion} compact={compact}>{() => <SalesScene />}</StoryStep>
+      <StoryStep index={1} motion={motion} compact={compact}>{() => <EvidenceScene />}</StoryStep>
+      <StoryStep index={2} motion={motion} compact={compact}>{() => <InventoryScene />}</StoryStep>
+      <StoryStep index={3} motion={motion} compact={compact}>{() => <PromotionScene />}</StoryStep>
+      <StoryStep index={4} motion={motion} compact={compact}>{revealed => <MenuScene revealed={revealed} motion={motion} />}</StoryStep>
+      <StoryStep index={5} motion={motion} compact={compact}>{() => <OutcomeScene />}</StoryStep>
     </div>
   </section>
 }
