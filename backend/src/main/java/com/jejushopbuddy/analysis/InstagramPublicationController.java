@@ -51,13 +51,15 @@ class InstagramPublicationController {
     private final String username;
     private final String imageBase;
     private final boolean enabled;
+    private final boolean rehearsalPublishEnabled;
 
     InstagramPublicationController(JdbcClient jdbc, ObjectMapper json, BusinessDate dates,
             @Value("${SHOP_BUDDY_INSTAGRAM_ACCESS_TOKEN:}") String token,
             @Value("${SHOP_BUDDY_INSTAGRAM_ACCOUNT_ID:}") String accountId,
             @Value("${SHOP_BUDDY_INSTAGRAM_USERNAME:}") String username,
             @Value("${SHOP_BUDDY_INSTAGRAM_TEST_STORE_ID:}") String storeId,
-            @Value("${SHOP_BUDDY_INSTAGRAM_IMAGE_BASE_URL:}") String imageBase) {
+            @Value("${SHOP_BUDDY_INSTAGRAM_IMAGE_BASE_URL:}") String imageBase,
+            @Value("${SHOP_BUDDY_INSTAGRAM_REHEARSAL_PUBLISH_ENABLED:false}") boolean rehearsalPublishEnabled) {
         this.jdbc = jdbc;
         this.dates = dates;
         this.json = json;
@@ -65,6 +67,7 @@ class InstagramPublicationController {
         this.accountId = accountId;
         this.username = username;
         this.imageBase = imageBase.strip().replaceFirst("/+$", "");
+        this.rehearsalPublishEnabled = rehearsalPublishEnabled;
         this.enabled = !token.isBlank() && accountId.matches("[0-9]+") && username.matches("[A-Za-z0-9._]+")
                 && storeId.matches("[0-9a-fA-F-]{36}") && this.imageBase.matches("https://[A-Za-z0-9.-]+");
         this.storeId = enabled ? UUID.fromString(storeId) : null;
@@ -76,22 +79,33 @@ class InstagramPublicationController {
     ResponseEntity<?> status(@PathVariable UUID planId, Principal owner) {
         var plan = find(planId, owner.getName());
         if (plan == null) return error(404, "PROMOTION_PLAN_NOT_FOUND", "홍보 초안을 찾을 수 없어요.");
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(new Status(
-                enabled && plan.storeId().equals(storeId) && !dates.rehearsing(), username, plan.publication()));
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(statusOf(plan));
     }
 
     @PostMapping("/api/plans/{planId}/instagram-publication")
     ResponseEntity<?> publish(@PathVariable UUID planId, @RequestBody Input input, Principal owner) {
-        if (dates.rehearsing()) return error(409, "REHEARSAL_PUBLICATION_DISABLED", "시연 중에는 홍보 초안만 확인해요. 실제 게시·예약은 실제 날짜로 돌아간 뒤 진행해 주세요.");
+        boolean rehearsing = dates.rehearsing();
+        if (rehearsing && !input.testPublication()) return error(409, "REHEARSAL_PUBLICATION_DISABLED", "시연 중에는 일반 게시·예약을 하지 않아요. 연결한 테스트 계정의 테스트 게시를 사용해 주세요.");
+        if (input.testPublication() && !InstagramTestPublication.available(true, rehearsalPublishEnabled, rehearsing)) {
+            return error(409, "INSTAGRAM_TEST_PUBLICATION_DISABLED", "이 매장에 시연용 테스트 게시가 허용되어 있지 않아요.");
+        }
         var plan = find(planId, owner.getName());
         if (plan == null) return error(404, "PROMOTION_PLAN_NOT_FOUND", "홍보 초안을 찾을 수 없어요.");
         if (!enabled || !plan.storeId().equals(storeId)) {
             return error(409, "INSTAGRAM_NOT_CONNECTED", "이 매장에 테스트용 인스타그램 계정이 연결되어 있지 않아요.");
         }
+        if (input.testPublication() && (!input.testConfirmed() || input.scheduledAt() != null)) {
+            return error(400, "INSTAGRAM_TEST_CONFIRMATION_REQUIRED", "오늘 테스트 계정에 실제 게시하는 것을 확인해 주세요. 과거 시연 초안은 예약할 수 없어요.");
+        }
         if (plan.publication() != null) return ResponseEntity.ok(plan.publication());
         var draft = plan.draft() == null ? null : json.readValue(plan.draft(), PromotionDraftController.Draft.class);
-        if (draft == null || !draft.caption().equals(input.caption()) || !username.equals(input.username())) {
+        String expectedCaption = draft == null ? null : input.testPublication()
+                ? InstagramTestPublication.caption(draft.caption(), dates.today(), BusinessDate.actualToday()) : draft.caption();
+        if (expectedCaption == null || !expectedCaption.equals(input.caption()) || !username.equals(input.username())) {
             return error(409, "INSTAGRAM_DRAFT_CHANGED", "초안이나 게시 계정이 바뀌었어요. 다시 열어 확인해 주세요.");
+        }
+        if (input.testPublication() && expectedCaption.codePointCount(0, expectedCaption.length()) > 2200) {
+            return error(400, "INSTAGRAM_CAPTION_TOO_LONG", "시연 안내를 포함한 문구가 길어요. 초안 문구를 줄인 뒤 다시 확인해 주세요.");
         }
         if (draft.photoDataUrl() == null) return error(400, "INSTAGRAM_PHOTO_REQUIRED", "게시하려면 메뉴 사진을 등록해 주세요.");
         byte[] image = decodeImage(input.image());
@@ -127,8 +141,16 @@ class InstagramPublicationController {
                     """).param("id", planId).param("previous", plan.publicationSnapshot()).update();
             if (cancelled == 0) return error(409, "INSTAGRAM_PUBLICATION_CHANGED", "게시가 시작됐어요. 새로고침해 상태를 확인해 주세요.");
         }
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(new Status(
-                enabled && plan.storeId().equals(storeId), username, null));
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(statusOf(
+                new Plan(plan.storeId(), plan.endDate(), plan.draft(), null, null)));
+    }
+
+    private Status statusOf(Plan plan) {
+        boolean connected = enabled && plan.storeId().equals(storeId);
+        boolean rehearsing = dates.rehearsing();
+        boolean testAvailable = InstagramTestPublication.available(connected, rehearsalPublishEnabled, rehearsing);
+        return new Status(connected && !rehearsing, username, plan.publication(), testAvailable,
+                testAvailable ? InstagramTestPublication.notice(dates.today(), BusinessDate.actualToday()) : null);
     }
 
     @Scheduled(fixedDelay = 1000)
@@ -334,14 +356,21 @@ class InstagramPublicationController {
         return ResponseEntity.status(status).body(new ApiError(code, message, null));
     }
 
-    record Input(String username, String caption, String image, OffsetDateTime scheduledAt) {}
+    record Input(String username, String caption, String image, OffsetDateTime scheduledAt,
+                 Boolean testPublication, Boolean testConfirmed) {
+        Input {
+            testPublication = Boolean.TRUE.equals(testPublication);
+            testConfirmed = Boolean.TRUE.equals(testConfirmed);
+        }
+    }
     static ResponseEntity<ApiError> locked() {
         return error(409, "INSTAGRAM_PUBLICATION_LOCKED", "인스타그램 게시를 예약했거나 시작한 계획의 할인 조건과 홍보물은 수정할 수 없어요.");
     }
 
     record Publication(String state, String username, String mediaId, String permalink, String caption, String imageDataUrl,
                        OffsetDateTime scheduledAt, OffsetDateTime publishedAt, String accountId) {}
-    record Status(boolean available, String username, Publication publication) {}
+    record Status(boolean available, String username, Publication publication,
+                  boolean rehearsalTestAvailable, String rehearsalTestNotice) {}
     private record Plan(UUID storeId, LocalDate endDate, String draft, Publication publication, String publicationSnapshot) {}
     private record Job(UUID id, LocalDate endDate, String snapshot) {}
 }
