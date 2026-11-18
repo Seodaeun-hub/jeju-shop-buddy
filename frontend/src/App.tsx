@@ -15,6 +15,7 @@ import { MyStores } from './pages/MyStores'
 import { MyPage } from './pages/MyPage'
 import { Execution } from './pages/Execution'
 import { ExecutionPlans } from './pages/ExecutionPlans'
+import { ResponseOverview } from './pages/ResponseOverview'
 import { Results } from './pages/Results'
 import { SavedStrategyPage, Strategy } from './pages/Strategy'
 import { addDays, monthLabel } from './data/shop'
@@ -27,6 +28,7 @@ const navigation = [
   { to: '/analysis', label: '매출 분석' },
   { to: '/strategy', label: '대응 전략' },
   { to: '/execution', label: '실행 관리' },
+  { to: '/overview', label: '대응 한눈에 보기' },
 ]
 
 function Placeholder({ children, to, action }: { children: ReactNode; to: string; action: string }) {
@@ -87,7 +89,7 @@ export function App() {
   const [retry, setRetry] = useState(0)
   const params = new URLSearchParams(search)
   const planRoute = pathname === '/execution' || pathname === '/results'
-  const requestedId = pathname === '/analysis' || pathname === '/strategy' ? params.get('id')
+  const requestedId = pathname === '/analysis' || pathname === '/strategy' || pathname === '/overview' ? params.get('id')
     : planRoute ? params.get('analysisId') : null
   const requestedPlanId = planRoute ? params.get('id') : null
   const [planError, setPlanError] = useState<{ id: string; message: string }>()
@@ -289,6 +291,7 @@ export function App() {
       : undefined} />
     {auth && <AnalysisSwitcher key={account?.email} auth={auth} analysis={currentAnalysis} analysisId={analysisId} onOpen={openSavedAnalysis} />}
     {dashboardContent}
+    {auth && analysisId && currentAnalysis && <Link className="button secondary" to={'/overview?' + new URLSearchParams({ id: analysisId })}>우리 가게 대응 한눈에 보기 →</Link>}
   </>
 
   const strategyPage = analysisId && !auth
@@ -317,6 +320,7 @@ export function App() {
           {auth && <Link to="/execution">계획 목록</Link>}
           <Link to={planPath('/execution', plan)} aria-current={pathname === '/execution' ? 'page' : undefined}>실행 관리</Link>
           <Link to={planPath('/results', plan)} aria-current={pathname === '/results' ? 'page' : undefined}>결과 확인</Link>
+          {auth && analysisId && <Link to={'/overview?' + new URLSearchParams({ id: analysisId })}>대응 한눈에 보기</Link>}
           <span>{plan.strategy === 'inventory' ? '발주 결과는 검토한 하루 기준' : <>결과 확인일 <time dateTime={addDays(plan.endDate, 1)}>{addDays(plan.endDate, 1)}</time></>}</span>
         </nav>
         {pathname === '/results'
@@ -340,7 +344,8 @@ export function App() {
   const activeSection = pathname === '/results' ? '/execution' : pathname
   const appMenu = <nav className="main-nav" id="workspace-menu" aria-label="가게짝꿍 메뉴" hidden={!workspaceNavOpen}>
     {navigation.map(({ to, label }) => <Link key={to} to={to === '/analysis' && analysisId ? dashboardPath(analysisId)
-      : to === '/strategy' ? strategyPath : to === '/execution' && !auth && plan ? planPath('/execution', plan) : to}
+      : to === '/strategy' ? strategyPath : to === '/overview' && analysisId ? '/overview?' + new URLSearchParams({ id: analysisId })
+        : to === '/execution' && !auth && plan ? planPath('/execution', plan) : to}
       onClick={() => { if (window.matchMedia('(max-width: 900px)').matches) setWorkspaceNavOpen(false) }}
       aria-current={to === activeSection ? 'page' : undefined}>{label}</Link>)}
   </nav>
@@ -367,6 +372,12 @@ export function App() {
       <Route path="/strategy" element={strategyPage} />
       <Route path="/execution" element={!auth && !requestedPlanId && !plan ? <Navigate to="/login" state={{ returnTo: pathname + search }} replace /> : planPage} />
       <Route path="/results" element={planPage} />
+      <Route path="/overview" element={!auth ? <Navigate to="/login" state={{ returnTo: pathname + search }} replace /> : <>
+        <AnalysisSwitcher key={account?.email} auth={auth} analysis={currentAnalysis} analysisId={analysisId}
+          onOpen={id => openSavedAnalysis(id, '/overview?' + new URLSearchParams({ id }))} />
+        {currentAnalysis && analysisId ? <ResponseOverview key={`${account?.email}:${analysisId}`} data={currentAnalysis} analysisId={analysisId} auth={auth} />
+          : analysisId ? analysisStatus : <Placeholder to="/sales" action="매출 입력하기">저장된 분석을 선택해 대응 흐름을 확인하세요.</Placeholder>}
+      </>} />
       <Route path="*" element={<Placeholder to="/" action="메인으로">요청한 화면을 찾을 수 없어요.</Placeholder>} />
     </Routes>}
   </main>

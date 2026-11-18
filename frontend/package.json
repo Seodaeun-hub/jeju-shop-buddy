@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "verify:overview": "node scripts/verify-response-overview.mjs"
   },
   "dependencies": {
     "@fontsource-variable/noto-sans-jp": "5.3.1",
