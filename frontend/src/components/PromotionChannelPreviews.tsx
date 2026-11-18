@@ -13,21 +13,20 @@ const basisNotes = {
 }
 
 const channelLinks = {
+  instagram: 'https://www.instagram.com/',
   naver: 'https://smartplace.naver.com/',
   daangn: 'https://business.daangn.com/',
 }
 
 type Channel = keyof PromotionChannelCopy
 
-export function PromotionChannelPreviews({ plan, draft, generatedImage, imageFailed, instagramImage, instagramCaption, instagramUsername, instagramPublishing, manualPublishing }: {
+export function PromotionChannelPreviews({ plan, draft, generatedImage, imageFailed, instagramImage, instagramCaption, manualPublishing }: {
   plan: Plan
   draft: PromotionDraft
   generatedImage?: string
   imageFailed: boolean
   instagramImage?: string | null
   instagramCaption: string
-  instagramUsername?: string
-  instagramPublishing?: ReactNode
   manualPublishing?: (channel: Channel) => ReactNode
 }) {
   const captions = { ...promotionCaptions(plan, draft), instagram: instagramCaption }
@@ -62,6 +61,8 @@ export function PromotionChannelPreviews({ plan, draft, generatedImage, imageFai
       {photo ? <a className="button secondary small" aria-label={`${label} 이미지 저장`} href={photo}
         download={`가게짝꿍-${label}-홍보물.jpg`}>이미지 저장</a>
         : <button type="button" className="button secondary small" disabled>이미지 저장</button>}
+      <a className="button secondary small" aria-label={`${label} 채널 열기`} href={channelLinks[id]}
+        target="_blank" rel="noopener noreferrer">{label} 열기 <span aria-hidden="true">↗</span></a>
     </>
   }
 
@@ -70,6 +71,7 @@ export function PromotionChannelPreviews({ plan, draft, generatedImage, imageFai
   }
 
   return <div className="promotion-previews">
+    <p className="muted promotion-preview-note">문구를 복사하고 이미지를 저장한 뒤, 채널을 열어 사장님 계정에서 직접 게시해 주세요.</p>
     <div className="promotion-preview-tabs" role="group" aria-label="홍보 채널 선택">
       {promotionChannels.map(({ id, label }) => <button key={id} type="button"
         aria-pressed={id === activeChannel} aria-controls={`${previewId}-${id}`}
@@ -118,7 +120,7 @@ export function PromotionChannelPreviews({ plan, draft, generatedImage, imageFai
             </header>
             <div className="promotion-post-byline">
               <span className="promotion-post-avatar" aria-hidden="true">{draft.storeName.slice(0, 1)}</span>
-              <strong>{instagram && instagramUsername ? `@${instagramUsername}` : draft.storeName}</strong>
+              <strong>{draft.storeName}</strong>
             </div>
             {instagram && image}
             <div className="promotion-post-text">
@@ -130,16 +132,13 @@ export function PromotionChannelPreviews({ plan, draft, generatedImage, imageFai
             </div>
             {id === 'daangn' && image}
             <footer className="promotion-post-footer">
-              {!instagram && !manualPublishing && <p className="promotion-post-mode">초안 준비 완료 · 직접 게시</p>}
+              {!manualPublishing && <p className="promotion-post-mode">초안 준비 완료 · 직접 게시</p>}
               <div className="promo-actions">
                 <div className="promo-actions promotion-post-copy-actions">
                   {previewActions(id, label)}
                 </div>
-                {!instagram && <a className="button secondary small" aria-label={`${label} 채널 열기`}
-                  href={channelLinks[id]} target="_blank" rel="noopener noreferrer">채널 열기 <span aria-hidden="true">↗</span></a>}
               </div>
               <small className="promotion-post-copy-feedback" role="status">{copyFeedback(id)}</small>
-              {instagram && instagramPublishing}
               {manualPublishing?.(id)}
             </footer>
           </article>

@@ -175,16 +175,11 @@ export type InstagramPublicationStatus = {
   available: boolean
   username: string
   publication?: InstagramPublication | null
-  rehearsalTestAvailable?: boolean
-  rehearsalTestNotice?: string | null
+  automaticPostingDisabled?: boolean
 }
 const instagramPublicationPath = (planId: string) => `/api/plans/${encodeURIComponent(planId)}/instagram-publication`
 export const fetchInstagramPublication = (auth: string, planId: string, signal?: AbortSignal) =>
   request<InstagramPublicationStatus>(instagramPublicationPath(planId), auth, 'GET', undefined, signal)
-export const publishInstagram = (auth: string, planId: string, input: { username: string; caption: string; image: string; scheduledAt?: string; testPublication?: boolean; testConfirmed?: boolean }) =>
-  request<InstagramPublication>(instagramPublicationPath(planId), auth, 'POST', input)
-export const cancelInstagramSchedule = (auth: string, planId: string) =>
-  request<InstagramPublicationStatus>(instagramPublicationPath(planId), auth, 'DELETE')
 
 function basicAuthorization(email: string, password: string) {
   const bytes = new TextEncoder().encode(email.trim() + ':' + password)

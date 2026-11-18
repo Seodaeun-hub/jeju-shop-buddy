@@ -500,6 +500,7 @@
     background: var(--sheet);
   }
   .promotion-preview-toolbar .promo-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .promotion-preview-toolbar .promo-actions > a:last-child { grid-column: 1 / -1; }
   .promotion-preview-toolbar .button { min-height: 44px; }
   .promotion-preview-toolbar small { color: var(--green); }
   .promotion-preview-toolbar small:empty { position: absolute; }
@@ -682,37 +683,6 @@
 @media (max-width: 480px) {
   .promo-draft { grid-template-columns: minmax(0, 1fr); }
   .promo-draft > :is(canvas, img):not([hidden]) { width: min(100%, 16rem); }
-}
-
-.instagram-publish { display: grid; gap: .4rem; justify-items: start; }
-.instagram-preview {
-  width: min(92vw, 50rem);
-  max-height: 88vh;
-  margin: auto;
-  padding: clamp(1rem, 3vw, 1.5rem);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--sheet);
-  color: inherit;
-  overflow: auto;
-}
-.instagram-preview::backdrop { background: rgba(24, 33, 26, .62); }
-.instagram-preview h2 { margin: 0 0 .8rem; }
-.instagram-preview-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-  gap: 1rem;
-  align-items: start;
-}
-.instagram-preview-body img { display: block; width: 100%; height: auto; border-radius: 8px; }
-.instagram-preview-caption { margin-top: .65rem; white-space: pre-wrap; overflow-wrap: anywhere; }
-.instagram-preview > .promo-actions { justify-content: flex-end; margin-top: .8rem; }
-.instagram-schedule { margin-top: .8rem; }
-.instagram-test-confirmation { margin-top: .8rem; padding: .8rem; border: 1px solid var(--green); border-radius: 8px; background: var(--pale-green); }
-.instagram-test-confirmation label { display: flex; flex-direction: row; align-items: flex-start; gap: .5rem; }
-.instagram-test-confirmation input[type='checkbox'] { width: 1.1rem; min-width: 1.1rem; height: 1.1rem; margin-top: .3rem; }
-@media (max-width: 560px) {
-  .instagram-preview-body { grid-template-columns: minmax(0, 1fr); }
 }
 
 .promotion-review-points,

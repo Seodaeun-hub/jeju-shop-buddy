@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { notifyResultsDataChanged, seoulDate } from '../data/promotionArchive'
+import { seoulDate } from '../data/promotionArchive'
 import { Link } from 'react-router'
 import { fetchInstagramPublication, fetchManualPromotionPublication, type InstagramPublicationStatus, type ManualPromotionPublicationStatus } from '../api/shop'
 import { CustomerNoticeDetails } from '../components/CustomerNotice'
@@ -13,7 +13,6 @@ import { formatNumber, won } from '../data/shop'
 import type { Analysis, InventoryItem, Plan, PromotionDraftInput, PromotionReviewInput, PromotionTone } from '../data/shop'
 import { InventoryReview } from './InventoryReview'
 import { PromotionReview } from './PromotionReview'
-import { InstagramPublish } from './InstagramPublish'
 import { PromotionDraftForm } from './PromotionDraftForm'
 import { ManualPromotionPublication } from './ManualPromotionPublication'
 import '../styles/execution.css'
@@ -24,11 +23,11 @@ function shortDate(date: string) {
 }
 
 const publicationLabels = {
-  SCHEDULED: '예약됨',
-  PUBLISHING: '게시 중',
-  PUBLISHED: '게시 완료',
-  FAILED: '예약 실패',
-  VERIFY_REQUIRED: '게시 확인 필요',
+  SCHEDULED: '이전 예약 기록 · 자동 게시 종료',
+  PUBLISHING: '이전 게시 요청 기록',
+  PUBLISHED: '이전 게시 완료 기록',
+  FAILED: '이전 게시 실패 기록',
+  VERIFY_REQUIRED: '이전 게시 확인 필요',
 }
 const instagramSchedule = new Intl.DateTimeFormat('ko-KR', {
   timeZone: 'Asia/Seoul', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -59,11 +58,10 @@ function getDraft(plan: Plan) {
   return { headline, feature, detail, caption }
 }
 
-function PromoDraft({ plan, auth, instagramStatus, onInstagramStatus, manualStatus, onManualStatus, resultsTo }: {
+function PromoDraft({ plan, auth, instagramStatus, manualStatus, onManualStatus, resultsTo }: {
   plan: Plan
   auth?: string
   instagramStatus?: InstagramPublicationStatus
-  onInstagramStatus?: (status: InstagramPublicationStatus) => void
   manualStatus?: ManualPromotionPublicationStatus | null
   resultsTo?: string
   onManualStatus?: (status: ManualPromotionPublicationStatus) => void
@@ -195,10 +193,7 @@ function PromoDraft({ plan, auth, instagramStatus, onInstagramStatus, manualStat
     {previewCanvas}
     <PromotionChannelPreviews plan={plan} draft={saved} instagramCaption={caption}
       generatedImage={generatedImage} imageFailed={!ready && failedPhoto === photoUrl}
-      instagramImage={instagramImage} instagramUsername={publication?.username ?? instagramStatus?.username}
-      instagramPublishing={plan.id && auth && onInstagramStatus && <InstagramPublish key={plan.id} auth={auth}
-        planId={plan.id} caption={caption} hasPhoto={Boolean(photoUrl)} endDate={plan.endDate} image={instagramImage}
-        state={instagramStatus} onStatus={onInstagramStatus} />}
+      instagramImage={instagramImage}
       manualPublishing={id => {
         if (!auth || !plan.id || !onManualStatus) return null
         const channel = { instagram: 'INSTAGRAM', naver: 'NAVER', daangn: 'DAANGN' } as const
@@ -442,7 +437,7 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
         {hasPromotionMaterials && auth && onSavePromotionDraft && <section className="receipt promotion-summary">
           <div>
             <h2>홍보</h2>
-            <p className="muted">{loadingInstagram ? '인스타 게시 상태 확인 중…' : [draft?.headline, promotionStatus, promotionSchedule].filter(Boolean).join(' · ')}</p>
+            <p className="muted">{loadingInstagram ? '홍보 게시 기록 확인 중…' : [draft?.headline, promotionStatus, promotionSchedule].filter(Boolean).join(' · ')}</p>
             {promotionEditorReady && !draft && <p className="muted">인스타그램·네이버 플레이스·당근 초안을 함께 만들어요.</p>}
             {!loadingInstagram && !draft && !promotionEditorReady &&
               <p className="muted">할인 조건을 저장하면 홍보 초안을 만들 수 있어요.</p>}
@@ -478,10 +473,7 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
                   onSave={async input => { await onSavePromotionDraft(input); setEditingPromotion(false); setReviewFirst(false) }}
                   onRegenerate={onRegeneratePromotionCaption} />}
               {draft && <div className="promotion-dialog-preview" hidden={Boolean(showPromotionEditor)}>
-                <PromoDraft plan={plan} auth={auth} instagramStatus={instagramStatus} onInstagramStatus={status => {
-                    setInstagramStatus(status)
-                    if (status.publication?.state === 'PUBLISHED') notifyResultsDataChanged()
-                  }}
+                <PromoDraft plan={plan} auth={auth} instagramStatus={instagramStatus}
                   manualStatus={manualStatus} onManualStatus={setManualStatus} resultsTo={resultsTo} />
               </div>}
             </div>
