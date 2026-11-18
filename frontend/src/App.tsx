@@ -314,7 +314,7 @@ export function App() {
         <nav className="plan-sections" aria-label="실행 계획 화면">
           <Link to={planPath('/execution', plan)} aria-current={pathname === '/execution' ? 'page' : undefined}>실행 관리</Link>
           <Link to={planPath('/results', plan)} aria-current={pathname === '/results' ? 'page' : undefined}>결과 확인</Link>
-          <span>결과 확인일 <time dateTime={addDays(plan.endDate, 1)}>{addDays(plan.endDate, 1)}</time></span>
+          <span>{plan.strategy === 'inventory' ? '발주 결과는 검토한 하루 기준' : <>결과 확인일 <time dateTime={addDays(plan.endDate, 1)}>{addDays(plan.endDate, 1)}</time></>}</span>
         </nav>
         {pathname === '/results'
           ? <Results key={plan.id ?? 'demo'} plan={plan} onChange={setPlan} auth={auth} storeId={currentAnalysis.storeId}

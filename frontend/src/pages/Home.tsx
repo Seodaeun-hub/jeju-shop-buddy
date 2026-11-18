@@ -186,7 +186,7 @@ function LandingFeatureExamples({ beforeCount, afterCount }: { beforeCount: numb
     <h2 id="landing-features-title">매출을 살핀 뒤, 이렇게 해볼 수 있어요.</h2>
 
     <LandingFeature title="할인 행사를 준비하고 홍보물 만들기" revealed={revealedCount > 0}
-      description="할인 예산과 수량을 검토하고, 메뉴 사진으로 인스타그램 홍보 초안을 만들어요.">
+      description="할인 예산과 수량을 검토하고, 메뉴 사진으로 인스타그램·네이버 플레이스·당근 홍보 초안을 만들어요.">
       <figure className="landing-feature-preview landing-promo-preview">
         <img src={promotionPhoto} alt="돼지고기와 파를 얹은 제주 고기국수 한 그릇" loading="lazy" width="1536" height="1024" />
         <figcaption className="landing-promo-copy">

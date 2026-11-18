@@ -9,6 +9,7 @@ import { notifyResultsDataChanged } from '../data/promotionArchive'
 import { addDays, changeRate, formatNumber, formatRate, won } from '../data/shop'
 import type { Plan, SalesPeriod, SalesResult } from '../data/shop'
 import { PromotionImpactPanel } from './PromotionImpactPanel'
+import { ExecutionOutcome } from './ExecutionOutcome'
 import '../styles/results.css'
 
 const sample: SalesResult = {
@@ -319,6 +320,16 @@ export function Results({ plan, onChange, auth, storeId, executionTo }: {
   storeId?: string
   executionTo: string
 }) {
+  if (auth && plan.id) return <>
+    <PageTitle title="실행 결과 확인" detail={plan.store} />
+    <ResultSummary plan={plan} detail={periodLabel(plan.startDate, plan.endDate)} />
+    <ExecutionOutcome key={plan.id} plan={plan as Plan & { id: string }} auth={auth} />
+    {plan.strategy !== 'inventory' && <details className="result-direct-entry">
+      <summary>기존 게시 기록·매출 비교 보기</summary>
+      <SalesResults plan={plan} onChange={onChange} auth={auth} storeId={storeId} />
+    </details>}
+    <ResultFooter to={executionTo} />
+  </>
   if (plan.strategy === 'inventory' && !plan.id) return <InventoryResults plan={plan} onChange={onChange} executionTo={executionTo} />
 
   return <>
