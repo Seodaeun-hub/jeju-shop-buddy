@@ -436,6 +436,11 @@ h1, .wordmark {
   .workspace-nav-toggle { width: 2.25rem; }
 }
 
+@media (max-width: 550px) {
+  .workspace-sidebar .main-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .2rem; }
+  .workspace-sidebar .main-nav a { display: flex; align-items: center; justify-content: center; min-height: 44px; min-width: 0; white-space: normal; text-align: center; line-height: 1.35; }
+}
+
 @media (max-width: 800px) {
   .shell { width: calc(100% - 1.6rem); }
   .header-inner { min-height: 62px; flex-wrap: wrap; gap: .2rem .65rem; padding-block: .35rem; }
