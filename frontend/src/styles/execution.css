@@ -524,7 +524,48 @@
 .promo-copy > a { color: var(--green); font-weight: 750; text-underline-offset: .2em; }
 .promo-copy [role="status"]:empty { display: none; }
 .promo-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
+.inventory-review { min-width: 0; }
+.execution-page-inventory { gap: .8rem; }
+.execution-page-inventory > .page-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: .25rem 1rem; }
+.execution-page-inventory > .page-heading p { margin: 0; }
+.execution-page-inventory .execution-summary { padding: .65rem 1rem; }
+.execution-page-inventory .execution-current-plan { gap: .2rem; }
+.execution-page-inventory .execution-current-plan h2 { font-size: 1.15rem; }
+.execution-page-inventory .execution-summary-mark { width: 2.3rem; }
+.inventory-workspace { container-type: inline-size; }
+.inventory-review-date { margin: 0 0 1rem; font-size: .875rem; }
+.inventory-workspace-grid { display: grid; grid-template-columns: minmax(16rem, .85fr) minmax(0, 1.45fr); gap: clamp(1rem, 2.5vw, 2rem); align-items: start; }
+.inventory-forecast-panel { padding: 1rem; border: 1px solid var(--line); border-radius: 12px; background: #f8faf6; min-width: 0; gap: .75rem; }
+.inventory-workspace h3 { display: flex; align-items: center; gap: .55rem; margin: 0; font-size: 1.1rem; }
+.inventory-step-number { display: inline-grid; place-items: center; width: 1.65rem; height: 1.65rem; border-radius: 50%; background: var(--green); color: white; flex: none; font-size: .85rem; }
+.inventory-forecast-panel :is(input, .button) { width: 100%; }
+.inventory-demand-result { display: grid; gap: .2rem; padding: .9rem 1rem; border-radius: 9px; background: var(--pale-green); color: var(--green); }
+.inventory-demand-result > span { font-size: .9rem; font-weight: 650; }
+.inventory-demand-result > strong { font-size: clamp(1.8rem, 3vw, 2.4rem); line-height: 1.2; }
+.inventory-demand-result small { margin-left: .3rem; font-size: 1rem; }
+.inventory-secondary { border-top: 1px solid var(--line); padding-top: .65rem; min-width: 0; }
+.inventory-secondary > summary { color: var(--green); font-size: .9rem; font-weight: 700; cursor: pointer; padding-block: .3rem; }
+.inventory-secondary > summary:hover { text-decoration: underline; text-underline-offset: .2em; }
+.inventory-secondary[open] > summary { margin-bottom: .7rem; }
+.inventory-preparation { min-width: 0; gap: .75rem; }
+.inventory-inputs { margin: 0; padding: 0; border: 0; min-width: 0; }
+.inventory-empty { padding: 1.5rem 1rem; text-align: center; border: 1px dashed var(--line); border-radius: 10px; }
+.inventory-empty strong { display: block; margin-bottom: .4rem; }
+.inventory-recipe { margin-top: .8rem; padding-top: .8rem; border-top: 1px solid var(--line); gap: .55rem; }
+.inventory-recipe input { width: 100%; min-width: 0; }
+.inventory-preparation-result { padding: .85rem; background: var(--pale-green); border-radius: 8px; gap: .45rem; }
+.inventory-preparation-result p { margin: 0; }
+.inventory-preparation-result p > strong { color: var(--green); }
+.inventory-save-bar { display: flex; justify-content: flex-end; padding-top: .75rem; border-top: 1px solid var(--line); }
+.inventory-bulk { margin-top: .85rem; }
+.inventory-pos-reference { font-size: .875rem; min-width: 0; }
+.inventory-pos-reference summary { cursor: pointer; }
+.inventory-pos-reference .input-table { font-size: .8rem; }
 .inventory-menu-picker { display: grid; gap: .35rem; }
+@container (max-width: 800px) {
+  .inventory-workspace-grid { grid-template-columns: minmax(0, 1fr); }
+  .inventory-save-bar > .button { width: 100%; }
+}
 .inventory-menu-trigger {
   display: flex;
   align-items: center;
@@ -593,7 +634,7 @@
 .inventory-rows { display: grid; gap: .65rem; }
 .inventory-row { min-width: 0; border: 1px solid var(--line); border-radius: 7px; padding: .65rem; margin: .6rem 0 0; }
 .inventory-row legend { font-weight: 750; padding-inline: .2rem; }
-.inventory-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
+.inventory-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr)); gap: .55rem; }
 .inventory-fields label { min-width: 0; font-size: .88rem; }
 .inventory-fields input { width: 100%; min-width: 0; }
 .inventory-fields input[aria-invalid="true"] { border-color: var(--orange); }
