@@ -1,0 +1,21 @@
+# EXAMPLE ONLY. No actual key or account password is included.
+# This file is a reference. The app does not auto-load it.
+SHOP_BUDDY_DB_URL=jdbc:postgresql://127.0.0.1:5432/shopbuddy_eval
+SHOP_BUDDY_DB_USER=shopbuddy_eval
+SHOP_BUDDY_DB_PASSWORD=
+STRATEGY_AGENT_URL=http://127.0.0.1:8001
+STRATEGY_AI_API_KEY=
+STRATEGY_AI_MODEL=gpt-4.1-mini
+PROMOTION_SEARCH_MODEL=gpt-4.1-mini
+PROMOTION_COPY_MODEL=gpt-5.4-mini
+RECEIPT_AI_MODEL=gpt-4.1-mini
+# iPhone transcription is gpt-transcribe in source; confirm account access.
+NAVER_LOCAL_SEARCH_CLIENT_ID=
+NAVER_LOCAL_SEARCH_CLIENT_SECRET=
+NAVER_MAPS_CLIENT_ID=
+NAVER_MAPS_CLIENT_SECRET=
+KMA_ASOS_SERVICE_KEY=
+KMA_FORECAST_SERVICE_KEY=
+# Optional, outside the main historical demonstration:
+SHOP_BUDDY_TOSS_ACCESS_KEY=
+SHOP_BUDDY_TOSS_ACCESS_SECRET=
