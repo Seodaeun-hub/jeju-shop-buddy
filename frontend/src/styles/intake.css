@@ -113,6 +113,13 @@
 .monthly-pos-file { display: grid; gap: .2rem; font-size: .9rem; overflow-wrap: anywhere; }
 .monthly-pos-file > span:first-child { color: var(--muted); }
 .monthly-pos-file a { width: fit-content; color: var(--green); }
+.monthly-pos-file + .monthly-pos-file { border-top: 1px solid var(--line); padding-top: .65rem; }
+.monthly-pos-file small { line-height: 1.55; }
+.monthly-pos-verified { color: var(--green); font-weight: 700; }
+.monthly-pos-unverified { color: var(--orange); font-weight: 700; }
+.monthly-pos-archive .monthly-pos-file label.monthly-pos-confirm { display: flex; align-items: flex-start; gap: .45rem; padding: .55rem; border: 1px solid var(--line); border-radius: 6px; font-size: .85rem; font-weight: 400; }
+.monthly-pos-confirm input { flex: none; width: 1rem; height: 1rem; margin: .15rem 0 0; accent-color: var(--green); }
+.monthly-pos-confirm span { min-width: 0; }
 @media (max-width: 550px) { .monthly-pos-matches { grid-template-columns: 1fr; } }
 .sales-import-summary summary { width: fit-content; color: var(--green); cursor: pointer; font-size: .9rem; }
 .sales-import-summary details > :not(summary) { margin-top: .5rem; }
