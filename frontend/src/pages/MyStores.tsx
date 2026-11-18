@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { deleteAnalysis, deleteExecutionPlan, listStoreAnalyses, listStores } from '../api/shop'
+import { deleteAnalysis, deleteExecutionPlan, deleteStore, listStoreAnalyses, listStores } from '../api/shop'
 import type { Store, StoreAnalysisSummary } from '../api/shop'
 import { monthLabel } from '../data/shop'
 import { notifyResultsDataChanged } from '../data/promotionArchive'
@@ -32,6 +32,57 @@ const storeRegistrationDate = new Intl.DateTimeFormat('ko-KR', {
 
 function storeOptionLabel(store: Store) {
   return `${store.name} · ${store.areaName} · 메뉴 ${store.menuCount}개`
+}
+
+function DeleteStoreDialog({ auth, store, onClose, onDeleted }: {
+  auth: string; store: Store; onClose: () => void; onDeleted: () => void
+}) {
+  const dialog = useRef<HTMLDialogElement>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    const element = dialog.current
+    element?.showModal()
+    return () => element?.close()
+  }, [])
+
+  async function confirmDelete() {
+    if (deleting) return
+    setDeleting(true)
+    setError('')
+    try {
+      await deleteStore(auth, store.id)
+      onDeleted()
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : '매장을 삭제하지 못했어요.')
+      setDeleting(false)
+    }
+  }
+
+  return <dialog ref={dialog} className="store-delete-dialog" aria-labelledby="store-delete-title"
+    aria-describedby="store-delete-description"
+    onCancel={event => { event.preventDefault(); if (!deleting) onClose() }}>
+    <div className="form-stack">
+      <h2 id="store-delete-title">매장을 삭제할까요?</h2>
+      <div className="store-delete-target"><strong>{store.name}</strong><p>{store.address}</p></div>
+      <div id="store-delete-description">
+        <p>이 매장의 자료가 함께 삭제되며 복구할 수 없어요.</p>
+        <ul>
+          <li>POS 파일, 매출 분석, 질문 이력과 리뷰</li>
+          <li>실행 계획, 발주·홍보 자료와 실행 결과</li>
+          <li>메뉴 사진, 원가·재고 설정과 공개 QR 메뉴판</li>
+        </ul>
+        <p>공개한 QR 주소는 더 이상 열리지 않아요. 이미 SNS에 게시한 홍보물은 해당 서비스에 남아요.</p>
+      </div>
+      {error && <p role="alert" className="error">{error}</p>}
+      <div className="actions end">
+        <button type="button" className="button secondary" autoFocus disabled={deleting} onClick={onClose}>취소</button>
+        <button type="button" className="button store-delete-confirm" disabled={deleting}
+          onClick={() => void confirmDelete()}>{deleting ? '삭제 중…' : '매장과 자료 삭제'}</button>
+      </div>
+    </div>
+  </dialog>
 }
 
 function StoreHistory({ auth, store, onAnalysisDeleted, onPlanDeleted }: {
@@ -149,16 +200,19 @@ function StoreHistory({ auth, store, onAnalysisDeleted, onPlanDeleted }: {
   </section>
 }
 
-export function MyStores({ auth, ownerEmail, onAnalysisDeleted, onPlanDeleted }: {
+export function MyStores({ auth, ownerEmail, onAnalysisDeleted, onPlanDeleted, onStoreDeleted }: {
   auth: string
   ownerEmail: string
   onAnalysisDeleted: (id: string) => void
   onPlanDeleted: (id: string) => void
+  onStoreDeleted: (id: string) => void
 }) {
   const [params, setParams] = useSearchParams()
   const [stores, setStores] = useState<Store[]>()
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
+  const [deleteTarget, setDeleteTarget] = useState<Store>()
+  const [deleteMessage, setDeleteMessage] = useState('')
   const selected = useStoreSelection(ownerEmail, stores, params.get('storeId'), true)
   const section = storeSections.find(item => item.id === params.get('section'))?.id ?? 'history'
   const resultPlanId = params.get('resultPlanId')
@@ -183,6 +237,19 @@ export function MyStores({ auth, ownerEmail, onAnalysisDeleted, onPlanDeleted }:
     const query = new URLSearchParams({ storeId })
     if (activeSection !== 'history') query.set('section', activeSection)
     return query
+  }
+
+  function storeDeleted(store: Store) {
+    const remaining = stores?.filter(item => item.id !== store.id) ?? []
+    setStores(remaining)
+    setDeleteTarget(undefined)
+    setDeleteMessage(`‘${store.name}’ 매장과 연결된 자료를 삭제했어요.`)
+    const selectionKey = 'shop-buddy:selected-store:' + ownerEmail
+    if (localStorage.getItem(selectionKey) === store.id) localStorage.removeItem(selectionKey)
+    if (sessionStorage.getItem(selectionKey) === store.id) sessionStorage.removeItem(selectionKey)
+    setParams(remaining.length ? storeQuery(remaining[0].id, section) : new URLSearchParams(), { replace: true })
+    onStoreDeleted(store.id)
+    notifyResultsDataChanged()
   }
 
   useEffect(() => {
@@ -210,7 +277,12 @@ export function MyStores({ auth, ownerEmail, onAnalysisDeleted, onPlanDeleted }:
           })}
         </select></label> : <h2>등록한 매장</h2>}
         <Link className="button secondary" to="/stores/new">새 매장 등록</Link>
+        {selected && <button type="button" className="button secondary store-delete-button"
+          onClick={() => setDeleteTarget(selected)}>매장 삭제</button>}
       </div>
+      {deleteMessage && <p role="status">{deleteMessage}</p>}
+      {deleteTarget && <DeleteStoreDialog auth={auth} store={deleteTarget} onClose={() => setDeleteTarget(undefined)}
+        onDeleted={() => storeDeleted(deleteTarget)} />}
       {error ? <div role="alert" className="error">{error} <button type="button" className="text-button" onClick={() => {
         setError('')
         setRetry((value) => value + 1)

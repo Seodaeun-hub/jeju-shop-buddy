@@ -39,7 +39,9 @@ class StoreSecurityConfiguration {
             response.setCharacterEncoding(StandardCharsets.UTF_8.name());
             String path = request.getRequestURI().substring(request.getContextPath().length());
             var error = AUTH_REQUIRED;
-            if (path.endsWith("/results") && request.getMethod().equals("POST")) {
+            if (path.matches("/api/stores/[^/]+") && request.getMethod().equals("DELETE")) {
+                error = new StoreController.ApiError("AUTH_REQUIRED", "로그인 후 매장을 삭제해 주세요.", null);
+            } else if (path.endsWith("/results") && request.getMethod().equals("POST")) {
                 error = new StoreController.ApiError("AUTH_REQUIRED", "로그인 후 실행 결과를 저장해 주세요.", null);
             } else if (path.startsWith("/api/plans/") && request.getMethod().equals("DELETE")) {
                 error = new StoreController.ApiError("AUTH_REQUIRED", "로그인 후 실행 결과를 삭제해 주세요.", null);
@@ -64,7 +66,7 @@ class StoreSecurityConfiguration {
             }
             response.getWriter().write(json.writeValueAsString(error));
         };
-        return http.securityMatcher("/api/session", "/api/session/signup", "/api/session/profile", "/api/session/password", "/api/stores", "/api/stores/{storeId}/analyses",
+        return http.securityMatcher("/api/session", "/api/session/signup", "/api/session/profile", "/api/session/password", "/api/stores", "/api/stores/{storeId}", "/api/stores/{storeId}/analyses",
                         "/api/stores/{storeId}/menu-photos", "/api/stores/{storeId}/menu-costs", "/api/stores/{storeId}/promotion-tone",
                         "/api/stores/{storeId}/break-even", "/api/stores/{storeId}/menu-costs/receipt",
                         "/api/stores/{storeId}/qr-menu", "/api/stores/{storeId}/qr-menu/translations",
