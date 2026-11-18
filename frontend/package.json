@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "verify:overview": "node scripts/verify-response-overview.mjs"
+    "verify:overview": "node scripts/verify-response-overview.mjs",
+    "verify:home": "node scripts/verify-home-demo.mjs"
   },
   "dependencies": {
     "@fontsource-variable/noto-sans-jp": "5.3.1",
