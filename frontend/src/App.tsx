@@ -14,6 +14,7 @@ import { StoreRegistration } from './pages/StoreRegistration'
 import { MyStores } from './pages/MyStores'
 import { MyPage } from './pages/MyPage'
 import { Execution } from './pages/Execution'
+import { ExecutionPlans } from './pages/ExecutionPlans'
 import { Results } from './pages/Results'
 import { SavedStrategyPage, Strategy } from './pages/Strategy'
 import { addDays, monthLabel } from './data/shop'
@@ -309,9 +310,11 @@ export function App() {
 
   const planPage = requestedPlanId && !auth
     ? <Navigate to="/login" state={{ returnTo: pathname + search }} replace />
+    : auth && !requestedPlanId ? <ExecutionPlans key={account?.email} auth={auth} />
     : plan && currentAnalysis && (!requestedPlanId || requestedPlanId === plan.id) && (!plan.analysisId || plan.analysisId === analysisId)
       ? <>
         <nav className="plan-sections" aria-label="실행 계획 화면">
+          {auth && <Link to="/execution">계획 목록</Link>}
           <Link to={planPath('/execution', plan)} aria-current={pathname === '/execution' ? 'page' : undefined}>실행 관리</Link>
           <Link to={planPath('/results', plan)} aria-current={pathname === '/results' ? 'page' : undefined}>결과 확인</Link>
           <span>{plan.strategy === 'inventory' ? '발주 결과는 검토한 하루 기준' : <>결과 확인일 <time dateTime={addDays(plan.endDate, 1)}>{addDays(plan.endDate, 1)}</time></>}</span>
@@ -336,7 +339,7 @@ export function App() {
   const activeSection = pathname === '/results' ? '/execution' : pathname
   const appMenu = <nav className="main-nav" id="workspace-menu" aria-label="가게짝꿍 메뉴" hidden={!workspaceNavOpen}>
     {navigation.map(({ to, label }) => <Link key={to} to={to === '/analysis' && analysisId ? dashboardPath(analysisId)
-      : to === '/strategy' ? strategyPath : to === '/execution' && plan ? planPath('/execution', plan) : to}
+      : to === '/strategy' ? strategyPath : to === '/execution' && !auth && plan ? planPath('/execution', plan) : to}
       onClick={() => { if (window.matchMedia('(max-width: 900px)').matches) setWorkspaceNavOpen(false) }}
       aria-current={to === activeSection ? 'page' : undefined}>{label}</Link>)}
   </nav>
@@ -361,7 +364,7 @@ export function App() {
         : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
       <Route path="/analysis" element={dashboard} />
       <Route path="/strategy" element={strategyPage} />
-      <Route path="/execution" element={planPage} />
+      <Route path="/execution" element={!auth && !requestedPlanId && !plan ? <Navigate to="/login" state={{ returnTo: pathname + search }} replace /> : planPage} />
       <Route path="/results" element={planPage} />
       <Route path="*" element={<Placeholder to="/" action="메인으로">요청한 화면을 찾을 수 없어요.</Placeholder>} />
     </Routes>}
