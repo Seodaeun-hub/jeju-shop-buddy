@@ -341,11 +341,6 @@ export function App() {
       aria-current={to === activeSection ? 'page' : undefined}>{label}</Link>)}
   </nav>
   const main = <main id="main-content" className={accountPage ? 'account-content' : workspace ? 'content workspace-main' : 'content landing-content'}>
-    {account && workspace && <RehearsalDateControl date={account.rehearsalDate} onChange={async date => {
-      const session = await updateRehearsalDate(date)
-      setRehearsalDate(session.rehearsalDate)
-      setAccount({ ...session, auth: ownerSession })
-    }} />}
     {logoutError && <p role="alert" className="error">{logoutError}</p>}
     {sessionPending && !publicPage ? <p role="status">로그인 상태를 확인하고 있어요.</p> : <Routes key={account?.rehearsalDate ?? 'actual'}>
       <Route path="/" element={<Home />} />
@@ -405,6 +400,11 @@ export function App() {
               {workspaceNavOpen && <span>메뉴 접기</span>}
             </button>
             {appMenu}
+            {account && workspaceNavOpen && <RehearsalDateControl date={account.rehearsalDate} onChange={async date => {
+              const session = await updateRehearsalDate(date)
+              setRehearsalDate(session.rehearsalDate)
+              setAccount({ ...session, auth: ownerSession })
+            }} />}
           </div>
         </aside>
         {main}

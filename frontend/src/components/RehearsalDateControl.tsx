@@ -30,15 +30,20 @@ export function RehearsalDateControl({ date, onChange }: {
   }
 
   return <>
-    <section className={`rehearsal-date-banner${date ? ' is-rehearsing' : ''}`} aria-label="앱 기준일">
-      <div><strong>{date ? '시연 기준일' : '실제 날짜'} · {(date ?? actualSeoulDate()).replaceAll('-', '.')}</strong>
-        {date && <small>계획과 일정에 적용 · 과거 날씨는 관측 기록 사용</small>}</div>
+    <details className={`rehearsal-date-menu${date ? ' is-rehearsing' : ''}`}>
+      <summary className="rehearsal-date-summary">
+        <span>시연 기준일</span>
+        <small>{date ? date.replaceAll('-', '.') : '실제 날짜'}</small>
+      </summary>
+      <div className="rehearsal-date-options">
+      <p>{date ? '계획과 일정을 선택한 날짜 기준으로 보여줘요.' : '과거 자료로 시연할 날짜를 설정할 수 있어요.'}</p>
       <button type="button" className="button secondary small" aria-haspopup="dialog" onClick={() => {
         setDraft(date ?? '2021-06-01')
         setError('')
         dialog.current?.showModal()
       }}>{date ? '날짜 변경' : '시연 기준일 설정'}</button>
-    </section>
+      </div>
+    </details>
     <dialog ref={dialog} className="rehearsal-date-dialog" aria-labelledby="rehearsal-date-title"
       onCancel={event => { if (saving) event.preventDefault() }}>
       <form className="form-stack" onSubmit={submit}>
