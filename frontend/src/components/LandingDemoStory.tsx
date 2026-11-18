@@ -164,11 +164,12 @@ export function LandingDemoStory() {
     return () => window.cancelAnimationFrame(frame)
   }, [])
   return <section className="landing-demo-story" aria-labelledby="landing-demo-story-title">
-    <div className="shell journey-story-intro"><span>가게짝꿍이 함께하는 순서</span><h2 id="landing-demo-story-title">발견에서 실행까지,<br />한 걸음씩 함께해요.</h2>
-      <p>더애월 공개정보를 참고한 2021년 애월 사례예요.<br />상권은 실제 공개자료, 매장 POS·재고·원가·실행 결과는 가상 시연 자료예요.</p>
+    <div className="journey-intro-band"><div className="shell journey-story-intro"><span>가게짝꿍 주요 기능</span><h2 id="landing-demo-story-title">매출 분석부터<br />발주·홍보까지.</h2>
+      <p>매출이 얼마나 달라졌는지 확인하고,<br />우리 가게에 필요한 발주와 홍보를 준비하세요.</p>
       <nav aria-label="홈 기능 소개 순서">{landingSteps.map((step, i) => <a key={step.id} href={`#landing-step-${step.id}`}><span>0{i + 1}</span>{step.label}</a>)}</nav>
+      <p className="journey-demo-note"><strong>아래 화면은 기능 소개를 위한 예시입니다.</strong><br />2021년 애월 상권 공개자료와 더애월 공개정보를 참고했습니다. 매장 POS·재고·원가·실행 결과는 가상 자료입니다.</p>
       <label className="journey-motion-control"><input type="checkbox" checked={motion} onChange={e => setMotion(e.target.checked)} />움직임 효과</label>
-    </div>
+    </div></div>
     <div className="shell journey-steps">
       <StoryStep index={0} motion={motion}>{() => <SalesScene />}</StoryStep>
       <StoryStep index={1} motion={motion}>{() => <EvidenceScene />}</StoryStep>
