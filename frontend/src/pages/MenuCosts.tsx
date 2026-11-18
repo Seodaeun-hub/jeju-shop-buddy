@@ -1,4 +1,5 @@
 import { useEffect, useId, useState, type FormEvent } from 'react'
+import { Link } from 'react-router'
 import { fetchMenuCost, listMenuCosts, saveMenuCost, type MenuCost } from '../api/shop'
 import { won } from '../data/shop'
 import { ReceiptCostDialog } from './ReceiptCostDialog'
@@ -33,7 +34,9 @@ const preciseWon = (value: bigint) => {
   return `${wonInteger.format(value / 1000n)}${fraction ? '.' + fraction : ''}원`
 }
 
-export function MenuCosts({ auth, storeId }: { auth: string; storeId: string }) {
+export function MenuCosts({ auth, storeId, initialProduct, backTo, onProduct }: {
+  auth: string; storeId: string; initialProduct?: string; backTo?: string; onProduct?: (product: string) => void
+}) {
   const [menu, setMenu] = useState<string[]>()
   const [product, setProduct] = useState('')
   const [error, setError] = useState('')
@@ -43,19 +46,23 @@ export function MenuCosts({ auth, storeId }: { auth: string; storeId: string }) 
     const controller = new AbortController()
     listMenuCosts(auth, storeId, controller.signal).then(values => {
       if (controller.signal.aborted) return
-      setMenu(values)
-      setProduct(current => values.includes(current) ? current : values[0] ?? '')
+      const requested = initialProduct?.trim()
+      const available = requested && requested.length <= 255 && !values.includes(requested)
+        ? [...values, requested] : values
+      setMenu(available)
+      setProduct(current => available.includes(current) ? current
+        : requested && available.includes(requested) ? requested : available[0] ?? '')
     }).catch(failure => {
       if (!controller.signal.aborted) setError(failure.message)
     })
     return () => controller.abort()
-  }, [auth, storeId, retry])
+  }, [auth, storeId, initialProduct, retry])
 
   return <section className="form-stack menu-costs" aria-labelledby="menu-costs-title">
     <div className="section-top ruled">
       <div>
-        <h2 id="menu-costs-title">메뉴 원가·마진</h2>
-        <p className="muted">한 개에 들어가는 재료와 단가를 저장하면 다음 프로모션 검토에서 불러와요.</p>
+        <h2 id="menu-costs-title">메뉴 재료·원가</h2>
+        <p className="muted">한 개당 재료 사용량과 단가를 저장해요. 발주 검토에서는 사용량을, 홍보 검토에서는 합산 원가를 자동으로 불러와요.</p>
       </div>
     </div>
     {error ? <p role="alert" className="error">{error} <button className="text-button" onClick={() => {
@@ -63,15 +70,18 @@ export function MenuCosts({ auth, storeId }: { auth: string; storeId: string }) 
       setRetry(value => value + 1)
     }}>다시 불러오기</button></p> : !menu ? <p role="status">메뉴를 불러오는 중이에요.</p>
       : menu.length ? <label className="menu-cost-product">메뉴 선택
-        <select value={product} onChange={event => setProduct(event.target.value)}>
+        <select value={product} onChange={event => { setProduct(event.target.value); onProduct?.(event.target.value) }}>
           {menu.map(name => <option key={name}>{name}</option>)}
         </select>
       </label> : <p>POS로 메뉴를 불러오거나 메뉴 사진 관리에서 메뉴를 등록해 주세요.</p>}
-    {product && <MenuCostEditor key={product} auth={auth} storeId={storeId} product={product} />}
+    {backTo && <Link className="button secondary small" to={backTo}>발주 검토로 돌아가기</Link>}
+    {product && <MenuCostEditor key={product} auth={auth} storeId={storeId} product={product} backTo={backTo} />}
   </section>
 }
 
-function MenuCostEditor({ auth, storeId, product }: { auth: string; storeId: string; product: string }) {
+function MenuCostEditor({ auth, storeId, product, backTo }: {
+  auth: string; storeId: string; product: string; backTo?: string
+}) {
   const [original, setOriginal] = useState<MenuCost>()
   const [rows, setRows] = useState<DraftRow[]>([])
   const [error, setError] = useState('')
@@ -79,6 +89,7 @@ function MenuCostEditor({ auth, storeId, product }: { auth: string; storeId: str
   const [saving, setSaving] = useState(false)
   const [retry, setRetry] = useState(0)
   const [receiptOpen, setReceiptOpen] = useState(false)
+  const [saved, setSaved] = useState(false)
   const title = useId()
 
   useEffect(() => {
@@ -105,12 +116,14 @@ function MenuCostEditor({ auth, storeId, product }: { auth: string; storeId: str
     setRows(next)
     setError('')
     setMessage('')
+    setSaved(false)
   }
 
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (saving || costWon === null) return
     setSaving(true)
+    setSaved(false)
     setError('')
     setMessage('')
     try {
@@ -123,7 +136,8 @@ function MenuCostEditor({ auth, storeId, product }: { auth: string; storeId: str
         ...row, ingredientName: saved.ingredients[index].ingredientName,
         unit: saved.ingredients[index].unit, amount: saved.ingredients[index].amount,
       })))
-      setMessage('메뉴 원가를 저장했어요.')
+      setMessage('재료 사용량과 원가를 저장했어요. 발주·홍보 검토에서 이 값을 불러와요.')
+      setSaved(true)
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : '원가를 저장하지 못했어요.')
     } finally {
@@ -139,7 +153,7 @@ function MenuCostEditor({ auth, storeId, product }: { auth: string; storeId: str
   return <><form className="form-stack" onSubmit={submit} aria-labelledby={title}>
     <div className="section-top ruled">
       <div>
-        <h3 id={title}>{product} 재료비</h3>
+        <h3 id={title}>{product} 재료 사용량·원가</h3>
         {original.costWon === null && original.ingredients.length > 0 &&
           <p className="muted">발주 검토에 저장한 재료 사용량을 불러왔어요.</p>}
       </div>
@@ -189,9 +203,10 @@ function MenuCostEditor({ auth, storeId, product }: { auth: string; storeId: str
     </dl>
     <p className="muted">합산 재료비는 원 단위로 반올림해요. 남는 금액은 판매가에서 재료비만 뺀 값이에요.</p>
     <div className="actions">
-      <button className="button primary" disabled={saving || costWon === null}>{saving ? '저장 중…' : '메뉴 원가 저장'}</button>
+      <button className="button primary" disabled={saving || costWon === null}>{saving ? '저장 중…' : '재료·원가 저장'}</button>
     </div>
     {message && <p role="status">{message}</p>}
+    {saved && backTo && <Link className="button secondary" to={backTo}>저장한 사용량으로 발주 검토하기</Link>}
     {error && <p role="alert" className="error">{error}</p>}
   </form>
   {receiptOpen && <ReceiptCostDialog auth={auth} storeId={storeId}

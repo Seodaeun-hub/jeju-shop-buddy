@@ -124,7 +124,7 @@ export function ReceiptCostDialog({ auth, storeId, targets, onClose, onApply }: 
               <strong>{value ? won(value.unitPrice) : '확인 필요'}</strong></div>
           </fieldset>
         })}
-        <p className="muted">이름과 단위가 같은 재료는 단가를 채워요. 새 재료는 한 개당 사용량을 입력한 뒤 메뉴 원가를 저장해 주세요.</p>
+        <p className="muted">이름과 단위가 같은 재료는 단가를 채워요. 새 재료는 한 개당 사용량을 입력한 뒤 재료·원가 저장을 눌러 주세요.</p>
       </>}
       {error && <p className="error" role="alert">{error}</p>}
       <div className="actions end">
