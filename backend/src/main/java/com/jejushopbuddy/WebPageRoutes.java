@@ -9,7 +9,7 @@ class WebPageRoutes implements WebMvcConfigurer {
     @Override
     public void addViewControllers(ViewControllerRegistry registry) {
         for (String path : new String[] {"/login", "/signup", "/my-page", "/stores", "/stores/new",
-                "/sales", "/analysis", "/strategy", "/execution", "/results", "/menu/{publicId}"}) {
+                "/sales", "/analysis", "/strategy", "/execution", "/results", "/overview", "/menu/{publicId}"}) {
             registry.addViewController(path).setViewName("forward:/index.html");
         }
     }
