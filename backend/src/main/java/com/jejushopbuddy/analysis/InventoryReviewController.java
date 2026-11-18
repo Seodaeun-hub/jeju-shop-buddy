@@ -1,6 +1,7 @@
 package com.jejushopbuddy.analysis;
 
 import com.jejushopbuddy.analysis.SalesAnalysisController.ApiError;
+import com.jejushopbuddy.time.BusinessDate;
 import java.math.BigDecimal;
 import java.security.Principal;
 import java.time.LocalDate;
@@ -35,13 +36,15 @@ class InventoryReviewController {
     private final KmaForecast weather;
     private final InventoryDemand demand;
     private final ProductPosArchive pos;
+    private final BusinessDate dates;
 
-    InventoryReviewController(JdbcClient jdbc, ObjectMapper json, KmaForecast weather, InventoryDemand demand, ProductPosArchive pos) {
+    InventoryReviewController(JdbcClient jdbc, ObjectMapper json, KmaForecast weather, InventoryDemand demand, ProductPosArchive pos, BusinessDate dates) {
         this.jdbc = jdbc;
         this.json = json;
         this.weather = weather;
         this.demand = demand;
         this.pos = pos;
+        this.dates = dates;
     }
 
     @GetMapping("/api/plans/{planId}/inventory-review/forecast")
@@ -96,7 +99,7 @@ class InventoryReviewController {
                         rs.getObject("saved_at", OffsetDateTime.class)), rs.getBoolean("current_plan"), rs.getString("note"),
                         List.of(json.readValue(rs.getString("excluded_dates"), String[].class)),
                         json.readValue(rs.getString("original_bounds"), InventoryDemand.Bounds.class))).list();
-        var today = LocalDate.now(InventoryDemand.SEOUL);
+        var today = dates.today();
         var archive = saved.stream().anyMatch(row -> row.estimate().date().isBefore(today))
                 ? pos.load(store.id()) : List.<ProductPosArchive.Days>of();
         var comparisons = saved.stream().map(row -> {
@@ -111,7 +114,7 @@ class InventoryReviewController {
     @PutMapping("/api/plans/{planId}/inventory-review/estimate-note")
     ResponseEntity<?> saveEstimateNote(@PathVariable UUID planId, @RequestBody EstimateNote input, Principal owner) {
         if (input == null || input.date() == null || input.date().getYear() < 1900
-                || !input.date().isBefore(LocalDate.now(InventoryDemand.SEOUL)) || !validText(input.product(), 255)
+                || !input.date().isBefore(dates.today()) || !validText(input.product(), 255)
                 || !validText(input.note(), MAX_ESTIMATE_NOTE_LENGTH)
                 || input.note().codePoints().anyMatch(ch -> Character.isISOControl(ch) || ch == 0x2028 || ch == 0x2029)) {
             return invalid("날짜와 메뉴를 확인하고 메모를 200자 이내 한 줄로 입력해 주세요.");

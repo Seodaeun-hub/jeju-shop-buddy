@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router'
 import { createNextPromotionPlan } from '../api/shop'
 import { formatNumber, won, type PromotionReview } from '../data/shop'
+import { seoulDate } from '../data/promotionArchive'
 
 export function NextPromotionPlanForm({ auth, planId, action, review, pending }: {
   auth: string
@@ -12,7 +13,7 @@ export function NextPromotionPlanForm({ auth, planId, action, review, pending }:
 }) {
   const navigate = useNavigate()
   const [requestId, setRequestId] = useState(() => crypto.randomUUID())
-  const [today] = useState(() => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(new Date()))
+  const [today] = useState(seoulDate)
   const [startDate, setStartDate] = useState(today)
   const [discount, setDiscount] = useState(String(review.discountWon))
   const [quantity, setQuantity] = useState(String(review.maxDiscountQuantity))

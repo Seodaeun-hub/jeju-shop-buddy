@@ -1,0 +1,9 @@
+.rehearsal-date-banner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem 1rem; margin-bottom: 1rem; padding: .6rem .85rem; border: 1px solid var(--line); border-radius: 9px; background: var(--sheet); font-size: .85rem; }
+.rehearsal-date-banner > div { display: grid; gap: .15rem; min-width: 0; }
+.rehearsal-date-banner small { color: var(--muted); font-size: .8rem; }
+.rehearsal-date-banner.is-rehearsing { background: var(--peach); border-color: #ddbca4; }
+.rehearsal-date-banner .button { flex: none; }
+.rehearsal-date-dialog { width: min(34rem, calc(100% - 2rem)); max-height: 86dvh; overflow: auto; border: 1px solid var(--line); border-radius: 12px; padding: 1.25rem; }
+.rehearsal-date-dialog::backdrop { background: rgb(24 46 36 / 55%); }
+.rehearsal-date-dialog :is(h2, p) { margin: 0; overflow-wrap: anywhere; }
+.rehearsal-date-dialog input { width: 100%; min-width: 0; }

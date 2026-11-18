@@ -182,7 +182,7 @@ function basicAuthorization(email: string, password: string) {
   return 'Basic ' + btoa(String.fromCharCode(...bytes))
 }
 
-export type OwnerSession = { email: string; name: string }
+export type OwnerSession = { email: string; name: string; rehearsalDate: string | null }
 export const ownerSession = 'session'
 export const signupOwner = (name: string, email: string, password: string) =>
   request<OwnerSession>('/api/session/signup', ownerSession, 'POST', { name, email, password })
@@ -192,6 +192,8 @@ export const fetchOwnerSession = (signal: AbortSignal) =>
   request<OwnerSession>('/api/session', ownerSession, 'GET', undefined, signal)
 export const updateOwnerName = (name: string) =>
   request<OwnerSession>('/api/session/profile', ownerSession, 'PATCH', { name })
+export const updateRehearsalDate = (date: string | null) =>
+  request<OwnerSession>('/api/session/rehearsal-date', ownerSession, 'PUT', { date })
 export async function updateOwnerPassword(currentPassword: string, newPassword: string) {
   await send('/api/session/password', ownerSession, 'PUT', { currentPassword, newPassword })
 }

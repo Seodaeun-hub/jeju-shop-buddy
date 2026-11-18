@@ -10,6 +10,7 @@ CREATE TABLE owners (
     name VARCHAR(100) NOT NULL,
     email VARCHAR(254) NOT NULL,
     password_hash TEXT NOT NULL,
+    rehearsal_date DATE CHECK (rehearsal_date IS NULL OR (isfinite(rehearsal_date) AND rehearsal_date >= DATE '1900-01-01')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT uq_owners_email UNIQUE (email),

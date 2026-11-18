@@ -317,7 +317,7 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
   const dateRange = `${plan.startDate.replaceAll('-', '.')} ~ ${plan.endDate.replaceAll('-', '.')}`
   const noticeFollowUp = plan.strategy === 'outreach' && plan.tasks.some(task => task.date < plan.startDate)
 
-  return <div className="execution-page">
+  return <div className={`execution-page${inventory ? ' execution-page-inventory' : ''}`}>
     <PageTitle title="실행 계획 · 진행 관리" detail={`${plan.store}${plan.demo ? ' · 시연 예시' : ''}`} />
     <section className="receipt execution-summary" aria-labelledby="execution-current-title">
       <div className="execution-summary-mark"><Citrus /></div>
@@ -371,6 +371,17 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
           </section>}
         </div>
       </details>}
+    {inventory && <InventoryReview
+      key={plan.id ?? 'demo'}
+      auth={auth}
+      planId={plan.id}
+      analysisId={plan.analysisId}
+      items={plan.inventoryItems ?? []}
+      analysis={analysis}
+      onSave={onSaveInventory}
+      reviewDate={plan.tasks[2]?.date ?? plan.endDate}
+      onChange={(inventoryItems) => onChange({ ...plan, inventoryItems })}
+    />}
     <div className="execution-layout">
       <section className="execution-checklist-card" aria-labelledby="execution-checklist-title">
         <div className="execution-checklist-header">
@@ -455,23 +466,13 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
           saved={plan.promotionReview} initialBudget={plan.budget} auth={auth} planId={plan.id}
           readOnly={locked || loadingInstagram || hasManualPublication} onSave={onSavePromotion}
           postedManually={hasManualPublication} />}
-        {inventory ? <InventoryReview
-          key={plan.id ?? 'demo'}
-          auth={auth}
-          planId={plan.id}
-          analysisId={plan.analysisId}
-          items={plan.inventoryItems ?? []}
-          analysis={analysis}
-          onSave={onSaveInventory}
-          reviewDate={plan.tasks[2]?.date ?? plan.endDate}
-          onChange={(inventoryItems) => onChange({ ...plan, inventoryItems })}
-        /> : plan.strategy === 'outreach' ? <StoreNotice
+        {!inventory && (plan.strategy === 'outreach' ? <StoreNotice
           key={`${plan.id ?? 'demo'}:${plan.customerNotice?.text ?? ''}`}
           store={plan.store}
           suggestion={plan.customerNotice}
           auth={auth}
           planId={plan.id}
-        /> : plan.strategy === 'promotion' && !plan.id && !needsPromotionInputs && <PromoDraft plan={plan} />}
+        /> : plan.strategy === 'promotion' && !plan.id && !needsPromotionInputs && <PromoDraft plan={plan} />)}
         <section className="receipt execution-outcome form-stack">
           <h2>실행 후 확인할 지표</h2>
           <p className="execution-metric">{plan.followUp}</p>

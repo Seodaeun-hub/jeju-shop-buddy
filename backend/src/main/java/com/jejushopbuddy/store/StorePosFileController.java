@@ -1,5 +1,7 @@
 package com.jejushopbuddy.store;
 
+import com.jejushopbuddy.time.BusinessDate;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.Principal;
@@ -37,8 +39,11 @@ class StorePosFileController {
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private final JdbcClient jdbc;
 
-    StorePosFileController(JdbcClient jdbc) {
+    private final BusinessDate dates;
+
+    StorePosFileController(JdbcClient jdbc, BusinessDate dates) {
         this.jdbc = jdbc;
+        this.dates = dates;
     }
 
     @GetMapping
@@ -75,7 +80,7 @@ class StorePosFileController {
         if (file.getSize() > MAX_SIZE) {
             return tooLarge();
         }
-        LocalDate today = LocalDate.now(SEOUL);
+        LocalDate today = dates.today();
         if (calendarDate != null && (calendarDate.getYear() < 1900 || calendarDate.isAfter(today))) {
             return error(HttpStatus.BAD_REQUEST, "INVALID_POS_CALENDAR_DATE", "POS를 기록할 날짜를 확인해 주세요.");
         }
@@ -125,7 +130,7 @@ class StorePosFileController {
     @PatchMapping(path = "/{fileId}", consumes = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<?> updateCoverage(@PathVariable UUID storeId, @PathVariable UUID fileId,
                                      @RequestBody Coverage coverage, Principal owner) {
-        if (coverage == null || !validCoverage(coverage.coverageStart(), coverage.coverageEnd(), LocalDate.now(SEOUL))) {
+        if (coverage == null || !validCoverage(coverage.coverageStart(), coverage.coverageEnd(), dates.today())) {
             return invalidCoverage();
         }
         var saved = jdbc.sql("""

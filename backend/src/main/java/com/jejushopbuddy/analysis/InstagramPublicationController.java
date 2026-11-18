@@ -1,5 +1,7 @@
 package com.jejushopbuddy.analysis;
 
+import com.jejushopbuddy.time.BusinessDate;
+
 import com.jejushopbuddy.analysis.SalesAnalysisController.ApiError;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -40,6 +42,7 @@ class InstagramPublicationController {
     private static final long PUBLISHING_TIMEOUT_SECONDS = Duration.ofMinutes(3).toSeconds();
     private static final String JPEG_PREFIX = "data:image/jpeg;base64,";
     private final JdbcClient jdbc;
+    private final BusinessDate dates;
     private final ObjectMapper json;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     private final ConcurrentHashMap<UUID, byte[]> images = new ConcurrentHashMap<>();
@@ -49,13 +52,14 @@ class InstagramPublicationController {
     private final String imageBase;
     private final boolean enabled;
 
-    InstagramPublicationController(JdbcClient jdbc, ObjectMapper json,
+    InstagramPublicationController(JdbcClient jdbc, ObjectMapper json, BusinessDate dates,
             @Value("${SHOP_BUDDY_INSTAGRAM_ACCESS_TOKEN:}") String token,
             @Value("${SHOP_BUDDY_INSTAGRAM_ACCOUNT_ID:}") String accountId,
             @Value("${SHOP_BUDDY_INSTAGRAM_USERNAME:}") String username,
             @Value("${SHOP_BUDDY_INSTAGRAM_TEST_STORE_ID:}") String storeId,
             @Value("${SHOP_BUDDY_INSTAGRAM_IMAGE_BASE_URL:}") String imageBase) {
         this.jdbc = jdbc;
+        this.dates = dates;
         this.json = json;
         this.token = token;
         this.accountId = accountId;
@@ -73,11 +77,12 @@ class InstagramPublicationController {
         var plan = find(planId, owner.getName());
         if (plan == null) return error(404, "PROMOTION_PLAN_NOT_FOUND", "홍보 초안을 찾을 수 없어요.");
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(new Status(
-                enabled && plan.storeId().equals(storeId), username, plan.publication()));
+                enabled && plan.storeId().equals(storeId) && !dates.rehearsing(), username, plan.publication()));
     }
 
     @PostMapping("/api/plans/{planId}/instagram-publication")
     ResponseEntity<?> publish(@PathVariable UUID planId, @RequestBody Input input, Principal owner) {
+        if (dates.rehearsing()) return error(409, "REHEARSAL_PUBLICATION_DISABLED", "시연 중에는 홍보 초안만 확인해요. 실제 게시·예약은 실제 날짜로 돌아간 뒤 진행해 주세요.");
         var plan = find(planId, owner.getName());
         if (plan == null) return error(404, "PROMOTION_PLAN_NOT_FOUND", "홍보 초안을 찾을 수 없어요.");
         if (!enabled || !plan.storeId().equals(storeId)) {

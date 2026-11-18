@@ -4,6 +4,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.Principal;
+import java.time.LocalDate;
+import com.jejushopbuddy.time.BusinessDate;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -63,7 +65,7 @@ class OwnerSessionController {
                 email, null, AuthorityUtils.createAuthorityList("ROLE_OWNER")));
         SecurityContextHolder.setContext(context);
         saveSession(request, response);
-        return ResponseEntity.status(201).cacheControl(CacheControl.noStore()).body(new OwnerSession(email, name));
+        return ResponseEntity.status(201).cacheControl(CacheControl.noStore()).body(new OwnerSession(email, name, null));
     }
 
     @PostMapping
@@ -75,9 +77,9 @@ class OwnerSessionController {
     @GetMapping
     ResponseEntity<OwnerSession> current(Principal owner) {
         String email = owner.getName();
-        return jdbc.sql("SELECT name FROM owners WHERE email = :email").param("email", email)
-                .query(String.class).optional()
-                .map(name -> ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(new OwnerSession(email, name)))
+        return jdbc.sql("SELECT name, rehearsal_date FROM owners WHERE email = :email").param("email", email)
+                .query((rs, row) -> new OwnerSession(email, rs.getString("name"), rs.getObject("rehearsal_date", LocalDate.class))).optional()
+                .map(session -> ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(session))
                 .orElseGet(() -> ResponseEntity.status(401).build());
     }
 
@@ -91,7 +93,17 @@ class OwnerSessionController {
         int updated = jdbc.sql("UPDATE owners SET name = :name WHERE email = :email")
                 .param("name", name).param("email", email).update();
         if (updated == 0) return ResponseEntity.status(401).build();
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(new OwnerSession(email, name));
+        return current(owner);
+    }
+
+    @PutMapping("/rehearsal-date")
+    ResponseEntity<?> updateRehearsalDate(@RequestBody RehearsalDateInput input, Principal owner) {
+        if (input.date() != null && (input.date().getYear() < 1900 || input.date().isAfter(BusinessDate.actualToday()))) {
+            return invalid("시연 기준일은 1900년부터 실제 오늘 사이의 날짜로 선택해 주세요.", "date");
+        }
+        int updated = jdbc.sql("UPDATE owners SET rehearsal_date = :date WHERE email = :email")
+                .param("date", input.date(), java.sql.Types.DATE).param("email", owner.getName()).update();
+        return updated == 0 ? ResponseEntity.status(401).build() : current(owner);
     }
 
     @PutMapping("/password")
@@ -152,5 +164,6 @@ class OwnerSessionController {
     record Signup(String name, String email, String password) {}
     record ProfileInput(String name) {}
     record PasswordInput(String currentPassword, String newPassword) {}
-    record OwnerSession(String email, String name) {}
+    record RehearsalDateInput(LocalDate date) {}
+    record OwnerSession(String email, String name, LocalDate rehearsalDate) {}
 }

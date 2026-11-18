@@ -4,6 +4,34 @@ info:
   version: 0.24.0
   description: 매장 등록, 매출 분석, 대응 전략 추천, 실행 계획과 체크리스트 관리, 실행 결과 비교·조회·수정·삭제 설계 초안.
 paths:
+  /api/session/rehearsal-date:
+    put:
+      operationId: updateOwnerRehearsalDate
+      security: [{ ownerBasic: [] }]
+      summary: 로그인한 계정의 시연 기준일 설정 또는 해제
+      description: X-Requested-With XMLHttpRequest 헤더 필요. 실제 오늘(한국 시간) 이하, 1900년 이후 날짜를 사용하며 null은 실제 날짜로 복귀한다. 로그인과 저장 시각은 바꾸지 않는다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [date]
+              properties:
+                date: { type: string, format: date, nullable: true }
+      responses:
+        '200':
+          description: 계정 세션과 저장한 시연 기준일
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email: { type: string }
+                  name: { type: string }
+                  rehearsalDate: { type: string, format: date, nullable: true }
+        '400': { description: 기준일 형식 또는 허용 범위 오류 }
+        '401': { description: 로그인 필요 }
   /api/analyses/{analysisId}/reviews:
     parameters:
       - in: path

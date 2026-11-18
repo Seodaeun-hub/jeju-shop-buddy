@@ -1,5 +1,7 @@
 package com.jejushopbuddy.analysis;
 
+import com.jejushopbuddy.time.BusinessDate;
+
 import com.jejushopbuddy.analysis.SalesAnalysisController.ApiError;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -38,14 +40,16 @@ class PromotionImpactController {
     private final StrategyAgentClient agent;
     private final ExecutionPlanReader plans;
     private final ExecutionPlanWriter planWriter;
+    private final BusinessDate dates;
 
     PromotionImpactController(JdbcClient jdbc, ObjectMapper json, StrategyAgentClient agent,
-                              ExecutionPlanReader plans, ExecutionPlanWriter planWriter) {
+                              ExecutionPlanReader plans, ExecutionPlanWriter planWriter, BusinessDate dates) {
         this.jdbc = jdbc;
         this.json = json;
         this.agent = agent;
         this.plans = plans;
         this.planWriter = planWriter;
+        this.dates = dates;
     }
 
     @GetMapping
@@ -67,7 +71,7 @@ class PromotionImpactController {
         if (plan == null) return notFound();
         var day = input.publishedDate();
         if (input.channel() == null || day == null || day.getYear() < 1900
-                || day.isAfter(LocalDate.now(SEOUL)) || day.isAfter(plan.end())) {
+                || day.isAfter(dates.today()) || day.isAfter(plan.end())) {
             return invalid("게시 채널과 실제 게시일을 확인해 주세요. 오늘과 행사 종료일을 넘길 수 없어요.");
         }
         if (plan.draftProduct() == null || plan.product() == null) {
@@ -123,7 +127,7 @@ class PromotionImpactController {
         var period = upload.phase() == Phase.BEFORE ? result.before() : result.after();
         if ((upload.productName() != null && !result.productName().equals(upload.productName()))
                 || !period.start().equals(upload.start()) || !period.end().equals(upload.end())
-                || !period.end().isBefore(LocalDate.now(SEOUL))) {
+                || !period.end().isBefore(dates.today())) {
             return invalid("화면에 표시된 기간이 끝난 뒤 해당 기간의 POS를 올려 주세요.");
         }
         if (Boolean.TRUE.equals(upload.onlyIfMissing())
@@ -270,7 +274,7 @@ class PromotionImpactController {
         if (advice.action() == NextAction.REVIEW_TERMS && !changed) {
             return invalid("개당 할인액이나 할인 수량 한도를 바꿔 주세요.");
         }
-        if (input.startDate() == null || input.startDate().isBefore(LocalDate.now(SEOUL))
+        if (input.startDate() == null || input.startDate().isBefore(dates.today())
                 || input.startDate().isAfter(LocalDate.of(9999, 11, 30))) {
             return invalid("오늘 이후의 행사 시작일을 확인해 주세요.");
         }
@@ -354,7 +358,7 @@ class PromotionImpactController {
     }
 
     private Comparison comparison(Plan plan) {
-        return comparison(plan, LocalDate.now(SEOUL));
+        return comparison(plan, dates.today());
     }
 
     private Comparison comparison(Plan plan, LocalDate today) {
