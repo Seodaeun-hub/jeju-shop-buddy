@@ -526,6 +526,22 @@
 .promo-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
 .inventory-review { min-width: 0; }
 .execution-page-inventory { gap: .8rem; }
+.inventory-progress { position: sticky; top: .5rem; z-index: 3; display: flex; align-items: flex-start; gap: .6rem; padding: .6rem .75rem; border: 1px solid var(--green); border-radius: 10px; background: var(--sheet); box-shadow: 0 3px 12px #203b2820; min-width: 0; }
+.inventory-progress-checklist { flex: 1; min-width: 0; }
+.inventory-progress-checklist > summary { cursor: pointer; color: var(--green); min-height: 44px; }
+.inventory-progress-checklist > summary > span { display: inline-flex; gap: .65rem; align-items: center; }
+.inventory-progress-checklist > summary small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8rem; margin-top: .15rem; }
+.inventory-progress-checklist > .execution-checklist-card { position: absolute; top: calc(100% + .3rem); left: 0; right: 0; max-height: min(24rem, 45dvh); overflow-y: auto; overscroll-behavior: contain; margin-top: 0; box-shadow: 0 6px 18px #203b2830; }
+.execution-page-inventory .execution-layout { grid-template-columns: minmax(0, 1fr); }
+.inventory-progress > .button { flex: none; min-height: 44px; }
+.inventory-demand-method { font-size: .85rem; gap: .4rem; }
+.inventory-demand-method ol { padding-left: 1.2rem; margin: 0; display: grid; gap: .35rem; }
+@media (max-width: 760px) {
+  .inventory-progress { top: 3.7rem; padding: .45rem .55rem; gap: .4rem; }
+  .inventory-progress > .button { font-size: .8rem; padding-inline: .5rem; }
+  .inventory-progress-checklist > summary > span { gap: .3rem; font-size: .85rem; }
+  .workspace-layout-collapsed .inventory-progress { top: .5rem; }
+}
 .execution-page-inventory > .page-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: .25rem 1rem; }
 .execution-page-inventory > .page-heading p { margin: 0; }
 .execution-page-inventory .execution-summary { padding: .65rem 1rem; }
@@ -635,6 +651,10 @@
 .inventory-row { min-width: 0; border: 1px solid var(--line); border-radius: 7px; padding: .65rem; margin: .6rem 0 0; }
 .inventory-row legend { font-weight: 750; padding-inline: .2rem; }
 .inventory-managed-row > p { margin: 0 0 .7rem; overflow-wrap: anywhere; }
+.inventory-managed-row > summary { cursor: pointer; color: var(--green); min-height: 44px; overflow-wrap: anywhere; }
+.inventory-managed-row > summary > span { display: block; font-size: .82rem; margin-top: .15rem; padding-left: 1rem; }
+.inventory-row-body { padding-top: .65rem; display: grid; gap: .65rem; }
+.inventory-row-body > p { margin: 0; }
 .inventory-stock-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .inventory-menu-cost { padding: .6rem .75rem; background: var(--pale-green); border-radius: 6px; overflow-wrap: anywhere; }
 .inventory-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr)); gap: .55rem; }

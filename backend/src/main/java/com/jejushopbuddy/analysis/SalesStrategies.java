@@ -73,8 +73,8 @@ final class SalesStrategies {
                 priorityEvidence, List.of("메뉴별 판매가와 주문당 비용", "할인 예산 한도"),
                 "혜택을 실행하면 결제 건수와 할인 적용 후 주문당 남는 금액을 확인해요.");
         var inventory = new Suggestion("INVENTORY", "발주량 검토하기", "NEEDS_INPUT",
-                monthlyTrend + " 발주량은 품목별 재고와 예상 사용량을 확인한 뒤 검토해요.",
-                List.of(monthly), List.of("품목별 현재 재고", "다음 입고까지 예상 사용량", "입고 예정량"),
+                monthlyTrend + " 선택한 하루의 최근 같은 요일 판매량·증감 추세를 보고, 자료가 충분하면 날씨를 참고해 재료 준비량을 검토해요.",
+                List.of(monthly), List.of("품목별 현재 재고", "선택한 하루의 예상 재료 사용량", "해당 날짜에 사용 가능한 기존 입고 예정량"),
                 "확정 발주량과 실행 후 남은 재고를 같은 단위로 기록해요.");
 
         return new Response(analysis.id(), analysis.beforeMonth(), analysis.afterMonth(),
