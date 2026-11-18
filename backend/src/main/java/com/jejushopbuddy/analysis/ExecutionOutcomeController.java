@@ -34,6 +34,7 @@ class ExecutionOutcomeController {
 
     @GetMapping("/api/plans/{id}/outcome")
     ResponseEntity<?> read(@PathVariable UUID id, Principal owner) {
+        if (owner == null) return ResponseEntity.status(401).body(Map.of("message", "로그인 후 실행 결과를 조회해 주세요."));
         var row = jdbc.sql("SELECT p.execution_outcome " + OWNED).param("id", id).param("email", owner.getName())
                 .query((rs, n) -> new Stored(rs.getString(1))).optional();
         if (row.isEmpty()) return missing();
@@ -51,6 +52,7 @@ class ExecutionOutcomeController {
 
     @PutMapping("/api/plans/{id}/outcome")
     ResponseEntity<?> save(@PathVariable UUID id, @RequestBody Outcome input, Principal owner) {
+        if (owner == null) return ResponseEntity.status(401).body(Map.of("message", "로그인 후 실행 결과를 저장해 주세요."));
         if (!valid(input, dates.today())) return ResponseEntity.badRequest().body(Map.of("message",
                 "실행일·비교 기간·수치·자료 출처를 확인해 주세요. 실행 후 자료는 기준일보다 앞서야 하고 가상 파일은 가상 자료로 표시해야 해요."));
         int changed = jdbc.sql("""
