@@ -1,7 +1,7 @@
 from datetime import date
 import json
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from pydantic import ValidationError
 
@@ -12,6 +12,25 @@ from strategy_agent.promotion_reviews import (
 
 
 class PromotionReviewTests(unittest.TestCase):
+    def test_research_uses_audited_points_instead_of_unsupported_generated_texture(self):
+        excerpt = "흑돼지 김치찌개를 솥밥으로 주문했습니다. 역시 밥맛은 갓 한 솥밥이 맛있습니다."
+        observations = Observations(reviews=[Observation(page=1, dateText="2021. 2. 14.", excerpt=excerpt)])
+        proposed = PointCandidates(points=[PointCandidate(sentence="윤기와 찰진 솥밥의 식감을 먼저 소개해 보세요.",
+                                                        anchors=["솥밥"], sourceIds=["r1"])])
+        audited = PointCandidates(points=[PointCandidate(sentence="김치찌개와 함께 즐기는 솥밥을 먼저 소개해 보세요.",
+                                                      anchors=["솥밥"], sourceIds=["r1"])])
+        models = [MagicMock(), MagicMock(), MagicMock()]
+        for model, result in zip(models, [observations, proposed, audited]):
+            model.invoke.return_value = result
+        with patch.dict("os.environ", {"STRATEGY_AI_API_KEY": "test-key"}), \
+                patch("strategy_agent.promotion_reviews.search_review_urls", return_value=["https://example.tistory.com/1"]), \
+                patch("strategy_agent.promotion_reviews.read_matching_page", return_value="2021. 2. 14. " + excerpt), \
+                patch("strategy_agent.promotion_reviews.structured_model", side_effect=models):
+            result = research_reviews(ReviewRequest(storeName="검증 식당", address="하가로 159", subject="김치찌개",
+                                                    referenceDate="2021-06-01"))
+        self.assertEqual([p.sentence for p in result.points], [audited.points[0].sentence])
+        self.assertNotIn("찰진", result.points[0].sentence)
+
     def test_rehearsal_keeps_only_the_reference_dates_180_day_window(self):
         excerpt = "흑돼지 김치찌개와 따뜻한 솥밥을 맛있게 먹었습니다."
         labels = ["2021. 2. 14.", "2021. 6. 1.", "2021. 6. 2.", "2020. 1. 26.", "3개월 전"]
