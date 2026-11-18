@@ -44,7 +44,7 @@ class ExecutionOutcomeTest {
     }
 
     @Test @EnabledIfEnvironmentVariable(named = "SHOP_BUDDY_TEST_OUTCOME_DB", matches = "true")
-    void persistsReloadsAndProtectsOwnershipWithoutChangingPublicationOrPlans() {
+    void persistsReloadsAndProtectsOwnershipWithoutChangingPublicationOrPlans() throws Exception {
         var env = System.getenv();
         var source = new DriverManagerDataSource(env.get("SHOP_BUDDY_DB_URL"), env.get("SHOP_BUDDY_DB_USER"), env.get("SHOP_BUDDY_DB_PASSWORD"));
         String schema = "outcome_test_" + UUID.randomUUID().toString().replace("-", "");
@@ -67,6 +67,12 @@ class ExecutionOutcomeTest {
             var mapper = JsonMapper.builder().findAndAddModules().build();
             var clock = new BusinessDate(null) { @Override public LocalDate today() { return TODAY; } };
             var controller = new ExecutionOutcomeController(jdbc, mapper, clock);
+            var mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(controller).build();
+            var response = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                    .get("/api/plans/" + id + "/outcome").principal(() -> email)).andReturn().getResponse();
+            assertThat(response.getStatus()).as(response.getContentAsString()).isEqualTo(200);
+            assertThat(mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                    .get("/api/plans/" + id + "/outcome")).andReturn().getResponse().getStatus()).isEqualTo(401);
             assertThat(((Envelope) controller.read(id, () -> email).getBody()).outcome()).isNull();
             assertThat(controller.save(id, sample(true), () -> email).getStatusCode().value()).isEqualTo(200);
             var reopened = new ExecutionOutcomeController(jdbc, mapper, clock);
@@ -84,6 +90,32 @@ class ExecutionOutcomeTest {
             var replacement = new Outcome(true, LocalDate.parse("2021-06-05"), "김치찌개 배정 재료 당일 점검", "다른 메뉴 사용 없음 가정", null, null, null, inventory);
             assertThat(controller.save(id, replacement, () -> email).getStatusCode().value()).isEqualTo(200);
             assertThat(((Envelope) reopened.read(id, () -> email).getBody()).outcome()).isEqualTo(replacement);
+            // Exercise the real filter chain, not only a controller with an injected Principal.
+            jdbc.sql("UPDATE owners SET rehearsal_date = DATE '2021-06-15'").update();
+            try (var app = (org.springframework.boot.web.server.servlet.context.ServletWebServerApplicationContext)
+                    new org.springframework.boot.builder.SpringApplicationBuilder(com.jejushopbuddy.ShopBuddyApplication.class)
+                    .run("--server.port=0", "--spring.main.banner-mode=off",
+                            "--spring.datasource.url=" + env.get("SHOP_BUDDY_DB_URL") + "?currentSchema=" + schema,
+                            "--spring.datasource.username=" + env.get("SHOP_BUDDY_DB_USER"),
+                            "--spring.datasource.password=" + env.get("SHOP_BUDDY_DB_PASSWORD"))) {
+                try (var client = java.net.http.HttpClient.newHttpClient()) {
+                    var uri = java.net.URI.create("http://127.0.0.1:" + app.getWebServer().getPort() + "/api/plans/" + id + "/outcome");
+                    var anonymous = client.send(java.net.http.HttpRequest.newBuilder(uri).GET().build(), java.net.http.HttpResponse.BodyHandlers.ofString());
+                    assertThat(anonymous.statusCode()).isEqualTo(401);
+                    var authorization = "Basic " + java.util.Base64.getEncoder().encodeToString(
+                            (email + ":AewolDemo-2026!").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    var authenticated = client.send(java.net.http.HttpRequest.newBuilder(uri).header("Authorization", authorization)
+                            .header("X-Requested-With", "XMLHttpRequest").GET().build(), java.net.http.HttpResponse.BodyHandlers.ofString());
+                    assertThat(authenticated.statusCode()).as(authenticated.body()).isEqualTo(200);
+                    assertThat(mapper.readValue(authenticated.body(), Envelope.class).outcome()).isEqualTo(replacement);
+                    var savedOverHttp = client.send(java.net.http.HttpRequest.newBuilder(uri).header("Authorization", authorization)
+                            .header("X-Requested-With", "XMLHttpRequest").header("Content-Type", "application/json")
+                            .PUT(java.net.http.HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(replacement))).build(),
+                            java.net.http.HttpResponse.BodyHandlers.ofString());
+                    assertThat(savedOverHttp.statusCode()).as(savedOverHttp.body()).isEqualTo(200);
+                    assertThat(mapper.readValue(savedOverHttp.body(), Envelope.class).outcome()).isEqualTo(replacement);
+                }
+            }
         } finally {
             source.setSchema(null);
             jdbc.sql("DROP SCHEMA " + schema + " CASCADE").update();
