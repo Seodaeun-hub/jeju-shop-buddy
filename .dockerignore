@@ -18,6 +18,7 @@
 !migration-store-reviews.sql
 !migration-chart-questions.sql
 !migration-rehearsal-date.sql
+!migration-execution-outcome.sql
 !seed-jeju-areas.sql
 !deploy/
 !deploy/init-db.sql
