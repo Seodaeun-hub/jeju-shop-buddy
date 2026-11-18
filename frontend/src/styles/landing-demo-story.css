@@ -1,5 +1,5 @@
 .landing-demo-story { background: var(--paper); overflow: clip; }
-.journey-intro-band { background: var(--landing-story-green, #1d402f); color: #fffdf7; }
+.journey-intro-band { display: grid; align-items: center; min-height: 100vh; min-height: 100svh; background: var(--landing-story-green, #1d402f); color: #fffdf7; }
 .journey-story-intro { max-width: 71rem; padding-block: clamp(3rem, 8vw, 7rem) clamp(2.5rem, 5vw, 4rem); }
 .journey-story-intro > span, .journey-step-number { font-size: .82rem; letter-spacing: .09em; color: var(--orange); font-weight: 700; }
 .journey-story-intro > span { color: #f5c88d; }
