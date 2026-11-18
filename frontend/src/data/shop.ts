@@ -134,7 +134,7 @@ export type PromotionChannels = {
 export type PromotionReviewSource = { id: string; title: string; url: string; dateLabel: string }
 export type PromotionReviewPoint = { id: string; sentence: string; anchors: string[]; sourceIds: string[] }
 export type PromotionReviewSelection = { sources: PromotionReviewSource[]; points: PromotionReviewPoint[] }
-export type PromotionReviewResearch = PromotionReviewSelection & { id: string; subject: string; searchedAt: string }
+export type PromotionReviewResearch = PromotionReviewSelection & { id: string; subject: string; searchedAt: string; referenceDate?: string }
 
 export type PromotionLocalEvent = {
   id: string
