@@ -38,6 +38,19 @@
 .plan-sections time { font-weight: 700; }
 .result-direct-entry { margin: .75rem 0; border-block: 1px solid var(--line); padding: .7rem 0; }
 .result-direct-entry summary { cursor: pointer; color: var(--green); font-weight: 750; }
+.execution-outcome { margin-block: 1rem; min-width: 0; }
+.execution-outcome textarea { min-height: 6rem; }
+.execution-outcome label { min-width: 0; }
+.execution-outcome input[type="file"] { max-width: 100%; width: 100%; }
+.outcome-table-wrap { overflow-x: auto; }
+.outcome-table { width: 100%; border-collapse: collapse; margin-block: .8rem; }
+.outcome-table th, .outcome-table td { text-align: right; border-bottom: 1px solid var(--line); padding: .5rem .3rem; }
+.outcome-table th:first-child { text-align: left; }
+.outcome-table td { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.outcome-note { white-space: pre-wrap; overflow-wrap: anywhere; }
+.outcome-hash { overflow-wrap: anywhere; }
+.outcome-confirm { display: flex; gap: .5rem; align-items: start; margin-block: .8rem; }
+.outcome-confirm input { width: auto; flex: none; }
 .result-pos-status {
   display: flex;
   flex-wrap: wrap;
@@ -67,6 +80,7 @@
 }
 @media (max-width: 600px) {
   .result-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .outcome-table { font-size: .85rem; }
 }
 @media (max-width: 380px) {
   .result-fields { grid-template-columns: minmax(0, 1fr); }

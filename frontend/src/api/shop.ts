@@ -142,6 +142,11 @@ async function request<T>(...args: Parameters<typeof send>): Promise<T> {
   return (await send(...args)).json()
 }
 
+export const fetchExecutionOutcome = (auth: string, id: string, signal?: AbortSignal) =>
+  request<{ outcome: import('../data/executionOutcome').ExecutionOutcome | null; pendingUntil?: string | null }>(`/api/plans/${encodeURIComponent(id)}/outcome`, auth, 'GET', undefined, signal)
+export const saveExecutionOutcome = (auth: string, id: string, outcome: import('../data/executionOutcome').ExecutionOutcome) =>
+  request<{ outcome: import('../data/executionOutcome').ExecutionOutcome }>(`/api/plans/${encodeURIComponent(id)}/outcome`, auth, 'PUT', outcome)
+
 export const fetchPushConfig = (auth: string, signal: AbortSignal) =>
   request<{ publicKey: string | null; weeklyEnabled: boolean; resultEnabled: boolean; weeklySchedule: string }>(
     '/api/push/config', auth, 'GET', undefined, signal)

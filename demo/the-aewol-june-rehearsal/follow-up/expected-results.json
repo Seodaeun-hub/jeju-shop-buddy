@@ -1,0 +1,45 @@
+{
+  "simulated": true,
+  "restaurantParticipated": false,
+  "before": {
+    "start": "2021-05-18",
+    "end": "2021-05-31",
+    "days": 12,
+    "amount": 6619000,
+    "count": 312,
+    "afternoonCount": 48,
+    "quantity": 204,
+    "productAmount": 1632000
+  },
+  "after": {
+    "start": "2021-06-01",
+    "end": "2021-06-14",
+    "days": 12,
+    "amount": 6968000,
+    "count": 336,
+    "afternoonCount": 72,
+    "quantity": 247,
+    "productAmount": 1976000
+  },
+  "inventory": {
+    "date": "2021-06-05",
+    "product": "김치찌개",
+    "forecast": [
+      20,
+      24
+    ],
+    "actual": 23,
+    "scope": "김치찌개에 배정한 재료만, 다른 메뉴 사용·폐기·이동 없음, 예정량과 추가발주 모두 당일 입고 가정"
+  },
+  "limitations": [
+    "실제 후기나 실매출 개선 결과 아님",
+    "전후 차이로 홍보의 인과 효과를 입증할 수 없음"
+  ],
+  "hashNewlineNormalization": "CRLF",
+  "preservedAprilMayHashes": {
+    "SIMULATED-2021-04-payment.csv": "1a0b3c76f5d6bdad7eee96851566f98f12e1d3f67204575ac9a497325ec05de0",
+    "SIMULATED-2021-04-product.csv": "d22cd99d96d87117f3ab4b55afd648c4aef7bca1f28ced7f5d5cacc7ceebc0fd",
+    "SIMULATED-2021-05-payment.csv": "c9bb69d1ad856730229e72cc223ebdcc45a8c75e2904632688851a99a4be1d0f",
+    "SIMULATED-2021-05-product.csv": "d6352f8a868cfbf1e137a04c82fa212853f9c40a5a58f6558fbd036526bed9df"
+  }
+}

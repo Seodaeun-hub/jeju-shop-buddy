@@ -154,8 +154,8 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
   const [preparationDate, setPreparationDate] = useState(() => saved ? seoulDate() : '2021-06-01')
   const [viewedGuideId, setViewedGuideId] = useState<string>()
   const planBudget = choice === 'promotion' ? initialBudget : 0
-  const [channel, setChannel] = useState('인스타그램')
-  const planChannel = choice === 'outreach' ? '매장 안내' : channel
+  // Keep the legacy API channel value; draft creation now always offers all three channels.
+  const planChannel = choice === 'outreach' ? '매장 안내' : '인스타그램'
   const [customerConcern, setCustomerConcern] = useState('')
   const customerNotice = suggestCustomerNotice(customerConcern)
   const [saving, setSaving] = useState(false)
@@ -183,7 +183,6 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
     setError('')
     setDuration('2주')
     setViewedGuideId(undefined)
-    setChannel('인스타그램')
     setCustomerConcern('')
     setSelectedIndex(index)
   }
@@ -226,7 +225,7 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
     const offsets = choice === 'outreach' ? [0, 1, 1, days + 1] : [0, 1, Math.floor(days / 2), days - 1]
     const taskLabels = [...taskTemplates[choice]]
     if (choice === 'promotion') {
-      taskLabels[1] = channel === '인스타그램' ? '인스타그램에 소식 올리기' : '매장에 행사 안내 붙이기'
+      taskLabels[1] = '세 채널 초안 확인 후 사용할 채널에 직접 올리기'
       taskLabels[2] = '중간 ' + (demo?.timeLabel ? demo.timeMetric : '행사 시간대 매출액') + ' 점검'
     }
     onPlan({
@@ -328,7 +327,7 @@ export function Strategy({ data, onPlan, backTo = '/analysis', saved }: {
           {choice === 'outreach' && saved && <ExecutionGuidePanel
             auth={saved.auth} analysisId={saved.analysisId} recommendationId={saved.response.recommendationId}
             onView={setViewedGuideId} />}
-          {choice === 'promotion' && <label>홍보 채널<select disabled={saving} value={channel} onChange={(event) => setChannel(event.target.value)}><option>인스타그램</option><option>매장 안내</option></select></label>}
+          {choice === 'promotion' && <p className="muted">실행 관리에서 인스타그램·네이버 플레이스·당근 초안을 함께 확인하고, 사용할 채널을 열어 직접 올려 주세요.</p>}
           {choice === 'custom' ? <div className="strategy-output">
             <strong>실행 점검표 미리보기</strong>
             <ol>{selected.steps?.map(step => <li key={step}>{step}</li>)}</ol>

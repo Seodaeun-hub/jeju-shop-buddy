@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends postgresql-clie
     && useradd --system --user-group --no-create-home shopbuddy
 WORKDIR /app
 COPY --from=backend /build/target/jeju-shop-buddy-backend-0.1.0-SNAPSHOT.jar ./app.jar
-COPY schema.sql migration-store-reviews.sql migration-chart-questions.sql migration-rehearsal-date.sql seed-jeju-areas.sql deploy/init-db.sql deploy/start-web.sh ./
+COPY schema.sql migration-store-reviews.sql migration-chart-questions.sql migration-rehearsal-date.sql migration-execution-outcome.sql seed-jeju-areas.sql deploy/init-db.sql deploy/start-web.sh ./
 USER shopbuddy
 ENV SERVER_SERVLET_SESSION_COOKIE_SECURE=true
 CMD ["/bin/sh", "/app/start-web.sh"]

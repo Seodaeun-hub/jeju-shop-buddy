@@ -200,6 +200,7 @@ CREATE TABLE execution_plans (
     strategy_code VARCHAR(16) NOT NULL,
     strategy_snapshot JSONB NOT NULL,
     inventory_review JSONB CHECK (inventory_review IS NULL OR (strategy_code = 'INVENTORY' AND jsonb_typeof(inventory_review) = 'array')),
+    execution_outcome JSONB CHECK (execution_outcome IS NULL OR jsonb_typeof(execution_outcome) = 'object'),
     promotion_review_saved_at timestamptz,
     promotion_review JSONB CHECK (promotion_review IS NULL OR (strategy_code = 'PROMOTION' AND jsonb_typeof(promotion_review) = 'object')),
     promotion_impact JSONB CONSTRAINT ck_execution_plans_promotion_impact CHECK (promotion_impact IS NULL OR (
