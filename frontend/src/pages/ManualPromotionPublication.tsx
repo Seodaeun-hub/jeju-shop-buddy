@@ -3,6 +3,7 @@ import { Link } from 'react-router'
 import { saveManualPromotionPublication, type PromotionChannel, type ManualPromotionPublicationStatus } from '../api/shop'
 import { promotionPublicationLabels } from '../data/promotionChannels'
 import { notifyResultsDataChanged, seoulDate } from '../data/promotionArchive'
+import { rehearsalDate } from '../data/rehearsalDate'
 
 export function ManualPromotionPublication({ auth, planId, channel, endDate, resultsTo, defaultProduct, status, onStatus }: {
   auth: string
@@ -49,9 +50,9 @@ export function ManualPromotionPublication({ auth, planId, channel, endDate, res
       <p className="promotion-post-mode">직접 게시 · {publication.publishedDate}</p>
       <small>비교 품목 {publication.productName}</small>
       {resultsTo && <Link className="button secondary small" to={resultsTo}>판매 변화 확인</Link>}
-    </> : channel !== 'INSTAGRAM' && <p className="promotion-post-mode">초안 준비 완료 · 직접 게시</p>}
+    </> : <p className="promotion-post-mode">초안 준비 완료 · 직접 게시</p>}
     {status === null && <p className="promotion-post-mode">게시 기록을 불러오지 못했어요. 새로고침해 주세요.</p>}
-    {status && <details ref={details}>
+    {status && !rehearsalDate() && <details ref={details}>
       <summary>{publication ? '직접 게시일 수정' : '실제 게시일 기록'}</summary>
       <form className="form-stack" onSubmit={event => void save(event)}>
         <label>{label} 실제 게시일

@@ -114,7 +114,7 @@ AI 추천으로 계획을 만들면 추천 이유, 매출·상권 근거와 제�
 
 서버에 `REVIEW_AI_API_KEY`를 설정하면 새 리뷰 본문을 OpenAI에 보내 오후 주문 안내, 주차, 대기시간 불편을 분류합니다. `REVIEW_AI_MODEL`로 모델을 바꿀 수 있습니다. 키가 없거나 분류 요청이 실패하면 서버의 주제별 규칙을 사용합니다. 이전에 저장한 리뷰에도 규칙을 적용합니다.
 
-기존 개발용 DB에서 5번 화면의 홍보 품목 POS 비교를 사용하려면 `migration-promotion-impact.sql`을 적용합니다. 채널별 직접 게시 기록을 사용하려면 맞춤 홍보 마이그레이션과 POS 비교 적용 후 `migration-manual-promotion-publication.sql`도 적용합니다. **홍보물 보기 → 해당 채널 → 실제 게시일 기록**에서 각 채널의 날짜를 저장할 수 있습니다. 가게짝꿍에서 인스타그램 게시가 완료되면 게시 시각이 자동으로 반영됩니다. 5번 화면에서는 첫 게시일을 기준으로 행사 전후 POS를 한 번 비교합니다.
+기존 개발용 DB에서 5번 화면의 홍보 품목 POS 비교를 사용하려면 `migration-promotion-impact.sql`을 적용합니다. 채널별 직접 게시 기록을 사용하려면 맞춤 홍보 마이그레이션과 POS 비교 적용 후 `migration-manual-promotion-publication.sql`도 적용합니다. 일반 사용에서 **홍보물 보기 → 해당 채널 → 실제 게시일 기록**으로 직접 게시한 날짜를 저장할 수 있습니다. 과거 시연 모드에서는 실제 게시일 기록을 표시하지 않아 과거 행사와 오늘의 시연 게시를 섞지 않습니다. 5번 화면에서는 첫 게시일을 기준으로 행사 전후 POS를 한 번 비교합니다.
 
 매장 주소 검색은 Spring Boot의 환경 변수로 설정합니다. **도로명·지번** 검색에는 네이버 Maps Geocoding의 `NAVER_MAPS_CLIENT_ID`와 `NAVER_MAPS_CLIENT_SECRET`이 필요합니다. **가게 이름** 검색에는 NAVER API HUB 지역 검색의 `NAVER_LOCAL_SEARCH_CLIENT_ID`와 `NAVER_LOCAL_SEARCH_CLIENT_SECRET`이 필요합니다. 각 값은 발급받은 키로 설정한 뒤 백엔드를 다시 실행합니다.
 
@@ -122,26 +122,13 @@ AI 추천으로 계획을 만들면 추천 이유, 매출·상권 근거와 제�
 
 [OpenAPI 명세](openapi-store.yaml)
 
-### 인스타그램 즉시·예약 게시 테스트 설정
+### 세 채널에서 직접 게시하기
 
-기존 개발용 DB에는 `migration-instagram-publication.sql`, `migration-instagram-schedule.sql`을 순서대로 적용합니다. 4번 실행 관리에서 **홍보물 보기 → 인스타그램 → 게시 관리**를 열면 **게시 전 최종 미리보기**에서 저장한 이미지와 문구를 확인할 수 있습니다. 즉시 게시 버튼은 연결된 테스트 매장에 메뉴 사진이 포함된 미게시 초안이 있을 때 표시됩니다.
+**홍보물 보기 → 인스타그램·네이버 플레이스·당근 → 문구 복사 → 이미지 저장 → 해당 채널 열기**로 사장님이 각 서비스에 로그인하고 직접 게시합니다. 채널 링크를 여는 것만으로 사진이나 문구가 전송되거나 게시되지는 않습니다. 모바일에서도 선택한 채널의 복사·저장·열기 버튼을 하단에서 사용할 수 있습니다.
 
-Spring Boot 실행 환경에 아래 값을 설정합니다.
+인스타그램은 `https://www.instagram.com/`, 네이버 플레이스는 `https://smartplace.naver.com/`, 당근은 `https://business.daangn.com/`을 엽니다. Instagram 계정 ID·Meta 토큰·API 심사나 별도 Railway 인스타 환경변수는 필요하지 않습니다.
 
-| 환경 변수 | 설정값 |
-| --- | --- |
-| `SHOP_BUDDY_INSTAGRAM_ACCESS_TOKEN` | 게시 권한이 있는 Meta 테스트 계정 토큰 |
-| `SHOP_BUDDY_INSTAGRAM_ACCOUNT_ID` | 테스트용 Instagram 프로페셔널 계정 ID |
-| `SHOP_BUDDY_INSTAGRAM_USERNAME` | 테스트 계정 사용자 이름(`@` 제외) |
-| `SHOP_BUDDY_INSTAGRAM_TEST_STORE_ID` | 게시를 허용할 가게짝꿍 테스트 매장 UUID |
-| `SHOP_BUDDY_INSTAGRAM_IMAGE_BASE_URL` | Meta가 읽을 수 있는 HTTPS 호스트 주소 |
-| `SHOP_BUDDY_INSTAGRAM_REHEARSAL_PUBLISH_ENABLED` | 기본 `false`. `true`일 때 연결한 테스트 매장·계정만 시연 안내를 붙여 오늘 즉시 게시 가능 |
-
-HTTPS 호스트는 `GET /instagram-media/{key}.jpg` 경로만 Spring Boot에 전달합니다. 애월 테스트에서는 이미지 전용 임시 HTTPS 프록시를 사용하고 검증 후 종료했습니다. 토큰은 백엔드 환경 변수로 관리합니다.
-
-Railway에서는 이미지 호스트를 Web의 공개 HTTPS 주소로 설정합니다. 과거 시연 중의 일반 게시·예약은 차단합니다. 별도 테스트 게시 허용 설정이 있으면 **게시 관리 → 시연 표시가 포함된 최종 미리보기 → 확인 체크 → 테스트 계정에 지금 게시**로 연결한 계정에만 즉시 게시할 수 있습니다. 문구에는 시연 기준일과 실제 오늘 날짜를, 이미지에는 가상 시연·현재 판매 행사 아님·AI 예시 표시를 붙입니다. 기존 초안과 할인 조건은 유지하며 실제 게시 시각을 과거로 바꾸지 않습니다. [더애월 테스트 게시 시연 순서](demo/the-aewol-june-rehearsal/README.md#9-1-인스타-테스트-계정에-오늘-실제-게시하기-선택)를 참고하세요. 실제 게시 성공 결과는 계정 연결 후 별도로 확인해야 합니다.
-
-예약은 한국 시간으로 입력합니다. 예약이 실행되는 동안 Spring Boot와 이미지 제공용 HTTPS 경로가 동작해야 합니다. 게시 시작 전에는 4번 화면에서 예약을 취소할 수 있습니다.
+2026-11-18 자동 게시·예약 및 테스트 게시 기능을 종료했습니다. Meta에 요청을 보내는 코드와 서버 예약 작업을 제거했고, 이전 게시·예약 변경 API는 `410`으로 직접 게시 안내를 반환합니다. 기존 환경변수가 남아 있어도 자동 게시에 사용하지 않습니다. 이전 API 게시 기록은 조회용으로 유지하며 기존 예약을 새로 실행하지 않습니다. 아래 문서의 과거 자동 게시 검증 기록은 당시 구현의 이력이며 현재 제공 기능이 아닙니다. [더애월 직접 게시 시연 순서](demo/the-aewol-june-rehearsal/README.md#9-1-시연-계정에서-직접-게시하기-선택)를 참고하세요.
 
 ## Railway 배포와 동시 요청 검증
 
