@@ -4,6 +4,8 @@
 
 **최종 촬영·제출 준비:** [PC·아이폰 통합 촬영 순서](demo/final-recording/README.md) · [제출 구성과 남은 항목](submission/README.md) · [실행 매뉴얼](submission/RUNBOOK.md) · [데이터 활용 명세](submission/DATA_SPEC.md) · [AI·오픈소스](submission/AI_AND_OSS.md) · [결과 설명](submission/RESULTS.md). 현재 참가 방식은 개인 참가입니다. 별도 기획서 최종 파일·내일 녹화 영상과 평가용 API 이용 준비는 아직 완료로 표시하지 않습니다.
 
+촬영 묶음에는 **최초 분석 CSV / 홍보 전후 네 칸 순서 CSV / 하루 발주 결과 CSV / AI 메뉴 사진5장 / 메뉴 가격·재료·원가표 / 새 공개 QR**을 구분해 넣었습니다. [포함 자료·검증 기록](submission/PACKAGE_CONTENTS.md)에서 파일별 용도를 확인합니다. 문서·생성 스크립트와 사진·QR·캡처 입력 자료를 버전 관리하고, 생성 ZIP은 로컬 산출물로 별도 제공합니다.
+
 ## Railway 서비스 주소 변경 · 2026-11-18
 
 프로젝트는 `jeju-shop-buddy`, Web은 `shop-buddy-web`, Agent는 `shop-buddy-agent`로 이름을 정리했습니다. 공개 주소는 **https://gage-jjakkung.up.railway.app/**입니다. 기존 서비스·DB를 유지했으며 세 서비스가 Online이고, Web의 `STRATEGY_AGENT_URL`이 `http://${{shop-buddy-agent.RAILWAY_PRIVATE_DOMAIN}}:8001`을 참조하는 것을 확인했습니다. 내부 DNS는 기존 연결을 유지하며 서비스 표시 이름에서 주소를 추측해 바꾸지 않았습니다.

@@ -62,8 +62,8 @@ def archive(folder: Path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True, help='New output directory; existing folders are never erased')
-    parser.add_argument('--menu-assets', type=Path, required=True, help='Earlier generated 5-menu image directory')
-    parser.add_argument('--verified-assets', type=Path, required=True, help='Observed Railway rename/QR captures directory')
+    parser.add_argument('--menu-assets', type=Path, default=ROOT / 'submission/assets/menu', help='5-menu images; defaults to bundled assets')
+    parser.add_argument('--verified-assets', type=Path, default=ROOT / 'submission/assets/verification', help='QR/captures; defaults to bundled assets')
     args = parser.parse_args()
     out = args.output.resolve()
     if out.exists():
@@ -135,7 +135,7 @@ def main():
             continue
         copy(ROOT / name, source_dir / name)
     docs = review / '02_문서'
-    for name in ['README.md', 'RUNBOOK.md', 'DATA_SPEC.md', 'AI_AND_OSS.md', 'RESULTS.md', 'environment.example']:
+    for name in ['README.md', 'RUNBOOK.md', 'DATA_SPEC.md', 'AI_AND_OSS.md', 'RESULTS.md', 'PACKAGE_CONTENTS.md', 'environment.example']:
         content = (ROOT / 'submission' / name).read_text(encoding='utf-8')
         content = content.replace('(../demo/', '(../01_실행소스/demo/')
         write(docs / name, content)
