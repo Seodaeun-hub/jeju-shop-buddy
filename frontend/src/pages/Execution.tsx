@@ -316,6 +316,45 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
   const needsPromotionInputs = plan.strategy === 'promotion' && !!plan.missingInputs?.length
   const dateRange = `${plan.startDate.replaceAll('-', '.')} ~ ${plan.endDate.replaceAll('-', '.')}`
   const noticeFollowUp = plan.strategy === 'outreach' && plan.tasks.some(task => task.date < plan.startDate)
+  const dailyLabels: Record<string, string> = {
+    '품목별 현재 재고 확인하기': '판매 날짜·메뉴와 품목별 현재 재고 확인하기',
+    '다음 입고까지 예상 사용량 확인하기': '하루 예상 판매량과 재료 사용량 확인하기',
+    '선택한 하루의 예상 재료 사용량 확인하기': '하루 예상 판매량과 재료 사용량 확인하기',
+    '입고 예정량 확인하기': '해당 날짜에 사용 가능한 기존 입고량 확인하기',
+    '해당 날짜에 사용 가능한 기존 입고 예정량 확인하기': '해당 날짜에 사용 가능한 기존 입고량 확인하기',
+    '수집한 재고 자료로 품목별 발주량 검토하기': '추가 준비량을 검토하고 발주 검토표 저장하기',
+  }
+  const taskLabel = (label: string) => inventory ? dailyLabels[label] ?? label : label
+  const checklistCard = <section className="execution-checklist-card" aria-labelledby="execution-checklist-title">
+    <div className="execution-checklist-header">
+      <h2 id="execution-checklist-title">실행 일정과 점검표</h2>
+      <span className="badge" aria-live="polite">{plan.done.length} / {plan.tasks.length} 완료</span>
+    </div>
+    <div className="execution-checklist-body">
+      {plan.reviewEvidence && <details className="ruled-block">
+        <summary>이 계획의 리뷰 근거 {plan.reviewEvidence.length}건 보기</summary>
+        <ul className="review-evidence">{plan.reviewEvidence.map(review => <li key={review.id}>
+          <time dateTime={review.date}>{review.date}</time><span>{review.text}</span>
+        </li>)}</ul>
+      </details>}
+      <ul className="execution-checklist">{plan.tasks.map(({ id, label, date }, index) => <li key={id ?? index}>
+        <label>
+          <input type="checkbox" checked={plan.done.includes(index)} disabled={savingIndex !== undefined}
+            onChange={event => void toggleChecklist(index, event.target.checked)} />
+          <span className="execution-task">
+            <strong>{taskLabel(label)}</strong>
+            <span className="execution-task-meta">
+              {!inventory && <time dateTime={date}>{shortDate(date)}</time>}
+              {next === index && <span className="badge">다음 할 일</span>}
+            </span>
+          </span>
+        </label>
+      </li>)}</ul>
+      {savingIndex !== undefined && <p className="muted" role="status">점검 상태를 저장하는 중이에요.</p>}
+      {checklistError && <p className="error" role="alert">{checklistError}</p>}
+      {plan.strategy === 'promotion' && !plan.timeLabel && <p className="muted execution-note">행사 소식을 올리기 전에 혜택을 적용할 시간대를 정해 주세요.</p>}
+    </div>
+  </section>
 
   return <div className={`execution-page${inventory ? ' execution-page-inventory' : ''}`}>
     <PageTitle title="실행 계획 · 진행 관리" detail={`${plan.store}${plan.demo ? ' · 시연 예시' : ''}`} />
@@ -336,6 +375,21 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
     </section>
     {auth && analysis.storeId && plan.analysisId && plan.id &&
       <ExecutionPlanSwitcher auth={auth} storeId={analysis.storeId} analysisId={plan.analysisId} planId={plan.id} />}
+    {inventory && <section className="inventory-progress" aria-label="발주 진행과 결과">
+      <details className="inventory-progress-checklist" onKeyDown={event => {
+        if (event.key === 'Escape') {
+          event.currentTarget.open = false
+          event.currentTarget.querySelector('summary')?.focus()
+        }
+      }}>
+        <summary>
+          <span><strong>점검표</strong> <span aria-live="polite">{plan.done.length}/{plan.tasks.length} 완료</span></span>
+          <small>{next === -1 ? '점검을 모두 마쳤어요' : `다음 · ${taskLabel(plan.tasks[next].label)}`}</small>
+        </summary>
+        {checklistCard}
+      </details>
+      <Link className="button secondary small" to={resultsTo}>실행 결과 확인 →</Link>
+    </section>}
     {(plan.recommendation || plan.customerNotice || plan.executionGuide) &&
       <details className="execution-reference receipt">
         <summary>{[
@@ -383,36 +437,7 @@ export function Execution({ plan, onChange, onToggleChecklist, analysis, onSaveI
       onChange={(inventoryItems) => onChange({ ...plan, inventoryItems })}
     />}
     <div className="execution-layout">
-      <section className="execution-checklist-card" aria-labelledby="execution-checklist-title">
-        <div className="execution-checklist-header">
-          <h2 id="execution-checklist-title">실행 일정과 점검표</h2>
-          <span className="badge" aria-live="polite">{plan.done.length} / {plan.tasks.length} 완료</span>
-        </div>
-        <div className="execution-checklist-body">
-          {plan.reviewEvidence && <details className="ruled-block">
-            <summary>이 계획의 리뷰 근거 {plan.reviewEvidence.length}건 보기</summary>
-            <ul className="review-evidence">{plan.reviewEvidence.map((review) => <li key={review.id}>
-              <time dateTime={review.date}>{review.date}</time><span>{review.text}</span>
-            </li>)}</ul>
-          </details>}
-          <ul className="execution-checklist">{plan.tasks.map(({ id, label, date }, index) => <li key={id ?? index}>
-            <label>
-              <input type="checkbox" checked={plan.done.includes(index)} disabled={savingIndex !== undefined}
-                onChange={(event) => void toggleChecklist(index, event.target.checked)} />
-              <span className="execution-task">
-                <strong>{label}</strong>
-                <span className="execution-task-meta">
-                  <time dateTime={date}>{shortDate(date)}</time>
-                  {next === index && <span className="badge">다음 할 일</span>}
-                </span>
-              </span>
-            </label>
-          </li>)}</ul>
-          {savingIndex !== undefined && <p className="muted" role="status">점검 상태를 저장하는 중이에요.</p>}
-          {checklistError && <p className="error" role="alert">{checklistError}</p>}
-          {plan.strategy === 'promotion' && !plan.timeLabel && <p className="muted execution-note">행사 소식을 올리기 전에 혜택을 적용할 시간대를 정해 주세요.</p>}
-        </div>
-      </section>
+      {!inventory && checklistCard}
       <div className="form-stack execution-aside">
         {hasPromotionMaterials && auth && onSavePromotionDraft && <section className="receipt promotion-summary">
           <div>

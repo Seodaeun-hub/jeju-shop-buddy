@@ -43,8 +43,8 @@ final class StrategyAgentClient {
             "ITEM_PRICE_AND_ORDER_COST", "메뉴별 판매가와 주문당 비용",
             "DISCOUNT_BUDGET", "할인 예산 한도",
             "ON_HAND_STOCK", "품목별 현재 재고",
-            "EXPECTED_USAGE", "다음 입고까지 예상 사용량",
-            "INCOMING_STOCK", "입고 예정량");
+            "EXPECTED_USAGE", "선택한 하루의 예상 재료 사용량",
+            "INCOMING_STOCK", "해당 날짜에 사용 가능한 기존 입고 예정량");
 
     private final HttpClient http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)
             .connectTimeout(Duration.ofSeconds(1)).build();

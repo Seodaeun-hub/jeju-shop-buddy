@@ -24,6 +24,13 @@ export type InventoryDemandEstimate = {
   station: string | null
   observationSourceUrl: string | null
   requiredPos: { start: string; end: string; kind: 'PRODUCT'; minimumDays: number } | null
+  calculation?: {
+    baselineDays: number; baselineAverage: number
+    previousDays: number; previousAverage: number | null
+    recentDays: number; recentAverage: number; changePercent: number | null; trendApplied: boolean
+    weatherFactor: number; weatherApplied: boolean; weatherNote: string
+    latestSalesDate: string; rangeDays: number
+  } | null
 } & InventoryDemandBounds
 
 export type InventoryWeather = {

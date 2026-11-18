@@ -175,7 +175,8 @@ function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, d
   const productComparisons = comparisons?.filter(row => !productName.trim() || row.estimate.product === productName.trim()) ?? []
   const canSaveEstimate = estimate && estimate.low !== null && estimate.high !== null
   const required = estimate?.requiredPos
-  const alreadySaved = comparisons?.some(row => row.currentPlan && row.estimate.date === reference?.date && row.estimate.product === estimate?.product)
+  const savedForDate = comparisons?.find(row => row.currentPlan && row.estimate.date === reference?.date && row.estimate.product === estimate?.product)
+  const alreadySaved = Boolean(savedForDate)
   const menuNames = [...new Set([...menus, ...(comparisons?.map(row => row.estimate.product) ?? [])])]
   const uploadTo = required && reference && storeId && analysisId && productName.trim()
     ? posLibraryPath(storeId, { date: required.end, kind: required.kind, upload: {
@@ -192,7 +193,8 @@ function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, d
 
   return <section className="inventory-forecast-panel form-stack" aria-label="판매량 예상">
     <h3><span className="inventory-step-number" aria-hidden="true">1</span> 판매량 예상</h3>
-    <label>날씨를 확인할 날짜
+    <p className="muted">선택한 하루의 판매량 → 재료 사용량 → 재고·기존 입고량을 뺀 추가 준비량 순서로 확인해요.</p>
+    <label>판매량을 예상할 날짜 (하루)
       <input type="date" value={date} disabled={loading || savingEstimate} onChange={event => {
         onDate(event.target.value)
         clear()
@@ -231,7 +233,9 @@ function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, d
       <summary>예상 이력 관리{productComparisons.length > 0 && ` · ${productComparisons.length}건`}</summary>
       <div className="form-stack">
         {canSaveEstimate && (alreadySaved || estimateSaved
-          ? <p role="status" className="muted">이 계획에 저장한 예상 범위예요.</p>
+          ? <p role="status" className="muted">{savedForDate && (savedForDate.estimate.low !== estimate.low || savedForDate.estimate.high !== estimate.high)
+            ? `이날 처음 저장한 ${savedForDate.estimate.low}~${savedForDate.estimate.high}개는 이력으로 유지해요. 위의 현재 계산 범위와 다를 수 있어요. 현재 범위를 별도로 기록하려면 새 계획을 사용해 주세요.`
+            : '이 계획에 저장한 예상 범위예요.'}</p>
           : <>
             <p className="muted">이 범위를 기록해 두면 실제 판매량과 비교할 수 있어요.</p>
             <button type="button" className="button secondary small" disabled={loading || savingEstimate}
@@ -410,7 +414,7 @@ function DemandEstimate({ estimate, uploadTo, notes, posReference, pendingExclus
   onExclusions: (dates: string[]) => void
 }) {
   const { product, historical, actualSales, basis, low, high, samples, station, observationSourceUrl,
-    observedRainfallMm, precipitation, requiredPos, candidates, excludedDates, originalBounds } = estimate
+    observedRainfallMm, precipitation, requiredPos, candidates, excludedDates, originalBounds, calculation } = estimate
   const usedDates = new Set(samples.map(sample => sample.date))
   const selectedExclusions = pendingExclusions ?? excludedDates
   const notesByDate = new Map(notes.filter(row => row.estimate.product === product).map(row => [row.estimate.date, row.note]))
@@ -436,12 +440,25 @@ function DemandEstimate({ estimate, uploadTo, notes, posReference, pendingExclus
           <span>{product} 예상 판매량</span>
           <strong>{formatNumber(low)}~{formatNumber(high)}<small>개</small></strong>
         </div>
-        <p className="muted">{basis === 'WEATHER'
+        {calculation ? <>
+          <p className="muted">최근 같은 요일 {calculation.recentDays}회 판매 수준 · {calculation.trendApplied ? '증감 추세 반영' : '추세 판단 자료 부족'} · 날씨 {calculation.weatherApplied ? '보정 적용' : '보정 안 함'}</p>
+          <details className="inventory-demand-method inventory-secondary form-stack">
+          <summary>최근 수요·증감·날씨 계산 단계</summary>
+          <ol>
+            <li>기본 수요 · 같은 요일 {calculation.baselineDays}일 평균 {formatNumber(calculation.baselineAverage)}개</li>
+            <li>{calculation.trendApplied
+              ? <>최근 수준 반영 · 이전 {calculation.previousDays}일 평균 {formatNumber(calculation.previousAverage ?? 0)}개 → 최근 {calculation.recentDays}일 평균 {formatNumber(calculation.recentAverage)}개
+                {calculation.changePercent !== null && <> ({calculation.changePercent > 0 ? '+' : ''}{calculation.changePercent}%)</>}. 최근 판매 수준을 한 번만 반영해요.</>
+              : <>추세 판단 보류 · 같은 요일 기록이 6일 미만이라 최근 {calculation.recentDays}일 범위를 사용해요.</>}</li>
+            <li>날씨 {calculation.weatherApplied ? `보정 ×${calculation.weatherFactor}` : '보정 안 함'} · {calculation.weatherNote}</li>
+          </ol>
+          <small className="muted">최신 비교 POS {calculation.latestSalesDate} · 최근 같은 요일 {calculation.rangeDays}일의 판매 범위{calculation.weatherApplied ? '에 날씨 보정을 적용했어요' : '를 사용했어요'}. 준비 참고값이며 예측 신뢰구간은 아니에요.</small>
+        </details></> : <p className="muted">{basis === 'WEATHER'
           ? `같은 요일에 강수 여부가 같았던 ${samples.length}일의 판매 범위예요.`
           : historical && precipitation === null
             ? `기상청 강수 관측을 확인할 수 없어 같은 요일 ${samples.length}일의 판매 범위를 참고했어요. 위의 예상 판매량 보기를 눌러 다시 조회할 수 있어요.`
-            : `날씨까지 같은 비교일이 부족해 같은 요일 ${samples.length}일의 판매 범위를 참고했어요.`}</p>
-        <p className="muted">내 매장에 저장한 재료 사용량으로 추가 준비량을 계산해요.</p>
+            : `날씨까지 같은 비교일이 부족해 같은 요일 ${samples.length}일의 판매 범위를 참고했어요.`}</p>}
+        <p className="muted">이 판매 날짜 하루의 준비량이에요. 다음 입고일까지 여러 날을 합산한 값은 아니에요.</p>
       </>}
     {originalBounds && originalBounds.low !== null && originalBounds.high !== null && <p className="muted">
       제외 전 {formatNumber(originalBounds.low)}~{formatNumber(originalBounds.high)}개 → 제외 후 {low === null || high === null
@@ -462,7 +479,7 @@ function DemandEstimate({ estimate, uploadTo, notes, posReference, pendingExclus
           <span>{sample.date} · {formatNumber(sample.quantity)}개
             {sample.precipitation !== null && (sample.precipitation ? ' · 강수 관측됨' : ' · 강수 기록 없음')}
             {sample.rainfallMm !== null && ` · 강수량 ${sample.rainfallMm}mm`}
-            {!pendingExclusions && !excluded && !usedDates.has(sample.date) && ' · 강수 여부가 달라 미반영'}
+            {!pendingExclusions && !excluded && !usedDates.has(sample.date) && ' · 최근 비교 기간 밖'}
           </span>
           {notesByDate.get(sample.date) && <span><strong>확인 메모</strong> {notesByDate.get(sample.date)}</span>}
           <label><input type="checkbox" checked={excluded} disabled={disabled}
@@ -490,7 +507,7 @@ export function InventoryReview({ auth, planId, analysisId, items, analysis, rev
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   const [initialLookup] = useState<ForecastSelection | undefined>(() => {
     const date = params.get('inventoryDate') ?? ''
     const product = (params.get('inventoryProduct') ?? '').trim()
@@ -519,6 +536,7 @@ export function InventoryReview({ auth, planId, analysisId, items, analysis, rev
   const calculations = visibleItems.map((item, index) =>
     range ? preparationFor(item, recipes[index].amount, range.low, range.high) : null)
   const ready = visibleItems.length > 0 && calculations.every(value => value?.shortage != null)
+    && visibleItems.every(item => item.finalOrder === '' || parseQuantity(item.finalOrder) !== null)
   const recorded = calculations.filter(value => value?.shortage != null).length
   const months = analysis.monthly.slice(-2)
   const storeId = analysis.storeId
@@ -554,6 +572,7 @@ export function InventoryReview({ auth, planId, analysisId, items, analysis, rev
 
   function changeProduct(value: string) {
     setProductName(value)
+    rememberSelection(date, value)
     setStored(undefined)
     setEstimate(null)
     setLoadError('')
@@ -561,7 +580,21 @@ export function InventoryReview({ auth, planId, analysisId, items, analysis, rev
     setError('')
   }
 
-  function updateItem(item: InventoryItem, field: 'stock' | 'incoming', value: string) {
+  function rememberSelection(nextDate: string, nextProduct: string) {
+    setParams(current => {
+      const next = new URLSearchParams(current)
+      if (nextDate && nextProduct.trim()) {
+        next.set('inventoryDate', nextDate)
+        next.set('inventoryProduct', nextProduct.trim())
+      } else {
+        next.delete('inventoryDate')
+        next.delete('inventoryProduct')
+      }
+      return next
+    }, { replace: true })
+  }
+
+  function updateItem(item: InventoryItem, field: 'stock' | 'incoming' | 'finalOrder', value: string) {
     setMessage('')
     setError('')
     onChange([...items.filter(row => recipeKey(row.name, row.unit) !== recipeKey(item.name, item.unit)),
@@ -607,10 +640,10 @@ export function InventoryReview({ auth, planId, analysisId, items, analysis, rev
       <span className="badge" aria-live="polite">{recorded} / {visibleItems.length}품목 기록</span>
     </div>
     <div className="receipt inventory-workspace">
-      <p className="muted inventory-review-date">발주 검토 예정일 · {reviewDate.replaceAll('-', '.')}</p>
+      <p className="muted inventory-review-date">준비할 날짜 · {date.replaceAll('-', '.')} 하루</p>
       <div className="inventory-workspace-grid">
         {auth && planId ? <InventoryForecast auth={auth} planId={planId} analysisId={analysisId}
-          storeId={storeId} initialLookup={initialLookup} date={date} onDate={setDate}
+          storeId={storeId} initialLookup={initialLookup} date={date} onDate={value => { setDate(value); rememberSelection(value, productName) }}
           menus={analysis.productSales?.map(row => row.productName) ?? []}
           productName={productName} posReference={posReference} onProduct={changeProduct}
           onEstimate={setEstimate} /> : <div className="inventory-forecast-panel">{posReference}</div>}
@@ -619,7 +652,7 @@ export function InventoryReview({ auth, planId, analysisId, items, analysis, rev
             <h3><span className="inventory-step-number" aria-hidden="true">2</span> 재료별 준비량</h3>
             {costTo && <Link className="text-button" to={costTo}>내 매장에서 사용량 수정</Link>}
           </div>
-          <p className="muted">저장된 한 개당 사용량으로 계산해요. 현재 재고와 입고 예정량만 입력해 주세요. 입고 예정이 없으면 0을 입력해요.</p>
+          <p className="muted">저장된 한 개당 사용량으로 선택한 하루의 필요량을 계산해요. 현재 재고와 그날 사용 가능한 기존 주문의 입고량을 입력해 주세요. 새로 주문할 양은 추가 준비량을 보고 정해요. 기존 입고가 없으면 0을 입력해요.</p>
           {current?.cost.costWon != null && <p className="inventory-menu-cost">{product} 한 개당 합산 원가 <strong>{won(current.cost.costWon)}</strong></p>}
           {loading && <p role="status">내 매장의 재료 사용량을 불러오는 중이에요.</p>}
           {loadError && <p role="alert" className="error">{loadError}{' '}
@@ -634,15 +667,18 @@ export function InventoryReview({ auth, planId, analysisId, items, analysis, rev
               {visibleItems.map((item, index) => {
                 const recipe = recipes[index]
                 const calculation = calculations[index]
-                return <fieldset key={item.id} className="inventory-row inventory-managed-row">
-                  <legend>{item.name} · {item.unit}</legend>
+                return <details key={`${product}:${item.id}`} name={`inventory-ingredients-${planId ?? 'demo'}`} className="inventory-row inventory-managed-row">
+                  <summary><strong>{item.name} · {item.unit}</strong><span>{calculation?.shortage
+                    ? `추가 ${formatQuantity(calculation.shortage[0])}~${formatQuantity(calculation.shortage[1])} ${item.unit}`
+                    : '재고·기존 입고량 입력'}</span></summary>
+                  <div className="inventory-row-body">
                   <p className="muted">{product} 한 개당 사용량 <strong>{recipe.amount} {item.unit}</strong>
                     {recipe.unitPriceWon != null && <> · {item.unit}당 {won(recipe.unitPriceWon)}</>}</p>
                   <div className="inventory-fields inventory-stock-fields">
                     <label>현재 재고 ({item.unit})<input type="number" inputMode="decimal" min="0" max="1000000000" step="0.001"
                       value={item.stock} aria-invalid={item.stock !== '' && parseQuantity(item.stock) === null}
                       onChange={event => updateItem(item, 'stock', event.target.value)} /></label>
-                    <label>입고 예정량 ({item.unit})<input type="number" inputMode="decimal" min="0" max="1000000000" step="0.001"
+                    <label>기존 입고 예정량 ({item.unit})<input type="number" inputMode="decimal" min="0" max="1000000000" step="0.001"
                       value={item.incoming} aria-invalid={item.incoming !== '' && parseQuantity(item.incoming) === null}
                       onChange={event => updateItem(item, 'incoming', event.target.value)} /></label>
                   </div>
@@ -654,7 +690,11 @@ export function InventoryReview({ auth, planId, analysisId, items, analysis, rev
                   </div> : range
                     ? <p role="alert" className="error">예상 사용량이 계산 범위를 넘어요. 매장 사용량을 확인해 주세요.</p>
                     : <p className="muted">예상 판매량을 조회하면 필요한 재료와 추가 준비량을 계산해요.</p>}
-                </fieldset>
+                  <label>최종 추가 발주량 ({item.unit}) · 선택 입력<input type="number" inputMode="decimal" min="0" max="1000000000" step="0.001"
+                    value={item.finalOrder} aria-invalid={item.finalOrder !== '' && parseQuantity(item.finalOrder) === null}
+                    onChange={event => updateItem(item, 'finalOrder', event.target.value)} /></label>
+                  </div>
+                </details>
               })}
             </div>
           </fieldset>
@@ -664,6 +704,7 @@ export function InventoryReview({ auth, planId, analysisId, items, analysis, rev
             <ul>{previousItems.map(item => <li key={item.id}>{item.name} · {item.unit} · 재고 {item.stock || '미입력'} · 입고 예정 {item.incoming || '미입력'}</li>)}</ul>
           </details>}
           {visibleItems.length > 0 && <p className="muted inventory-hint">검토표 저장 시 예상 사용량은 판매량 범위의 상한을 반영해요. 사용량을 수정하러 가기 전 재고 입력은 먼저 저장해 주세요.</p>}
+          {visibleItems.length > 0 && <p className="muted inventory-hint">최종 추가 발주량은 포장 단위 등을 고려해 직접 정해요. 0은 추가 발주 없음, 빈칸은 미결정이에요. 검토표 저장은 실제 발주 주문을 보내지 않아요.</p>}
           {onSave && <div className="inventory-save-bar"><button type="button" className="button primary"
             disabled={saving || loading || !ready} onClick={() => void save()}>{saving ? '저장 중…' : '발주 검토표 저장'}</button></div>}
           {message && <p role="status">{message}</p>}

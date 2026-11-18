@@ -219,6 +219,12 @@ class ExecutionPlanWriter {
             return List.of(item(tasks.get(0), start), item(tasks.get(1), start.plusDays(1)),
                     item(tasks.get(2), start.plusDays(2)), item(tasks.get(3), end));
         }
+        if (strategy.code().equals("INVENTORY")) {
+            return List.of(item("판매 날짜·메뉴와 품목별 현재 재고 확인하기", start),
+                    item("하루 예상 판매량과 재료 사용량 확인하기", start),
+                    item("해당 날짜에 사용 가능한 기존 입고량 확인하기", start),
+                    item("추가 준비량을 검토하고 발주 검토표 저장하기", start));
+        }
         if (strategy.status().equals("NEEDS_INPUT")) {
             var items = new ArrayList<ChecklistItem>();
             for (String input : strategy.missingInputs()) {

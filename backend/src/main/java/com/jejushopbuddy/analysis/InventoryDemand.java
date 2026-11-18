@@ -3,9 +3,11 @@ package com.jejushopbuddy.analysis;
 import com.jejushopbuddy.address.NaverGeocodingClient.Coordinates;
 import com.jejushopbuddy.time.BusinessDate;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -82,27 +84,86 @@ class InventoryDemand {
                 selected.samples(), selected.weatherMatches(), precipitation, observed, rainfall.isEmpty() ? null : station,
                 rainfall.isEmpty() ? null : KmaObservations.SOURCE_URL,
                 original.bounds().basis() == Basis.INSUFFICIENT ? requiredPos : null,
-                dated, excluded, excluded.isEmpty() ? null : original.bounds());
+                dated, excluded, excluded.isEmpty() ? null : original.bounds(), selected.calculation());
     }
 
     private static SampleRange range(List<Sample> samples, Boolean precipitation) {
-        var comparable = samples.stream().filter(sample -> precipitation != null && precipitation.equals(sample.precipitation())).toList();
-        boolean weatherMatch = comparable.size() >= MIN_SAMPLE_DAYS;
-        var used = weatherMatch ? comparable : samples;
-        boolean enough = used.size() >= MIN_SAMPLE_DAYS && samples.stream().anyMatch(sample -> sample.quantity() > 0);
-        var bounds = enough ? new Bounds(weatherMatch ? Basis.WEATHER : Basis.WEEKDAY,
-                used.stream().mapToLong(Sample::quantity).min().orElseThrow(),
-                used.stream().mapToLong(Sample::quantity).max().orElseThrow()) : new Bounds(Basis.INSUFFICIENT, null, null);
-        return new SampleRange(bounds, used, comparable.size());
+        var ordered = samples.stream().sorted(Comparator.comparing(Sample::date)).toList();
+        if (ordered.size() < MIN_SAMPLE_DAYS) {
+            return new SampleRange(new Bounds(Basis.INSUFFICIENT, null, null), ordered, 0, null);
+        }
+        // Six same-weekday observations form two disjoint three-day periods. Updating to
+        // the recent level once avoids multiplying a decline onto already-recent sales.
+        boolean trend = ordered.size() >= 6;
+        var used = ordered.subList(Math.max(0, ordered.size() - (trend ? 6 : 4)), ordered.size());
+        var recent = trend ? used.subList(3, 6) : used;
+        var previous = trend ? used.subList(0, 3) : List.<Sample>of();
+        var baseline = average(used);
+        var recentAverage = average(recent);
+        var previousAverage = previous.isEmpty() ? null : average(previous);
+        var change = previousAverage == null || previousAverage.signum() == 0 ? null
+                : recentAverage.subtract(previousAverage).multiply(BigDecimal.valueOf(100))
+                    .divide(previousAverage, 2, RoundingMode.HALF_UP);
+        var wet = used.stream().filter(sample -> Boolean.TRUE.equals(sample.precipitation())).toList();
+        var dry = used.stream().filter(sample -> Boolean.FALSE.equals(sample.precipitation())).toList();
+        int matches = precipitation == null ? 0 : precipitation ? wet.size() : dry.size();
+        BigDecimal factor = BigDecimal.ONE;
+        boolean weather = false;
+        String note;
+        if (precipitation == null) {
+            note = "선택한 날짜의 강수 여부를 확인하지 못해 날씨 보정을 적용하지 않았어요.";
+        } else if (!trend || wet.size() < 3 || dry.size() < 3) {
+            note = "강수·비강수 기록이 각각 3일 이상 필요해 날씨 보정을 적용하지 않았어요.";
+        } else if (previousAverage.signum() == 0 || recentAverage.signum() == 0
+                || !bothWeather(previous) || !bothWeather(recent)) {
+            note = "이전·최근 기간에서 강수와 비강수 판매를 함께 비교할 수 없어 날씨 보정을 적용하지 않았어요.";
+        } else {
+            // Normalize each period by its own sales level, so an older rainy period
+            // cannot be mistaken for a rain effect when the menu is declining.
+            var normalized = BigDecimal.ZERO;
+            for (var sample : precipitation ? wet : dry) {
+                var level = recent.contains(sample) ? recentAverage : previousAverage;
+                normalized = normalized.add(BigDecimal.valueOf(sample.quantity()).divide(level, 8, RoundingMode.HALF_UP));
+            }
+            factor = normalized.divide(BigDecimal.valueOf(matches), 4, RoundingMode.HALF_UP)
+                    .max(new BigDecimal("0.8")).min(new BigDecimal("1.2"));
+            weather = true;
+            note = "기간별 판매 수준 차이를 나눠 비교한 강수 보정이에요. 보정 폭은 ±20% 이내로 제한해요.";
+        }
+        var low = boundedQuantity(recent.stream().mapToLong(Sample::quantity).min().orElseThrow(), factor, RoundingMode.FLOOR);
+        var high = boundedQuantity(recent.stream().mapToLong(Sample::quantity).max().orElseThrow(), factor, RoundingMode.CEILING);
+        var calculation = new Calculation(used.size(), baseline, previous.size(), previousAverage,
+                recent.size(), recentAverage, change, trend, factor, weather, note,
+                used.getLast().date(), recent.size());
+        return new SampleRange(new Bounds(weather ? Basis.WEATHER : Basis.WEEKDAY, low, high), used, matches, calculation);
+    }
+
+    private static BigDecimal average(List<Sample> samples) {
+        return samples.stream().map(sample -> BigDecimal.valueOf(sample.quantity())).reduce(BigDecimal.ZERO, BigDecimal::add)
+                .divide(BigDecimal.valueOf(samples.size()), 4, RoundingMode.HALF_UP);
+    }
+
+    private static boolean bothWeather(List<Sample> samples) {
+        return samples.stream().anyMatch(sample -> Boolean.TRUE.equals(sample.precipitation()))
+                && samples.stream().anyMatch(sample -> Boolean.FALSE.equals(sample.precipitation()));
+    }
+
+    private static long boundedQuantity(long quantity, BigDecimal factor, RoundingMode rounding) {
+        return BigDecimal.valueOf(quantity).multiply(factor).setScale(0, rounding)
+                .min(BigDecimal.valueOf(9_007_199_254_740_991L)).max(BigDecimal.ZERO).longValueExact();
     }
 
     enum Basis { WEATHER, WEEKDAY, INSUFFICIENT }
     record Sample(LocalDate date, long quantity, BigDecimal rainfallMm, Boolean precipitation) {}
     record PosRequirement(LocalDate start, LocalDate end, String kind, int minimumDays) {}
     record Bounds(Basis basis, Long low, Long high) {}
-    private record SampleRange(Bounds bounds, List<Sample> samples, int weatherMatches) {}
+    private record SampleRange(Bounds bounds, List<Sample> samples, int weatherMatches, Calculation calculation) {}
+    record Calculation(int baselineDays, BigDecimal baselineAverage, int previousDays, BigDecimal previousAverage,
+                       int recentDays, BigDecimal recentAverage, BigDecimal changePercent, boolean trendApplied,
+                       BigDecimal weatherFactor, boolean weatherApplied, String weatherNote,
+                       LocalDate latestSalesDate, int rangeDays) {}
     record Estimate(String product, boolean historical, Long actualSales, Basis basis, Long low, Long high,
                     List<Sample> samples, int weatherMatches, Boolean precipitation, BigDecimal observedRainfallMm,
                     String station, String observationSourceUrl, PosRequirement requiredPos,
-                    List<Sample> candidates, List<LocalDate> excludedDates, Bounds originalBounds) {}
+                    List<Sample> candidates, List<LocalDate> excludedDates, Bounds originalBounds, Calculation calculation) {}
 }

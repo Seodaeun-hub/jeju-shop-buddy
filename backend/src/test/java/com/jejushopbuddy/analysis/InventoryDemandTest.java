@@ -33,7 +33,7 @@ class InventoryDemandTest {
     }
 
     @Test
-    void usesWeatherOnlyWithThreeMatchingDaysOtherwiseFallsBackToWeekday() {
+    void avoidsWeatherAdjustmentWhenOppositeConditionsAreMissing() {
         var samples = List.of(sample(4, 20), sample(3, 13), sample(2, 16), sample(1, 31));
         var rain = Map.of(TARGET.minusWeeks(4), new KmaObservations.Observation(BigDecimal.TEN, true),
                 TARGET.minusWeeks(3), new KmaObservations.Observation(BigDecimal.ONE, true),
@@ -41,10 +41,11 @@ class InventoryDemandTest {
                 TARGET.minusWeeks(1), new KmaObservations.Observation(null, false));
         var required = InventoryDemand.requiredPos(TARGET, TARGET.minusDays(1));
         var wet = InventoryDemand.summarize(NOODLES, false, null, "제주", null, true, samples, rain, required, Set.of());
-        assertThat(wet.basis()).isEqualTo(InventoryDemand.Basis.WEATHER);
+        assertThat(wet.basis()).isEqualTo(InventoryDemand.Basis.WEEKDAY);
         assertThat(wet.low()).isEqualTo(13);
-        assertThat(wet.high()).isEqualTo(20);
-        assertThat(wet.samples()).hasSize(3);
+        assertThat(wet.high()).isEqualTo(31);
+        assertThat(wet.samples()).hasSize(4);
+        assertThat(wet.calculation().weatherApplied()).isFalse();
         assertThat(wet.requiredPos()).isNull();
         var dry = InventoryDemand.summarize(NOODLES, false, null, "제주", null, false, samples, rain, required, Set.of());
         assertThat(dry.basis()).isEqualTo(InventoryDemand.Basis.WEEKDAY);
@@ -67,7 +68,7 @@ class InventoryDemandTest {
         var excluded = TARGET.minusWeeks(3);
         var estimate = InventoryDemand.summarize(NOODLES, true, 19L, "제주", BigDecimal.ONE, true,
                 samples, rain, InventoryDemand.requiredPos(TARGET, TARGET), Set.of(excluded));
-        assertThat(estimate.originalBounds()).isEqualTo(new InventoryDemand.Bounds(InventoryDemand.Basis.WEATHER, 13L, 24L));
+        assertThat(estimate.originalBounds()).isEqualTo(new InventoryDemand.Bounds(InventoryDemand.Basis.WEEKDAY, 13L, 28L));
         assertThat(estimate.basis()).isEqualTo(InventoryDemand.Basis.WEEKDAY);
         assertThat(estimate.high()).isEqualTo(28);
         assertThat(estimate.actualSales()).isEqualTo(19);
@@ -85,6 +86,72 @@ class InventoryDemandTest {
     void requestsOnlyEarlierCompletedSameWeekdays() {
         assertThat(InventoryDemand.requiredPos(TARGET, TARGET.minusWeeks(1)).end()).isEqualTo(TARGET.minusWeeks(2));
         assertThat(InventoryDemand.requiredPos(TARGET, TARGET.minusWeeks(12))).isNull();
+    }
+
+    @Test
+    void decliningMenuUsesRecentLevelOnceRatherThanOldHighSalesOrDoubleDecline() {
+        var samples = List.of(sample(6, 30), sample(5, 33), sample(4, 27),
+                sample(3, 15), sample(2, 18), sample(1, 12));
+        var estimate = InventoryDemand.summarize(NOODLES, false, null, null, null, null,
+                samples, Map.of(), null, Set.of());
+        assertThat(estimate.low()).isEqualTo(12);
+        assertThat(estimate.high()).isEqualTo(18);
+        assertThat(estimate.calculation().baselineAverage()).isEqualByComparingTo("22.5");
+        assertThat(estimate.calculation().previousAverage()).isEqualByComparingTo("30");
+        assertThat(estimate.calculation().recentAverage()).isEqualByComparingTo("15");
+        assertThat(estimate.calculation().changePercent()).isEqualByComparingTo("-50");
+        assertThat(estimate.calculation().trendApplied()).isTrue();
+    }
+
+    @Test
+    void adjustsWeatherAfterNormalizingBothPeriodsAndLimitsCorrection() {
+        var samples = List.of(sample(6, 36), sample(5, 24), sample(4, 30),
+                sample(3, 18), sample(2, 12), sample(1, 15));
+        var weather = Map.of(TARGET.minusWeeks(6), new KmaObservations.Observation(BigDecimal.ONE, true),
+                TARGET.minusWeeks(5), new KmaObservations.Observation(BigDecimal.ZERO, false),
+                TARGET.minusWeeks(4), new KmaObservations.Observation(BigDecimal.ONE, true),
+                TARGET.minusWeeks(3), new KmaObservations.Observation(BigDecimal.ONE, true),
+                TARGET.minusWeeks(2), new KmaObservations.Observation(BigDecimal.ZERO, false),
+                TARGET.minusWeeks(1), new KmaObservations.Observation(BigDecimal.ZERO, false));
+        var estimate = InventoryDemand.summarize(NOODLES, false, null, "제주", null, true,
+                samples, weather, null, Set.of());
+        assertThat(estimate.basis()).isEqualTo(InventoryDemand.Basis.WEATHER);
+        assertThat(estimate.calculation().weatherFactor()).isEqualByComparingTo("1.1333");
+        assertThat(estimate.low()).isEqualTo(13);
+        assertThat(estimate.high()).isEqualTo(21);
+        var confounded = Map.of(TARGET.minusWeeks(6), new KmaObservations.Observation(BigDecimal.ONE, true),
+                TARGET.minusWeeks(5), new KmaObservations.Observation(BigDecimal.ONE, true),
+                TARGET.minusWeeks(4), new KmaObservations.Observation(BigDecimal.ONE, true),
+                TARGET.minusWeeks(3), new KmaObservations.Observation(BigDecimal.ZERO, false),
+                TARGET.minusWeeks(2), new KmaObservations.Observation(BigDecimal.ZERO, false),
+                TARGET.minusWeeks(1), new KmaObservations.Observation(BigDecimal.ZERO, false));
+        var skipped = InventoryDemand.summarize(NOODLES, false, null, "제주", null, true,
+                samples, confounded, null, Set.of());
+        assertThat(skipped.basis()).isEqualTo(InventoryDemand.Basis.WEEKDAY);
+        assertThat(skipped.calculation().weatherApplied()).isFalse();
+        assertThat(skipped.low()).isEqualTo(12);
+        assertThat(skipped.high()).isEqualTo(18);
+        var extreme = InventoryDemand.summarize(NOODLES, false, null, "제주", null, true,
+                List.of(sample(6, 400), sample(5, 1), sample(4, 400), sample(3, 200), sample(2, 1), sample(1, 1)),
+                weather, null, Set.of());
+        assertThat(extreme.calculation().weatherFactor()).isEqualByComparingTo("1.2");
+    }
+
+    @Test
+    void handlesRecentZeroSalesAndPreviousZeroWithoutDividingByZero() {
+        var declining = List.of(sample(6, 10), sample(5, 10), sample(4, 10),
+                sample(3, 0), sample(2, 0), sample(1, 0));
+        var result = InventoryDemand.summarize(NOODLES, false, null, null, null, true,
+                declining, Map.of(), null, Set.of());
+        assertThat(result.low()).isZero();
+        assertThat(result.high()).isZero();
+        var rising = List.of(sample(6, 0), sample(5, 0), sample(4, 0),
+                sample(3, 10), sample(2, 12), sample(1, 14));
+        var started = InventoryDemand.summarize(NOODLES, false, null, null, null, null,
+                rising, Map.of(), null, Set.of());
+        assertThat(started.calculation().changePercent()).isNull();
+        assertThat(started.low()).isEqualTo(10);
+        assertThat(started.high()).isEqualTo(14);
     }
 
     @Test
