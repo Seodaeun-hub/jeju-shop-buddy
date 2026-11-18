@@ -29,7 +29,7 @@ export function Home() {
         <div className="shell landing-intro">
           <p className="landing-intro-label">제주 소상공인을 위한 매출 짝꿍</p>
           <h1 id="landing-title">매출이 줄었을 때,<br />무엇부터 해볼까요?</h1>
-          <p>우리 가게 매출과 제주 상권을 함께 보고, 오늘 할 일을 정해요.</p>
+          <p>매출 분석과 상권 비교, 발주 검토와 홍보물 제작을 한곳에서.</p>
           <div className="actions"><Link to="/stores" className="button primary">가게짝꿍 시작하기 <span aria-hidden="true">→</span></Link></div>
         </div>
       </LandingIllustration>
@@ -43,13 +43,13 @@ export function Home() {
           <li>우리 가게만 매출이 줄어든 걸까요?</li>
           <li>가게에서 무엇부터 해볼까요?</li>
         </ul>
-        <div className="landing-story-heading"><Citrus /><p>그럴 때 필요한 게 <strong>가게짝꿍</strong>이에요.</p></div>
+        <div className="landing-story-heading"><Citrus /><p><strong>가게짝꿍</strong>에서 확인해보세요.</p></div>
       </div>
     </section>
     <LandingDemoStory />
     <section className="landing-start" aria-labelledby="landing-start-title">
       <div className="shell landing-start-content">
-        <h2 id="landing-start-title">우리 가게 매출도<br />살펴볼까요?</h2>
+        <h2 id="landing-start-title">우리 가게 매출,<br />지금 확인해보세요.</h2>
         <Link to="/stores" className="button primary">가게짝꿍 시작하기 <span aria-hidden="true">→</span></Link>
       </div>
     </section>
