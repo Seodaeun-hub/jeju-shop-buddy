@@ -3,6 +3,7 @@ import { Link } from 'react-router'
 import { fetchMenuCost, listMenuCosts, saveMenuCost, type MenuCost } from '../api/shop'
 import { won } from '../data/shop'
 import { ReceiptCostDialog } from './ReceiptCostDialog'
+import { IngredientUnitPicker } from '../components/IngredientUnitPicker'
 
 type DraftRow = {
   id: string
@@ -122,6 +123,10 @@ function MenuCostEditor({ auth, storeId, product, backTo }: {
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (saving || costWon === null) return
+    if (rows.some(row => !row.unit.trim())) {
+      setError('각 재료의 단위를 선택해 주세요.')
+      return
+    }
     setSaving(true)
     setSaved(false)
     setError('')
@@ -178,8 +183,7 @@ function MenuCostEditor({ auth, storeId, product, backTo }: {
         return <fieldset className="menu-cost-row" key={row.id} disabled={saving} aria-label={`재료 ${index + 1}`}>
           <label>재료명<input required maxLength={50} value={row.ingredientName}
             onChange={event => update('ingredientName', event.target.value)} /></label>
-          <label>단위<input required maxLength={12} placeholder="kg" value={row.unit}
-            onChange={event => update('unit', event.target.value)} /></label>
+          <IngredientUnitPicker value={row.unit} onChange={unit => update('unit', unit)} />
           <label>한 개당 사용량<input required inputMode="decimal" pattern="[0-9]+(\.[0-9]{1,3})?" value={row.amount}
             onChange={event => update('amount', event.target.value)} /></label>
           <label>{row.unit.trim() || '단위'}당 단가 (원)<input required inputMode="numeric" pattern="[0-9]+" maxLength={16}

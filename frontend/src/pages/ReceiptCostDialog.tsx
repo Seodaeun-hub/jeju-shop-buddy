@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { readMenuReceipt, type ReceiptLine } from '../api/shop'
 import { won } from '../data/shop'
+import { IngredientUnitPicker } from '../components/IngredientUnitPicker'
 
 type ReceiptValue = { name: string; unit: string; unitPrice: number }
 type EditableLine = { name: string; unit: string; quantity: string; total: string; selected: boolean }
@@ -117,7 +118,7 @@ export function ReceiptCostDialog({ auth, storeId, targets, onClose, onApply }: 
             <label className="receipt-cost-select"><input type="checkbox" checked={line.selected}
               onChange={e => update(index, { selected: e.target.checked })} /> 적용할 품목</label>
             <label>재료명<input value={line.name} maxLength={50} onChange={e => update(index, { name: e.target.value })} /></label>
-            <label>단위<input value={line.unit} maxLength={12} onChange={e => update(index, { unit: e.target.value })} /></label>
+            <IngredientUnitPicker value={line.unit} onChange={unit => update(index, { unit })} />
             <label>구매량<input inputMode="decimal" value={line.quantity} onChange={e => update(index, { quantity: e.target.value })} /></label>
             <label>구매 금액 (원)<input inputMode="numeric" value={line.total} onChange={e => update(index, { total: e.target.value })} /></label>
             <div className="menu-cost-row-result"><small className="muted">단위당 단가</small>
