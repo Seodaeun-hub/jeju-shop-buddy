@@ -1,0 +1,6 @@
+.pos-menu-picker { position: relative; min-width: 0; display: grid; gap: .4rem; }
+.pos-menu-picker > label { font-weight: 750; }
+.pos-menu-trigger { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: .5rem; min-height: 46px; padding: .65rem .75rem; background: var(--sheet); border: 1px solid #8d877b; border-radius: 6px; color: var(--ink); font: inherit; text-align: left; }
+.pos-menu-options { position: absolute; top: 100%; left: 0; right: 0; z-index: 30; max-height: 17rem; overflow-y: auto; list-style: none; margin: .2rem 0 0; padding: .25rem; background: var(--sheet); border: 1px solid #8d877b; border-radius: 6px; box-shadow: 0 5px 16px #0002; }
+.pos-menu-options button { display: block; width: 100%; padding: .65rem; border: 0; border-radius: 4px; background: transparent; color: var(--ink); font: inherit; text-align: left; overflow-wrap: anywhere; }
+.pos-menu-options button:hover, .pos-menu-options button:focus-visible, .pos-menu-options button[aria-pressed="true"] { background: var(--pale-green); }

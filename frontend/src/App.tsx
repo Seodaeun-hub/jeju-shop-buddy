@@ -321,6 +321,7 @@ export function App() {
         </nav>
         {pathname === '/results'
           ? <Results key={plan.id ?? 'demo'} plan={plan} onChange={setPlan} auth={auth} storeId={currentAnalysis.storeId}
+            menus={currentAnalysis.productSales?.map(item => item.productName)}
             executionTo={planPath('/execution', plan)} />
           : <Execution key={plan.id ?? 'demo'} plan={plan} onChange={setPlan} onToggleChecklist={toggleChecklist}
             analysis={currentAnalysis} onSaveInventory={auth && plan.id ? savePlanInventory : undefined}

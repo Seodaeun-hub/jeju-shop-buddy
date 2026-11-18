@@ -9,6 +9,7 @@ import { rehearsalDate } from '../data/rehearsalDate'
 import { seoulDate } from '../data/promotionArchive'
 import { addDays, formatNumber, won } from '../data/shop'
 import type { Plan } from '../data/shop'
+import { PosMenuPicker } from '../components/PosMenuPicker'
 
 const errorText = (error: unknown) => error instanceof Error ? error.message : '자료를 처리할 수 없어요.'
 
@@ -35,7 +36,7 @@ function ComparisonTable({ value }: { value: OutcomeComparison }) {
   </>
 }
 
-export function ExecutionOutcome({ plan, auth }: { plan: Plan & { id: string }; auth: string }) {
+export function ExecutionOutcome({ plan, auth, menus = [] }: { plan: Plan & { id: string }; auth: string; menus?: string[] }) {
   const [saved, setSaved] = useState<Outcome | null>()
   const [estimates, setEstimates] = useState<InventoryEstimateComparison[]>([])
   const [retry, setRetry] = useState(0)
@@ -160,7 +161,8 @@ export function ExecutionOutcome({ plan, auth }: { plan: Plan & { id: string }; 
         placeholder="자료 출처, 실제 게시 여부, 관찰 기간이나 재료 배정 범위를 기록해 주세요." /></label>
       {!isInventory && <details className="result-direct-entry" open={!saved?.comparison || undefined}>
         <summary>POS로 실행 전·후 비교하기</summary>
-        <label>비교할 POS 메뉴명<input required={!!comparison} value={product} maxLength={255} onChange={e => { setProduct(e.target.value); setComparison(null) }} /></label>
+        <PosMenuPicker label="비교할 POS 메뉴명" menus={menus} value={product} disabled={busy}
+          onChange={name => { setProduct(name); setComparison(null) }} />
         <div className="result-form-grid">{(['before', 'after'] as const).map(phase => <fieldset className="result-fields" key={phase} onChange={() => setComparison(null)}>
           <legend>{phase === 'before' ? '실행 전' : '실행 후'}</legend>
           <label>시작일<input name={`${phase}Start`} type="date" defaultValue={saved?.comparison?.[phase].start ?? (phase === 'before' ? addDays(plan.startDate, -14) : plan.startDate)} /></label>
@@ -179,7 +181,8 @@ export function ExecutionOutcome({ plan, auth }: { plan: Plan & { id: string }; 
       {isInventory && <>
         <p className="notice">발주 결과는 검토한 하루와 같은 메뉴 기준으로 기록해 주세요. 여러 메뉴가 공유한 재료는 배정량과 다른 사용·폐기·이동을 구분해 주세요.</p>
         <div className="result-form-grid"><label>발주를 검토한 하루<input type="date" required max={addDays(seoulDate(), -1)} value={inventoryDay} onChange={e => { setInventoryDay(e.target.value); setActual('') }} /></label>
-          <label>메뉴명<input required maxLength={255} value={product} onChange={e => { setProduct(e.target.value); setActual('') }} /></label></div>
+          <PosMenuPicker label="메뉴명" menus={menus} value={product} disabled={busy}
+            onChange={name => { setProduct(name); setActual('') }} /></div>
         <p>이 날짜·메뉴의 저장된 예상: {snapshot ? `${snapshot.low}~${snapshot.high} (POS 수량)` : '자료 없음 — 실행 관리에서 예상 범위를 먼저 저장해 주세요.'}</p>
         <label>하루 상품 주문 CSV로 판매량 채우기<input type="file" accept=".csv,.xlsx" disabled={busy} onChange={async e => {
           const file = e.currentTarget.files?.[0]
