@@ -1,8 +1,17 @@
-.rehearsal-date-banner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem 1rem; margin-bottom: 1rem; padding: .6rem .85rem; border: 1px solid var(--line); border-radius: 9px; background: var(--sheet); font-size: .85rem; }
-.rehearsal-date-banner > div { display: grid; gap: .15rem; min-width: 0; }
-.rehearsal-date-banner small { color: var(--muted); font-size: .8rem; }
-.rehearsal-date-banner.is-rehearsing { background: var(--peach); border-color: #ddbca4; }
-.rehearsal-date-banner .button { flex: none; }
+.rehearsal-date-menu { margin-top: 1rem; border-top: 1px solid var(--line); font-size: .8rem; min-width: 0; }
+.rehearsal-date-summary { padding: .65rem .25rem; cursor: pointer; color: var(--muted); }
+.rehearsal-date-summary span { font-weight: 700; }
+.rehearsal-date-summary small { display: block; margin: .15rem 0 0 .85rem; font-size: .75rem; font-variant-numeric: tabular-nums; }
+.rehearsal-date-menu.is-rehearsing .rehearsal-date-summary small { color: var(--green); }
+.rehearsal-date-options { display: grid; gap: .55rem; padding: 0 .25rem .65rem; }
+.rehearsal-date-options p { margin: 0; color: var(--muted); overflow-wrap: anywhere; }
+.rehearsal-date-options .button { justify-self: start; }
+@media (max-width: 900px) {
+  .rehearsal-date-menu { margin-top: .25rem; }
+  .rehearsal-date-summary { padding: .4rem .38rem; }
+  .rehearsal-date-summary small { display: inline; margin: 0 0 0 .5rem; }
+  .rehearsal-date-options { padding: .2rem .5rem .6rem; }
+}
 .rehearsal-date-dialog { width: min(34rem, calc(100% - 2rem)); max-height: 86dvh; overflow: auto; border: 1px solid var(--line); border-radius: 12px; padding: 1.25rem; }
 .rehearsal-date-dialog::backdrop { background: rgb(24 46 36 / 55%); }
 .rehearsal-date-dialog :is(h2, p) { margin: 0; overflow-wrap: anywhere; }
