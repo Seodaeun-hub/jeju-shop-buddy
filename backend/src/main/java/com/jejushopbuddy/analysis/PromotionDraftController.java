@@ -3,6 +3,7 @@ package com.jejushopbuddy.analysis;
 import com.jejushopbuddy.analysis.PromotionReviewController.Review;
 import com.jejushopbuddy.analysis.SalesAnalysisController.ApiError;
 import com.jejushopbuddy.analysis.StorePromotionToneController.Tone;
+import com.jejushopbuddy.time.BusinessDate;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.security.Principal;
 import java.time.Instant;
@@ -29,14 +30,16 @@ class PromotionDraftController {
     private final StrategyAgentClient agent;
     private final StoreProductPhotos photos;
     private final PromotionWeather weather;
+    private final BusinessDate dates;
 
     PromotionDraftController(JdbcClient jdbc, ObjectMapper json, StrategyAgentClient agent, StoreProductPhotos photos,
-                             PromotionWeather weather) {
+                             PromotionWeather weather, BusinessDate dates) {
         this.jdbc = jdbc;
         this.json = json;
         this.agent = agent;
         this.photos = photos;
         this.weather = weather;
+        this.dates = dates;
     }
 
     @GetMapping("/api/plans/{planId}/promotion-photo")
@@ -66,16 +69,18 @@ class PromotionDraftController {
         if (product == null) return bad("후기를 찾을 메뉴나 가게 소식을 선택해 주세요.");
         var saved = plan.research();
         var now = Instant.now();
-        if (!Boolean.TRUE.equals(input.refresh()) && saved != null && product.equals(saved.subject()) && !saved.sources().isEmpty()
+        var referenceDate = dates.today();
+        if (!Boolean.TRUE.equals(input.refresh()) && saved != null && saved.matches(product, referenceDate) && !saved.sources().isEmpty()
                 && saved.searchedAt().isAfter(now.minus(6, ChronoUnit.HOURS))) {
             return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(saved);
         }
-        var result = agent.promotionReviewPoints(new ReviewSearch(plan.storeName(), plan.address(), product));
+        var result = agent.promotionReviewPoints(new ReviewSearch(plan.storeName(), plan.address(), product, referenceDate));
         if (result.isEmpty()) {
             return ResponseEntity.status(503).body(new ApiError("PROMOTION_REVIEW_SEARCH_UNAVAILABLE",
                     "공개 후기를 불러오지 못했어요. 다시 찾거나 후기 없이 진행할 수 있어요.", null));
         }
-        var research = new ResearchSnapshot(UUID.randomUUID(), product, now, result.get().sources(), result.get().points());
+        if (!referenceDate.equals(dates.today())) return changed();
+        var research = new ResearchSnapshot(UUID.randomUUID(), product, now, result.get().sources(), result.get().points(), referenceDate);
         int updated = jdbc.sql("""
                 UPDATE execution_plans SET promotion_review_research=CAST(:research AS jsonb)
                 WHERE id=:id AND instagram_publication IS NULL
@@ -87,7 +92,7 @@ class PromotionDraftController {
         if (updated == 0) {
             var latest = find(planId, owner.getName());
             if (latest != null && !latest.publicationLocked() && latest.research() != null
-                    && product.equals(latest.research().subject()) && Objects.equals(plan.review(), latest.review())) {
+                    && latest.research().matches(product, referenceDate) && Objects.equals(plan.review(), latest.review())) {
                 return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(latest.research());
             }
             return changed();
@@ -152,6 +157,9 @@ class PromotionDraftController {
             if (edited || !generateNewCopy || requestedPoints.size() > 5 || research == null
                     || !research.id().equals(input.reviewResearchId()) || !product.equals(research.subject())) {
                 return bad("현재 메뉴의 후기 포인트를 다시 선택해 주세요.");
+            }
+            if (!research.matches(product, dates.today())) {
+                return bad("기준일이 바뀌었어요. 공개 후기를 다시 찾은 뒤 포인트를 선택해 주세요.");
             }
             var points = research.points().stream().filter(point -> requestedPoints.contains(point.id())).toList();
             if (points.size() != requestedPoints.size()) return bad("현재 메뉴의 후기 포인트를 다시 선택해 주세요.");
@@ -463,11 +471,16 @@ class PromotionDraftController {
     record PhotoOptions(String photoDataUrl, Tone defaultTone) {}
     record CaptionInput(Tone tone) {}
     record ResearchInput(String subject, Boolean refresh) {}
-    record ReviewSearch(String storeName, String address, String subject) {}
+    record ReviewSearch(String storeName, String address, String subject, LocalDate referenceDate) {}
     record ReviewSource(String id, String url, String title, String dateLabel) {}
     record ReviewPoint(String id, String sentence, List<String> anchors, List<String> sourceIds) {}
     record ReviewResearch(List<ReviewSource> sources, List<ReviewPoint> points) {}
-    record ResearchSnapshot(UUID id, String subject, Instant searchedAt, List<ReviewSource> sources, List<ReviewPoint> points) {}
+    record ResearchSnapshot(UUID id, String subject, Instant searchedAt, List<ReviewSource> sources, List<ReviewPoint> points,
+                            LocalDate referenceDate) {
+        boolean matches(String product, LocalDate date) {
+            return product.equals(subject) && date.equals(referenceDate);
+        }
+    }
     record ReviewSelection(List<ReviewSource> sources, List<ReviewPoint> points) {}
     record ReviewFocus(String sentence, List<String> anchors) {}
     record Input(Review review, String subject, LocalDate publishDate, LocalTime publishTime, String photoDataUrl,

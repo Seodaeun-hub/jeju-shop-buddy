@@ -79,14 +79,14 @@ export function PromotionReviewPoints({ reviews, selected, onToggle }: {
         <button className="button secondary small" type="button" onClick={retry}>후기 다시 찾기</button>
       </div>
       {result.points.length ? <>
-        <p className="muted">최근 180일 후기에서 찾았어요. 우리 가게 홍보글에 담고 싶은 문장을 골라 주세요. 여러 개 선택할 수 있어요.</p>
+        <p className="muted">{result.referenceDate ? `${result.referenceDate} 기준 최근 180일 후기에서 찾았어요.` : '최근 180일 후기에서 찾았어요.'} 우리 가게 홍보글에 담고 싶은 문장을 골라 주세요. 여러 개 선택할 수 있어요.</p>
         <div className="promotion-review-options">
           {result.points.map(point => <label key={point.id} className="promotion-review-option">
             <input type="checkbox" checked={selected.includes(point.id)} onChange={() => onToggle(point.id)} />
             <span>{point.sentence}</span>
           </label>)}
         </div>
-      </> : <p className="muted">이 메뉴에 쓸 만한 최근 후기 포인트를 찾지 못했어요. 저장한 매장 정보와 사진으로도 초안을 만들 수 있어요.</p>}
+      </> : <p className="muted">{result.referenceDate ? `${result.referenceDate} 기준 최근 180일 동안 ` : ''}이 메뉴에 쓸 만한 후기 포인트를 찾지 못했어요. 저장한 매장 정보와 사진으로도 초안을 만들 수 있어요.</p>}
     </>}
   </section>
 }
