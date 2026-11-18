@@ -5,7 +5,7 @@ import { fetchInventoryEstimates, fetchInventoryRecipes, fetchInventoryWeather, 
   saveInventoryRecipe, type InventoryDemandEstimate, type InventoryEstimateComparison,
   type InventoryEstimateNote, type InventoryRecipe, type InventoryWeather } from '../api/shop'
 import { formatQuantity, parseQuantity, preparationFor, quantities, shortageOf } from '../data/inventory'
-import { posLibraryPath, seoulDate } from '../data/promotionArchive'
+import { actualSeoulDate, posLibraryPath, seoulDate } from '../data/promotionArchive'
 import { addDays, formatNumber, monthLabel } from '../data/shop'
 import type { Analysis, InventoryItem } from '../data/shop'
 
@@ -109,7 +109,7 @@ function InventoryForecast({ auth, planId, analysisId, storeId, initialLookup, r
   const [comparisonRevision, setComparisonRevision] = useState(0)
   const [savingEstimate, setSavingEstimate] = useState(false)
   const [estimateSaved, setEstimateSaved] = useState(false)
-  const pastDate = Boolean(date && date < seoulDate())
+  const pastDate = Boolean(date && date < actualSeoulDate())
 
   function clear() {
     setReference(undefined)

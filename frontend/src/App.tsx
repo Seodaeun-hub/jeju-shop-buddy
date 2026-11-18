@@ -1,7 +1,9 @@
 import { startTransition, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
-import { createPromotionDraft, fetchAnalysis, fetchOwnerSession, fetchPlan, logoutOwner, ownerSession, type OwnerSession, regeneratePromotionCaption, saveInventoryReview, savePromotionReview, saveTimeSeries, toPlan, updateChecklistItem } from './api/shop'
+import { createPromotionDraft, fetchAnalysis, fetchOwnerSession, fetchPlan, logoutOwner, ownerSession, type OwnerSession, regeneratePromotionCaption, saveInventoryReview, savePromotionReview, saveTimeSeries, toPlan, updateChecklistItem, updateRehearsalDate } from './api/shop'
+import { RehearsalDateControl } from './components/RehearsalDateControl'
+import { setRehearsalDate } from './data/rehearsalDate'
 import { Dashboard } from './pages/Dashboard'
 import { AnalysisSwitcher } from './components/AnalysisSwitcher'
 import { WorkspaceNotifications } from './components/WorkspaceNotifications'
@@ -107,7 +109,10 @@ export function App() {
   useEffect(() => {
     const controller = new AbortController()
     fetchOwnerSession(controller.signal).then(session => {
-      if (!controller.signal.aborted) setAccount({ ...session, auth: ownerSession })
+      if (!controller.signal.aborted) {
+        setRehearsalDate(session.rehearsalDate)
+        setAccount({ ...session, auth: ownerSession })
+      }
     }).catch(() => undefined).finally(() => {
       if (!controller.signal.aborted) setSessionPending(false)
     })
@@ -130,6 +135,7 @@ export function App() {
   }, [auth, analysisId, retry])
 
   function login(session: OwnerSession) {
+    setRehearsalDate(session.rehearsalDate)
     setAccount({ ...session, auth: ownerSession })
     navigate(afterLogin, { replace: true })
   }
@@ -187,6 +193,7 @@ export function App() {
     startTransition(() => {
       navigate('/')
       setAccount(undefined)
+      setRehearsalDate(null)
       setPlanError(undefined)
       setLastId(undefined)
       setLoadedId(undefined)
@@ -334,14 +341,22 @@ export function App() {
       aria-current={to === activeSection ? 'page' : undefined}>{label}</Link>)}
   </nav>
   const main = <main id="main-content" className={accountPage ? 'account-content' : workspace ? 'content workspace-main' : 'content landing-content'}>
+    {account && workspace && <RehearsalDateControl date={account.rehearsalDate} onChange={async date => {
+      const session = await updateRehearsalDate(date)
+      setRehearsalDate(session.rehearsalDate)
+      setAccount({ ...session, auth: ownerSession })
+    }} />}
     {logoutError && <p role="alert" className="error">{logoutError}</p>}
-    {sessionPending && !publicPage ? <p role="status">로그인 상태를 확인하고 있어요.</p> : <Routes>
+    {sessionPending && !publicPage ? <p role="status">로그인 상태를 확인하고 있어요.</p> : <Routes key={account?.rehearsalDate ?? 'actual'}>
       <Route path="/" element={<Home />} />
       <Route path="/login" element={account ? <Navigate to={afterLogin} replace />
         : <Account key="login" signup={false} onLogin={login} />} />
       <Route path="/signup" element={<Account key="signup" signup onLogin={login} />} />
       <Route path="/my-page" element={account
-        ? <MyPage key={account.email} account={account} onUpdate={session => setAccount({ ...session, auth: ownerSession })} />
+        ? <MyPage key={account.email} account={account} onUpdate={session => {
+          setRehearsalDate(session.rehearsalDate)
+          setAccount({ ...session, auth: ownerSession })
+        }} />
         : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
       <Route path="/stores" element={account ? <MyStores key={account.email} auth={account.auth} ownerEmail={account.email}
         onAnalysisDeleted={forgetDeletedAnalysis} onPlanDeleted={forgetDeletedPlan} onStoreDeleted={forgetDeletedStore} /> : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
@@ -369,7 +384,7 @@ export function App() {
             <Link to="/" className="wordmark"><Citrus /> 가게짝꿍</Link>
           </div>
           <div className="header-actions">
-            {account && workspace && <WorkspaceNotifications key={account.email} auth={account.auth} email={account.email} />}
+            {account && workspace && <WorkspaceNotifications key={`${account.email}:${account.rehearsalDate}`} auth={account.auth} email={account.email} />}
             {account ? <AccountMenu key={pathname} name={account.name} onLogout={leavePreview} />
               : !sessionPending && (workspace
                 ? <><span className="muted">체험 모드</span><button className="text-button" onClick={leavePreview}>나가기</button></>

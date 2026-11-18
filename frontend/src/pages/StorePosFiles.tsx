@@ -6,7 +6,7 @@ import type { PosFileKind, StoredPosFile, TossPosImport } from '../api/shop'
 import { PosFileCalendar } from '../components/PosFileCalendar'
 import { useStandaloneApp } from '../components/useStandaloneApp'
 import { inspectPosDates } from '../data/pos'
-import { notifyResultsDataChanged, seoulDate, showWorkspaceNotifications } from '../data/promotionArchive'
+import { actualSeoulDate, notifyResultsDataChanged, seoulDate, showWorkspaceNotifications } from '../data/promotionArchive'
 
 const fileKinds = { PAYMENT: '결제 내역', PRODUCT: '상품 주문' }
 const dateFormat = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeZone: 'Asia/Seoul' })
@@ -366,7 +366,7 @@ export function StorePosFiles({ auth, storeId, storeName, initialDate, initialKi
         <Link className="button secondary" to={'/sales?' + new URLSearchParams({ storeId })}>매출 입력하기</Link>
       </div>
     </div>
-    {tossOpen && <TossPosDialog today={today} onClose={() => setTossOpen(false)} onImport={importFromToss} />}
+    {tossOpen && <TossPosDialog today={actualSeoulDate()} onClose={() => setTossOpen(false)} onImport={importFromToss} />}
     {editingCoverage && <PosCoverageDialog file={editingCoverage} today={today}
       onClose={() => setEditingCoverage(undefined)} onSave={(start, end) => saveCoverage(editingCoverage, start, end)} />}
     {loadError ? <p role="alert" className="error">{loadError} <button type="button" className="text-button" onClick={() => {

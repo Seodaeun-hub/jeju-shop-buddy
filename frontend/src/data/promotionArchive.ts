@@ -2,6 +2,7 @@ import { fetchPromotionImpact, listPosFiles, readStoredPosFile, savePromotionImp
 import type { PosFileKind, PromotionImpact, PromotionImpactPeriod, PromotionImpactTotals, StoredPosFile } from '../api/shop'
 import { readArchivedProductDays } from './pos'
 import { addDays } from './shop'
+import { rehearsalDate } from './rehearsalDate'
 
 export const resultsDataChanged = 'shop-buddy:results-data-changed'
 export const promotionArchiveUpdated = 'shop-buddy:promotion-archive-updated'
@@ -40,7 +41,8 @@ export function posLibraryPath(storeId: string, { date, kind, upload }: {
 const seoulCalendar = new Intl.DateTimeFormat('sv-SE', {
   timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
 })
-export const seoulDate = (date = new Date()) => seoulCalendar.format(date)
+export const actualSeoulDate = (date = new Date()) => seoulCalendar.format(date)
+export const seoulDate = (date?: Date) => date ? actualSeoulDate(date) : rehearsalDate() ?? actualSeoulDate()
 
 type ProductDays = Awaited<ReturnType<typeof readArchivedProductDays>>
 type ArchiveFile = { days: ProductDays; start?: string | null; end?: string | null }

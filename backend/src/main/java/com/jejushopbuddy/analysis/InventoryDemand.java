@@ -1,6 +1,7 @@
 package com.jejushopbuddy.analysis;
 
 import com.jejushopbuddy.address.NaverGeocodingClient.Coordinates;
+import com.jejushopbuddy.time.BusinessDate;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -18,16 +19,19 @@ class InventoryDemand {
     private static final int MIN_SAMPLE_DAYS = 3;
     private final ProductPosArchive pos;
     private final KmaObservations observations;
+    private final BusinessDate dates;
 
-    InventoryDemand(ProductPosArchive pos, KmaObservations observations) {
+    InventoryDemand(ProductPosArchive pos, KmaObservations observations, BusinessDate dates) {
         this.pos = pos;
         this.observations = observations;
+        this.dates = dates;
     }
 
     Estimate estimate(UUID store, Coordinates location, String product, LocalDate date, KmaForecast.Daily forecast,
                       Set<LocalDate> excludedDates) {
-        LocalDate today = LocalDate.now(SEOUL);
-        boolean historical = date.isBefore(today);
+        LocalDate today = dates.today();
+        // Provider availability uses the real calendar: historical observations are never a live forecast.
+        boolean historical = date.isBefore(BusinessDate.actualToday());
         var archive = pos.load(store);
         var samples = sameWeekdays(archive, product, date, today);
         var station = location == null ? null : KmaObservations.nearest(location);
@@ -39,7 +43,7 @@ class InventoryDemand {
         }
         var observed = historical ? rainfall.get(date) : null;
         Boolean precipitation = historical ? observed == null ? null : observed.precipitation() : predictedRain;
-        var actual = historical ? ProductPosArchive.soldOn(archive, product, date) : null;
+        var actual = date.isBefore(today) ? ProductPosArchive.soldOn(archive, product, date) : null;
         return summarize(product, historical, actual, station == null ? null : station.name(),
                 observed == null ? null : observed.rainfallMm(), precipitation, samples, rainfall,
                 requiredPos(date, today), excludedDates);

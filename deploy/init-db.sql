@@ -7,6 +7,7 @@ SELECT to_regclass('public.owners') IS NULL AS needs_schema \gset
 \endif
 \ir migration-store-reviews.sql
 \ir migration-chart-questions.sql
+\ir migration-rehearsal-date.sql
 \ir seed-jeju-areas.sql
 
 SELECT pg_advisory_unlock(5483209468);

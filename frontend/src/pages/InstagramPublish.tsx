@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { cancelInstagramSchedule, fetchInstagramPublication, publishInstagram, type InstagramPublicationStatus } from '../api/shop'
+import { rehearsalDate } from '../data/rehearsalDate'
 
 const koreaDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' })
 const koreaSchedule = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'medium', timeStyle: 'short' })
@@ -23,7 +24,7 @@ export function InstagramPublish({ auth, planId, caption, image, hasPhoto, endDa
 
   const publication = state?.publication
   const publicationState = publication?.state
-  const canPublish = Boolean(state?.available && !publication && hasPhoto)
+  const canPublish = Boolean(!rehearsalDate() && state?.available && !publication && hasPhoto)
   const today = koreaDate.format(new Date())
   const scheduledAt = date && time ? `${date}T${time}:00+09:00` : undefined
 
@@ -99,11 +100,11 @@ export function InstagramPublish({ auth, planId, caption, image, hasPhoto, endDa
   return <div className="instagram-publish">
     <div className="promo-actions">
       <button type="button" className="button primary small" disabled={!image} aria-haspopup="dialog" onClick={openPreview}>게시 관리</button>
-      {state?.available === false && !publication && <a className="button secondary small" href="https://www.instagram.com/"
+      {state?.available === false && !publication && !rehearsalDate() && <a className="button secondary small" href="https://www.instagram.com/"
         target="_blank" rel="noopener noreferrer">인스타그램 열기 <span aria-hidden="true">↗</span></a>}
     </div>
     {!publication && <p className="promotion-post-mode">
-      {state?.available ? '초안 준비 완료' : state ? '계정 연결 필요' : '계정 연결 확인 중'}
+      {rehearsalDate() ? '시연 중 · 실제 게시 안 함' : state?.available ? '초안 준비 완료' : state ? '계정 연결 필요' : '계정 연결 확인 중'}
     </p>}
     {publicationState === 'SCHEDULED' && <>
       <p role="status">{scheduleLabel} (한국 시간) 예약됨</p>
@@ -137,7 +138,9 @@ export function InstagramPublish({ auth, planId, caption, image, hasPhoto, endDa
           </div>
         </div>
         {!hasPhoto && <p className="muted">메뉴 사진을 등록하고 초안을 저장하면 게시할 수 있어요.</p>}
-        {hasPhoto && !state?.available && !publication && <p className="muted">인스타그램 연결이 준비되면 이 화면에서 게시할 수 있어요.</p>}
+        {hasPhoto && !state?.available && !publication && <p className="muted">{rehearsalDate()
+          ? '시연 중에는 실제 게시와 예약을 하지 않아요. 홍보물 확인과 저장을 진행해 주세요.'
+          : '인스타그램 연결이 준비되면 이 화면에서 게시할 수 있어요.'}</p>}
         {canPublish && <fieldset className="form-stack instagram-schedule" disabled={busy}>
           <legend>예약 게시 · 한국 시간</legend>
           <label>예약 날짜<input type="date" min={today} max={endDate} value={date} onChange={event => setDate(event.target.value)} /></label>

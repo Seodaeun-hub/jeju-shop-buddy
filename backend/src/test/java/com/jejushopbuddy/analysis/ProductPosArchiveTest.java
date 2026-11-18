@@ -98,7 +98,7 @@ class ProductPosArchiveTest {
                         1, DATE '2021-07-01', DATE '2021-07-07' FROM sales_analyses a LIMIT 1
                     """).param("id", plan).update();
             var json = JsonMapper.builder().build();
-            var checker = new PromotionArchivePush(new PromotionImpactController(jdbc, json, null, null, null),
+            var checker = new PromotionArchivePush(new PromotionImpactController(jdbc, json, null, null, null, new com.jejushopbuddy.time.BusinessDate(jdbc)),
                     new ProductPosArchive(jdbc), json);
             LocalDate today = LocalDate.parse("2021-07-08");
             var pending = checker.reconcile(plan, store, email, today);

@@ -1,6 +1,7 @@
 package com.jejushopbuddy.analysis;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.jejushopbuddy.time.BusinessDate;
 import com.jejushopbuddy.analysis.SalesStrategies.Suggestion;
 import java.sql.Types;
 import java.time.LocalDate;
@@ -22,6 +23,7 @@ class ExecutionPlanWriter {
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     private final JdbcClient jdbc;
+    private final BusinessDate dates;
     private final SalesAnalysisReader reader;
     private final ExecutionPlanReader plans;
     private final SalesStrategies salesStrategies;
@@ -30,8 +32,9 @@ class ExecutionPlanWriter {
     private final ObjectMapper json;
 
     ExecutionPlanWriter(JdbcClient jdbc, SalesAnalysisReader reader, ObjectMapper json, SalesStrategies salesStrategies,
-                        StrategyRecommendations recommendations, ExecutionGuideSnapshots guideSnapshots, ExecutionPlanReader plans) {
+                        StrategyRecommendations recommendations, ExecutionGuideSnapshots guideSnapshots, ExecutionPlanReader plans, BusinessDate dates) {
         this.jdbc = jdbc;
+        this.dates = dates;
         this.reader = reader;
         this.plans = plans;
         this.salesStrategies = salesStrategies;
@@ -55,7 +58,7 @@ class ExecutionPlanWriter {
         if (guideId != null) {
             strategy = strategy.withExecutionGuide(guideSnapshots.select(analysis.get(), recommendationId, strategyCode, guideId));
         }
-        LocalDate start = preparationDate == null ? LocalDate.now(SEOUL) : preparationDate;
+        LocalDate start = preparationDate == null ? dates.today() : preparationDate;
         return persist(UUID.randomUUID(), analysisId, strategy.withCustomerNotice(customerNotice), conditions, start, null);
     }
 
@@ -77,7 +80,7 @@ class ExecutionPlanWriter {
     }
 
     private Plan persist(UUID analysisId, Suggestion strategy, Conditions conditions) {
-        return persist(UUID.randomUUID(), analysisId, strategy, conditions, LocalDate.now(SEOUL), null).orElseThrow();
+        return persist(UUID.randomUUID(), analysisId, strategy, conditions, dates.today(), null).orElseThrow();
     }
 
     private Optional<Plan> persist(UUID id, UUID analysisId, Suggestion strategy, Conditions conditions, LocalDate start,

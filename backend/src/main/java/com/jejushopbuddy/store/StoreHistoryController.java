@@ -1,5 +1,7 @@
 package com.jejushopbuddy.store;
 
+import com.jejushopbuddy.time.BusinessDate;
+
 import java.security.Principal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -20,8 +22,11 @@ import org.springframework.web.bind.annotation.RestController;
 class StoreHistoryController {
     private final JdbcClient jdbc;
 
-    StoreHistoryController(JdbcClient jdbc) {
+    private final BusinessDate dates;
+
+    StoreHistoryController(JdbcClient jdbc, BusinessDate dates) {
         this.jdbc = jdbc;
+        this.dates = dates;
     }
 
     @GetMapping("/api/execution-reminders")
@@ -36,7 +41,7 @@ class StoreHistoryController {
                 JOIN stores s ON a.store_id=s.id JOIN owners o ON s.owner_id=o.id
                 WHERE o.email=:email AND p.end_date < :today
                 ORDER BY p.end_date DESC, p.created_at DESC, p.id DESC
-                """).param("email", owner.getName()).param("today", LocalDate.now(ZoneId.of("Asia/Seoul")))
+                """).param("email", owner.getName()).param("today", dates.today())
                 .query((rs, row) -> new ExecutionReminder(rs.getObject("plan_id", UUID.class),
                         rs.getObject("analysis_id", UUID.class), rs.getObject("store_id", UUID.class),
                         rs.getString("store_name"), rs.getString("title"), rs.getObject("end_date", LocalDate.class),
