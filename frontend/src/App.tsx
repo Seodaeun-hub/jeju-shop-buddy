@@ -149,6 +149,16 @@ export function App() {
     setPlanError(current => current?.id === id ? undefined : current)
   }
 
+  function forgetDeletedStore(id: string) {
+    if (analysis && analysis.storeId !== id) return
+    setLastId(undefined)
+    setLoadedId(undefined)
+    setAnalysis(undefined)
+    setAnalysisError('')
+    setPlan(undefined)
+    setPlanError(undefined)
+  }
+
   function openSavedAnalysis(id: string, destination = dashboardPath(id)) {
     setLastId(id)
     setLoadedId(undefined)
@@ -334,7 +344,7 @@ export function App() {
         ? <MyPage key={account.email} account={account} onUpdate={session => setAccount({ ...session, auth: ownerSession })} />
         : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
       <Route path="/stores" element={account ? <MyStores key={account.email} auth={account.auth} ownerEmail={account.email}
-        onAnalysisDeleted={forgetDeletedAnalysis} onPlanDeleted={forgetDeletedPlan} /> : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
+        onAnalysisDeleted={forgetDeletedAnalysis} onPlanDeleted={forgetDeletedPlan} onStoreDeleted={forgetDeletedStore} /> : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
       <Route path="/stores/new" element={auth ? <StoreRegistration auth={auth} />
         : <Navigate to="/login" state={{ returnTo: pathname + search }} replace />} />
       <Route path="/sales" element={account ? <Intake key={account.email} auth={account.auth} ownerEmail={account.email} onAnalyze={openSavedAnalysis} />

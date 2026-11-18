@@ -2,6 +2,14 @@
 .store-picker { display: flex; align-items: end; flex-wrap: wrap; gap: .75rem 1rem; }
 .store-picker label { flex: 0 1 26rem; min-width: 0; }
 .store-picker select { width: 100%; min-width: 0; }
+.store-delete-button { color: #9d352d; }
+.store-delete-dialog { width: min(33rem, calc(100% - 2rem)); max-height: 85dvh; overflow: auto; padding: 1.25rem; border: 1px solid var(--line); border-radius: 12px; }
+.store-delete-dialog::backdrop { background: rgb(24 46 36 / 55%); }
+.store-delete-dialog h2, .store-delete-dialog p { margin: 0; overflow-wrap: anywhere; }
+.store-delete-dialog ul { padding-left: 1.3rem; }
+.store-delete-target { padding: .8rem; border-radius: 8px; background: var(--pale-green); overflow-wrap: anywhere; }
+.store-delete-target p { margin-top: .25rem; font-size: .875rem; }
+.store-delete-confirm { color: white; background: #9d352d; border-color: #9d352d; }
 .store-address { margin-top: -.65rem; font-size: .875rem; overflow-wrap: anywhere; }
 .store-sections { display: flex; flex-wrap: wrap; gap: .25rem .85rem; border-bottom: 1px solid var(--line); }
 .store-sections a {

@@ -1,6 +1,7 @@
 package com.jejushopbuddy.store;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.jejushopbuddy.analysis.StoreDeletion;
 import java.security.Principal;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -12,7 +13,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -32,9 +35,11 @@ class StoreController {
             "COSMETICS_RETAIL", "HOTEL", "MOTEL", "RESORT_CONDO", "TRAVEL_AGENCY", "OTHER");
 
     private final JdbcClient jdbc;
+    private final StoreDeletion deletion;
 
-    StoreController(JdbcClient jdbc) {
+    StoreController(JdbcClient jdbc, StoreDeletion deletion) {
         this.jdbc = jdbc;
+        this.deletion = deletion;
     }
 
     @GetMapping("/api/stores")
@@ -73,6 +78,18 @@ class StoreController {
     }
 
     record AreaResponse(String code, String name) {}
+
+    @DeleteMapping("/api/stores/{storeId}")
+    ResponseEntity<?> delete(@PathVariable UUID storeId, Principal owner) {
+        return switch (deletion.delete(storeId, owner.getName())) {
+            case DELETED -> ResponseEntity.noContent().build();
+            case NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new ApiError("STORE_NOT_FOUND", "매장을 찾을 수 없어요. 매장 목록을 다시 확인해 주세요.", null));
+            case PUBLICATION_PENDING -> ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(new ApiError("STORE_PUBLICATION_PENDING",
+                            "인스타그램 게시가 예약되어 있거나 확인이 필요해요. 실행 관리에서 예약을 취소하거나 게시 상태를 확인한 뒤 매장을 삭제해 주세요.", null));
+        };
+    }
 
     @PostMapping(path = "/api/stores", consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)

@@ -205,6 +205,8 @@ export const saveStorePromotionTone = (auth: string, id: string, settings: { ton
   request<StorePromotionTone>(storePromotionTonePath(id), auth, 'PUT', settings)
 
 export const listStores = (auth: string, signal?: AbortSignal) => request<Store[]>('/api/stores', auth, 'GET', undefined, signal)
+export const deleteStore = (auth: string, storeId: string) =>
+  send(`/api/stores/${encodeURIComponent(storeId)}`, auth, 'DELETE')
 export type PosFileKind = 'PAYMENT' | 'PRODUCT'
 export type StoredPosFile = {
   id: string; kind: PosFileKind; filename: string; size: number; uploadedAt: string
