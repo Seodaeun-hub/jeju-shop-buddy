@@ -313,17 +313,18 @@ function ResultFooter({ to }: { to: string }) {
   return <div className="form-footer"><Link className="button secondary" to={to}>← 실행 관리로 돌아가기</Link></div>
 }
 
-export function Results({ plan, onChange, auth, storeId, executionTo }: {
+export function Results({ plan, onChange, auth, storeId, executionTo, menus }: {
   plan: Plan
   onChange: (plan: Plan) => void
   auth?: string
   storeId?: string
   executionTo: string
+  menus?: string[]
 }) {
   if (auth && plan.id) return <>
     <PageTitle title="실행 결과 확인" detail={plan.store} />
     <ResultSummary plan={plan} detail={periodLabel(plan.startDate, plan.endDate)} />
-    <ExecutionOutcome key={plan.id} plan={plan as Plan & { id: string }} auth={auth} />
+    <ExecutionOutcome key={plan.id} plan={plan as Plan & { id: string }} auth={auth} menus={menus} />
     {plan.strategy !== 'inventory' && <details className="result-direct-entry">
       <summary>기존 게시 기록·매출 비교 보기</summary>
       <SalesResults plan={plan} onChange={onChange} auth={auth} storeId={storeId} />
