@@ -135,8 +135,11 @@ Spring Boot 실행 환경에 아래 값을 설정합니다.
 | `SHOP_BUDDY_INSTAGRAM_USERNAME` | 테스트 계정 사용자 이름(`@` 제외) |
 | `SHOP_BUDDY_INSTAGRAM_TEST_STORE_ID` | 게시를 허용할 가게짝꿍 테스트 매장 UUID |
 | `SHOP_BUDDY_INSTAGRAM_IMAGE_BASE_URL` | Meta가 읽을 수 있는 HTTPS 호스트 주소 |
+| `SHOP_BUDDY_INSTAGRAM_REHEARSAL_PUBLISH_ENABLED` | 기본 `false`. `true`일 때 연결한 테스트 매장·계정만 시연 안내를 붙여 오늘 즉시 게시 가능 |
 
 HTTPS 호스트는 `GET /instagram-media/{key}.jpg` 경로만 Spring Boot에 전달합니다. 애월 테스트에서는 이미지 전용 임시 HTTPS 프록시를 사용하고 검증 후 종료했습니다. 토큰은 백엔드 환경 변수로 관리합니다.
+
+Railway에서는 이미지 호스트를 Web의 공개 HTTPS 주소로 설정합니다. 과거 시연 중의 일반 게시·예약은 차단합니다. 별도 테스트 게시 허용 설정이 있으면 **게시 관리 → 시연 표시가 포함된 최종 미리보기 → 확인 체크 → 테스트 계정에 지금 게시**로 연결한 계정에만 즉시 게시할 수 있습니다. 문구에는 시연 기준일과 실제 오늘 날짜를, 이미지에는 가상 시연·현재 판매 행사 아님·AI 예시 표시를 붙입니다. 기존 초안과 할인 조건은 유지하며 실제 게시 시각을 과거로 바꾸지 않습니다. [더애월 테스트 게시 시연 순서](demo/the-aewol-june-rehearsal/README.md#9-1-인스타-테스트-계정에-오늘-실제-게시하기-선택)를 참고하세요. 실제 게시 성공 결과는 계정 연결 후 별도로 확인해야 합니다.
 
 예약은 한국 시간으로 입력합니다. 예약이 실행되는 동안 Spring Boot와 이미지 제공용 HTTPS 경로가 동작해야 합니다. 게시 시작 전에는 4번 화면에서 예약을 취소할 수 있습니다.
 
