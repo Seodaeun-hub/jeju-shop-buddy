@@ -4,7 +4,7 @@ from unittest.mock import patch
 from strategy_agent.promotion_channels import (
     ChannelCopy, ChannelPosts, ChannelRequest, Finding, PostCopy, Research, ResearchFinding,
     checked_findings, generate_channels, write_channels,
-    normalized_text, research_store,
+    normalized_text, research_store, audit_channel_claims, CopyAudit, AuditedSentence,
 )
 
 def model_posts(instagram: str, naver: str, daangn: str) -> ChannelPosts:
@@ -17,6 +17,9 @@ class PromotionChannelsTest(unittest.TestCase):
     def setUp(self):
         self.request = ChannelRequest(storeName="자매국수", address="제주특별자치도 제주시 항골남길 46 1층",
                                       subject="고기국수", tone="FRIENDLY", avoidPhrases="인생 맛집", promotion=True)
+        self.audit = patch("strategy_agent.promotion_channels.audit_channel_claims", side_effect=lambda copies, *args: copies)
+        self.audit.start()
+        self.addCleanup(self.audit.stop)
 
     def test_keeps_only_same_address_with_consulted_source(self):
         official = "https://store.example/menu"
@@ -50,7 +53,7 @@ class PromotionChannelsTest(unittest.TestCase):
         self.assertEqual(result.drafts, copy)
         write.assert_called_once_with(self.request, [])
 
-    def test_selected_photo_is_sent_only_to_the_writer(self):
+    def test_selected_photo_is_preview_only_not_a_source_for_the_writer(self):
         photo = "data:image/jpeg;base64,AA=="
         request = self.request.model_copy(update={"photoDataUrl": photo, "tone": "SHORT"})
         with patch("strategy_agent.promotion_channels.structured_model") as model:
@@ -60,7 +63,48 @@ class PromotionChannelsTest(unittest.TestCase):
             write_channels(request, [])
         message = model.return_value.invoke.call_args.args[0][-1]
         self.assertNotIn(photo, message.content[0]["text"])
-        self.assertEqual(message.content[1]["image_url"]["url"], photo)
+        self.assertEqual(len(message.content), 1)
+        self.assertNotIn("image_url", str(message.content))
+
+    def test_evidence_audit_drops_unconfirmed_ingredients_and_serving_claims(self):
+        self.audit.stop()
+        request = ChannelRequest.model_validate({**self.request.model_dump(), "subject": "김치찌개", "reviewPoints": [
+            {"sentence": "육수가 졸아들면 맛이 더 또렷해져요.", "anchors": ["육수"]}
+        ]})
+        copies = {"instagram": "김치찌개 어떠세요? 두부와 파를 올려 드려요. 육수가 졸아들면 맛이 또렷해져요.",
+                  "naver": "김치찌개 안내. 뚝배기째 제공합니다.", "daangn": "이웃에게 김치찌개를 소개해요."}
+        audit = CopyAudit(sentences=[
+            AuditedSentence(id=1, kind="INVITATION", evidenceIds=[]),
+            AuditedSentence(id=2, kind="UNSUPPORTED", evidenceIds=[]),
+            AuditedSentence(id=3, kind="FACT", evidenceIds=["review-0"]),
+            AuditedSentence(id=4, kind="FACT", evidenceIds=["menu"]),
+            AuditedSentence(id=5, kind="UNSUPPORTED", evidenceIds=[]),
+            AuditedSentence(id=6, kind="INVITATION", evidenceIds=[]),
+        ])
+        with patch("strategy_agent.promotion_channels.structured_model") as model:
+            model.return_value.invoke.return_value = audit
+            result = audit_channel_claims(copies, request, [])
+        self.assertNotIn("두부", result["instagram"])
+        self.assertNotIn("파를", result["instagram"])
+        self.assertNotIn("뚝배기", result["naver"])
+        self.assertIn("육수", result["instagram"])
+
+    def test_audit_rejects_missing_decisions_and_unknown_evidence(self):
+        self.audit.stop()
+        copies = {"instagram": "고기국수 안내."}
+        with patch("strategy_agent.promotion_channels.structured_model") as model:
+            model.return_value.invoke.return_value = CopyAudit(sentences=[])
+            with self.assertRaisesRegex(ValueError, "incomplete copy evidence audit"):
+                audit_channel_claims(copies, self.request, [])
+            model.return_value.invoke.return_value = CopyAudit(sentences=[AuditedSentence(id=1, kind="FACT", evidenceIds=["made-up"])])
+            self.assertEqual(audit_channel_claims(copies, self.request, []), {"instagram": ""})
+
+    def test_serving_claim_cannot_be_labeled_as_a_casual_invitation(self):
+        self.audit.stop()
+        with patch("strategy_agent.promotion_channels.structured_model") as model:
+            model.return_value.invoke.return_value = CopyAudit(sentences=[AuditedSentence(id=1, kind="INVITATION", evidenceIds=[])])
+            result = audit_channel_claims({"instagram": "뚝배기에 담아 드릴게요."}, self.request, [])
+        self.assertEqual(result["instagram"], "")
 
     def test_rewriting_tone_uses_saved_findings_without_searching(self):
         findings = [Finding(kind="MENU", text="고기국수에 치자면을 사용해요.", url="https://store.example/menu")]
