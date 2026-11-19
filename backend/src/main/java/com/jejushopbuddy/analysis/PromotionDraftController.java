@@ -23,7 +23,8 @@ import tools.jackson.databind.ObjectMapper;
 
 @RestController
 class PromotionDraftController {
-    private static final int DRAFT_GENERATION_VERSION = 2;
+    private static final int DRAFT_GENERATION_VERSION = 3;
+    private static final int REVIEW_VALIDATION_VERSION = 2;
     private static final int MAX_CAPTION_LENGTH = 2200;
     private final JdbcClient jdbc;
     private final ObjectMapper json;
@@ -70,7 +71,7 @@ class PromotionDraftController {
         var saved = plan.research();
         var now = Instant.now();
         var referenceDate = dates.today();
-        if (!Boolean.TRUE.equals(input.refresh()) && saved != null && saved.matches(product, referenceDate) && !saved.sources().isEmpty()
+        if (!Boolean.TRUE.equals(input.refresh()) && saved != null && saved.matches(product, referenceDate) && !saved.sources().isEmpty() && !saved.points().isEmpty()
                 && saved.searchedAt().isAfter(now.minus(6, ChronoUnit.HOURS))) {
             return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(saved);
         }
@@ -80,7 +81,7 @@ class PromotionDraftController {
                     "공개 후기를 불러오지 못했어요. 다시 찾거나 후기 없이 진행할 수 있어요.", null));
         }
         if (!referenceDate.equals(dates.today())) return changed();
-        var research = new ResearchSnapshot(UUID.randomUUID(), product, now, result.get().sources(), result.get().points(), referenceDate);
+        var research = new ResearchSnapshot(UUID.randomUUID(), product, now, result.get().sources(), result.get().points(), referenceDate, REVIEW_VALIDATION_VERSION);
         int updated = jdbc.sql("""
                 UPDATE execution_plans SET promotion_review_research=CAST(:research AS jsonb)
                 WHERE id=:id AND instagram_publication IS NULL
@@ -92,7 +93,7 @@ class PromotionDraftController {
         if (updated == 0) {
             var latest = find(planId, owner.getName());
             if (latest != null && !latest.publicationLocked() && latest.research() != null
-                    && latest.research().matches(product, referenceDate) && Objects.equals(plan.review(), latest.review())) {
+                    && latest.research().matches(product, referenceDate) && !latest.research().points().isEmpty() && Objects.equals(plan.review(), latest.review())) {
                 return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(latest.research());
             }
             return changed();
@@ -476,9 +477,9 @@ class PromotionDraftController {
     record ReviewPoint(String id, String sentence, List<String> anchors, List<String> sourceIds) {}
     record ReviewResearch(List<ReviewSource> sources, List<ReviewPoint> points) {}
     record ResearchSnapshot(UUID id, String subject, Instant searchedAt, List<ReviewSource> sources, List<ReviewPoint> points,
-                            LocalDate referenceDate) {
+                            LocalDate referenceDate, Integer validationVersion) {
         boolean matches(String product, LocalDate date) {
-            return product.equals(subject) && date.equals(referenceDate);
+            return Integer.valueOf(REVIEW_VALIDATION_VERSION).equals(validationVersion) && product.equals(subject) && date.equals(referenceDate);
         }
     }
     record ReviewSelection(List<ReviewSource> sources, List<ReviewPoint> points) {}

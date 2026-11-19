@@ -14,7 +14,7 @@ class PromotionReviewDateTest {
     void aCachedSearchCannotCrossDatesOrMenus() {
         var reference = LocalDate.of(2021, 6, 1);
         var snapshot = new PromotionDraftController.ResearchSnapshot(UUID.randomUUID(), "김치찌개", Instant.now(),
-                List.of(), List.of(), reference);
+                List.of(), List.of(), reference, 2);
         assertThat(snapshot.matches("김치찌개", reference)).isTrue();
         assertThat(snapshot.matches("김치찌개", reference.plusDays(1))).isFalse();
         assertThat(snapshot.matches("김치찌개", LocalDate.of(2026, 11, 18))).isFalse();
@@ -30,5 +30,13 @@ class PromotionReviewDateTest {
                 """, PromotionDraftController.ResearchSnapshot.class);
         assertThat(legacy.referenceDate()).isNull();
         assertThat(legacy.matches("김치찌개", LocalDate.of(2021, 6, 1))).isFalse();
+    }
+
+    @Test
+    void datedResearchFromBeforeGroundingFixIsNotReused() {
+        var reference = LocalDate.of(2021, 6, 1);
+        var previous = new PromotionDraftController.ResearchSnapshot(UUID.randomUUID(), "김치찌개", Instant.now(),
+                List.of(), List.of(), reference, null);
+        assertThat(previous.matches("김치찌개", reference)).isFalse();
     }
 }
